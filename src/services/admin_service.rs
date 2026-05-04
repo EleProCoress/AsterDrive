@@ -127,17 +127,43 @@ pub async fn get_overview(
     let timezone = parse_timezone(timezone_name)?;
     let today = generated_at.with_timezone(&timezone).date_naive();
 
-    let total_users = user_repo::count_all(&state.db).await?;
-    let active_users = user_repo::count_by_status(&state.db, UserStatus::Active).await?;
-    let disabled_users = user_repo::count_by_status(&state.db, UserStatus::Disabled).await?;
-
-    let total_files = file_repo::count_live_files(&state.db).await?;
-    let total_file_bytes = file_repo::sum_live_file_bytes(&state.db).await?;
-    let total_blobs = file_repo::count_all_blobs(&state.db).await?;
-    let total_blob_bytes = file_repo::sum_blob_bytes(&state.db).await?;
-    let total_shares = share_repo::count_all(&state.db).await?;
-
-    let daily_reports = build_daily_reports(state, today, days, timezone).await?;
+    let (
+        total_users,
+        active_users,
+        disabled_users,
+        total_files,
+        total_file_bytes,
+        total_blobs,
+        total_blob_bytes,
+        total_shares,
+        daily_reports,
+        recent_events,
+        recent_background_tasks,
+    ) = tokio::try_join!(
+        user_repo::count_all(&state.db),
+        user_repo::count_by_status(&state.db, UserStatus::Active),
+        user_repo::count_by_status(&state.db, UserStatus::Disabled),
+        file_repo::count_live_files(&state.db),
+        file_repo::sum_live_file_bytes(&state.db),
+        file_repo::count_all_blobs(&state.db),
+        file_repo::sum_blob_bytes(&state.db),
+        share_repo::count_all(&state.db),
+        build_daily_reports(state, today, days, timezone),
+        audit_service::query(
+            state,
+            audit_service::AuditLogFilters {
+                user_id: None,
+                action: None,
+                entity_type: None,
+                entity_id: None,
+                after: None,
+                before: None,
+            },
+            event_limit,
+            0,
+        ),
+        background_task_repo::list_recent(&state.db, event_limit),
+    )?;
     let today_report = daily_reports
         .first()
         .cloned()
@@ -150,23 +176,8 @@ pub async fn get_overview(
             deletions: 0,
             total_events: 0,
         });
-    let recent_events = audit_service::query(
-        state,
-        audit_service::AuditLogFilters {
-            user_id: None,
-            action: None,
-            entity_type: None,
-            entity_id: None,
-            after: None,
-            before: None,
-        },
-        event_limit,
-        0,
-    )
-    .await?
-    .items;
-    let recent_background_tasks = background_task_repo::list_recent(&state.db, event_limit)
-        .await?
+    let recent_events = recent_events.items;
+    let recent_background_tasks = recent_background_tasks
         .into_iter()
         .map(build_background_task_event)
         .collect();

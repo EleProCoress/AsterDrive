@@ -211,20 +211,27 @@ pub(super) async fn load_team_member_page(
         1,
         operations::team_member_list_max_limit(&state.runtime_config),
     );
-    let (rows, total) = team_member_repo::list_page_by_team_with_user(
-        &state.db,
-        team_id,
-        filters.role,
-        filters.status,
-        filters.keyword.as_deref(),
-        effective_limit,
-        offset,
-    )
-    .await?;
-    let owner_count =
-        team_member_repo::count_by_team_and_role(&state.db, team_id, TeamMemberRole::Owner).await?;
-    let admin_count =
-        team_member_repo::count_by_team_and_role(&state.db, team_id, TeamMemberRole::Admin).await?;
+    let ((rows, total), role_counts) = tokio::try_join!(
+        team_member_repo::list_page_by_team_with_user(
+            &state.db,
+            team_id,
+            filters.role,
+            filters.status,
+            filters.keyword.as_deref(),
+            effective_limit,
+            offset,
+        ),
+        team_member_repo::count_by_team_grouped_by_role(&state.db, team_id),
+    )?;
+    let mut owner_count = 0;
+    let mut admin_count = 0;
+    for (role, count) in role_counts {
+        match role {
+            TeamMemberRole::Owner => owner_count = count,
+            TeamMemberRole::Admin => admin_count = count,
+            TeamMemberRole::Member => {}
+        }
+    }
 
     Ok(build_team_member_page(
         rows.into_iter()

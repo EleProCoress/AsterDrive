@@ -1,14 +1,13 @@
 //! 存储策略服务子模块：`groups`。
 
 use chrono::Utc;
-use sea_orm::{ActiveModelTrait, Set, TransactionTrait};
+use sea_orm::{Set, TransactionTrait};
 
 use crate::api::pagination::{OffsetPage, load_offset_page};
 use crate::db::repository::{policy_group_repo, policy_repo, team_repo, user_repo};
-use crate::entities::{storage_policy_group, storage_policy_group_item, user};
+use crate::entities::{storage_policy_group, storage_policy_group_item};
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::PrimaryAppState;
-use crate::utils::numbers::usize_to_u64;
 
 use super::models::{
     CreateStoragePolicyGroupInput, PolicyGroupUserMigrationResult, StoragePolicyGroupInfo,
@@ -86,24 +85,9 @@ where
         lock_default_group_assignment(&txn).await?;
         policy_group_repo::set_only_default_group(&txn, default_group.id).await?;
 
-        let users_without_group = user_repo::find_all(&txn).await?;
-        let users_without_group = users_without_group
-            .into_iter()
-            .filter(|user| user.policy_group_id.is_none())
-            .collect::<Vec<_>>();
-        if users_without_group.is_empty() {
-            return Ok(());
-        }
-
-        for user_model in users_without_group {
-            let mut active: user::ActiveModel = user_model.into();
-            active.policy_group_id = Set(Some(default_group.id));
-            active.updated_at = Set(Utc::now());
-            active
-                .update(&txn)
-                .await
-                .map_aster_err(AsterError::database_operation)?;
-        }
+        user_repo::assign_policy_group_to_unassigned(&txn, default_group.id, Utc::now())
+            .await
+            .map_aster_err(AsterError::database_operation)?;
 
         Ok(())
     }
@@ -331,8 +315,18 @@ pub async fn migrate_group_users(
         ));
     }
 
-    let source_users = user_repo::find_by_policy_group(&state.db, source_group_id).await?;
-    if source_users.is_empty() {
+    let txn = crate::db::transaction::begin(&state.db).await?;
+    let migrated_assignments = user_repo::migrate_policy_group_assignments(
+        &txn,
+        source_group_id,
+        target_group_id,
+        Utc::now(),
+    )
+    .await
+    .map_aster_err(AsterError::database_operation)?;
+
+    crate::db::transaction::commit(txn).await?;
+    if migrated_assignments == 0 {
         return Ok(PolicyGroupUserMigrationResult {
             source_group_id,
             target_group_id,
@@ -340,20 +334,6 @@ pub async fn migrate_group_users(
             migrated_assignments: 0,
         });
     }
-
-    let txn = crate::db::transaction::begin(&state.db).await?;
-    let migrated_assignments = usize_to_u64(source_users.len(), "migrated policy assignments")?;
-    for source_user in source_users {
-        let mut active: user::ActiveModel = source_user.into();
-        active.policy_group_id = Set(Some(target_group_id));
-        active.updated_at = Set(Utc::now());
-        active
-            .update(&txn)
-            .await
-            .map_aster_err(AsterError::database_operation)?;
-    }
-
-    crate::db::transaction::commit(txn).await?;
     state.policy_snapshot.reload(&state.db).await?;
 
     Ok(PolicyGroupUserMigrationResult {

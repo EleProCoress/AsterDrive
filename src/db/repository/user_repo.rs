@@ -136,6 +136,43 @@ pub async fn count_by_policy_group<C: ConnectionTrait>(
         .map_err(AsterError::from)
 }
 
+pub async fn assign_policy_group_to_unassigned<C: ConnectionTrait>(
+    db: &C,
+    policy_group_id: i64,
+    now: chrono::DateTime<chrono::Utc>,
+) -> Result<u64> {
+    let result = User::update_many()
+        .col_expr(
+            user::Column::PolicyGroupId,
+            Expr::value(Some(policy_group_id)),
+        )
+        .col_expr(user::Column::UpdatedAt, Expr::value(now))
+        .filter(user::Column::PolicyGroupId.is_null())
+        .exec(db)
+        .await
+        .map_err(AsterError::from)?;
+    Ok(result.rows_affected)
+}
+
+pub async fn migrate_policy_group_assignments<C: ConnectionTrait>(
+    db: &C,
+    source_group_id: i64,
+    target_group_id: i64,
+    now: chrono::DateTime<chrono::Utc>,
+) -> Result<u64> {
+    let result = User::update_many()
+        .col_expr(
+            user::Column::PolicyGroupId,
+            Expr::value(Some(target_group_id)),
+        )
+        .col_expr(user::Column::UpdatedAt, Expr::value(now))
+        .filter(user::Column::PolicyGroupId.eq(source_group_id))
+        .exec(db)
+        .await
+        .map_err(AsterError::from)?;
+    Ok(result.rows_affected)
+}
+
 pub async fn find_paginated<C: ConnectionTrait>(
     db: &C,
     limit: u64,

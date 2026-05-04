@@ -364,6 +364,31 @@ pub async fn count_by_team_and_role<C: ConnectionTrait>(
     i64_to_u64(count, "team member count")
 }
 
+pub async fn count_by_team_grouped_by_role<C: ConnectionTrait>(
+    db: &C,
+    team_id: i64,
+) -> Result<Vec<(TeamMemberRole, u64)>> {
+    let counts = TeamMember::find()
+        .select_only()
+        .column(team_member::Column::Role)
+        .column_as(
+            Expr::col((team_member::Entity, team_member::Column::Id)).count(),
+            "member_count",
+        )
+        .inner_join(user::Entity)
+        .filter(team_member::Column::TeamId.eq(team_id))
+        .group_by(team_member::Column::Role)
+        .into_tuple::<(TeamMemberRole, i64)>()
+        .all(db)
+        .await
+        .map_err(AsterError::from)?;
+
+    counts
+        .into_iter()
+        .map(|(role, member_count)| Ok((role, i64_to_u64(member_count, "team member count")?)))
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

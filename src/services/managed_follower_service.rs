@@ -14,6 +14,7 @@ use chrono::Utc;
 use futures::{StreamExt, stream};
 use sea_orm::{ActiveModelTrait, DbErr, Set, SqlErr};
 use serde::Serialize;
+use std::collections::{HashMap, HashSet};
 use std::time::Duration;
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::ToSchema;
@@ -121,10 +122,19 @@ pub async fn list_paginated<S: PrimaryRuntimeState>(
         Ok((items, total))
     })
     .await?;
-    let mut items = Vec::with_capacity(page.items.len());
-    for model in page.items {
-        items.push(remote_node_info(state, model).await?);
-    }
+    let node_ids: Vec<i64> = page.items.iter().map(|model| model.id).collect();
+    let enrollment_statuses = enrollment_statuses_for_nodes(state, &node_ids).await?;
+    let items = page
+        .items
+        .into_iter()
+        .map(|model| {
+            let enrollment_status = enrollment_statuses
+                .get(&model.id)
+                .copied()
+                .unwrap_or(RemoteNodeEnrollmentStatus::NotStarted);
+            RemoteNodeInfo::from_model(model, enrollment_status)
+        })
+        .collect();
     Ok(OffsetPage::new(items, page.total, page.limit, page.offset))
 }
 
@@ -230,6 +240,43 @@ async fn remote_node_info<S: PrimaryRuntimeState>(
 ) -> Result<RemoteNodeInfo> {
     let enrollment_status = enrollment_status_for_node(state, model.id).await?;
     Ok(RemoteNodeInfo::from_model(model, enrollment_status))
+}
+
+async fn enrollment_statuses_for_nodes<S: PrimaryRuntimeState>(
+    state: &S,
+    node_ids: &[i64],
+) -> Result<HashMap<i64, RemoteNodeEnrollmentStatus>> {
+    if node_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    let sessions =
+        follower_enrollment_session_repo::find_by_managed_follower_ids(state.db(), node_ids)
+            .await?;
+    let mut completed_node_ids = HashSet::new();
+    let mut latest_by_node = HashMap::new();
+    for session in sessions {
+        if session.acked_at.is_some() {
+            completed_node_ids.insert(session.managed_follower_id);
+        }
+        latest_by_node
+            .entry(session.managed_follower_id)
+            .or_insert(session);
+    }
+
+    let now = Utc::now();
+    Ok(node_ids
+        .iter()
+        .copied()
+        .map(|node_id| {
+            let status = if completed_node_ids.contains(&node_id) {
+                RemoteNodeEnrollmentStatus::Completed
+            } else {
+                enrollment_status_from_latest(latest_by_node.get(&node_id), now)
+            };
+            (node_id, status)
+        })
+        .collect())
 }
 
 async fn enrollment_status_for_node<S: PrimaryRuntimeState>(

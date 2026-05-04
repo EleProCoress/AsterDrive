@@ -68,6 +68,18 @@ async fn test_completed_remote_node_enrollment_rejects_new_token() {
             .enrollment_status,
         managed_follower_service::RemoteNodeEnrollmentStatus::Completed
     );
+    let page = managed_follower_service::list_paginated(&state, 10, 0)
+        .await
+        .expect("remote node list should load");
+    let listed = page
+        .items
+        .iter()
+        .find(|item| item.id == node.id)
+        .expect("created remote node should be listed");
+    assert_eq!(
+        listed.enrollment_status,
+        managed_follower_service::RemoteNodeEnrollmentStatus::Completed
+    );
 
     let error = managed_follower_enrollment_service::create_enrollment_command(&state, node.id)
         .await

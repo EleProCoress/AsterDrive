@@ -1,5 +1,7 @@
 //! 文件服务子模块：`transfer`。
 
+use std::collections::BTreeMap;
+
 use chrono::Utc;
 use sea_orm::{ActiveModelTrait, Set};
 
@@ -16,6 +18,22 @@ use crate::services::{
 use super::get_info_in_scope;
 
 const MAX_COPY_NAME_RETRIES: usize = 32;
+
+fn collect_blob_ref_count_increments(
+    blob_ids: impl IntoIterator<Item = i64>,
+    context: &str,
+) -> Result<Vec<(i64, i32)>> {
+    let mut counts = BTreeMap::<i64, i32>::new();
+    for blob_id in blob_ids {
+        let entry = counts.entry(blob_id).or_default();
+        *entry = entry.checked_add(1).ok_or_else(|| {
+            AsterError::internal_error(format!(
+                "blob copy count overflow for blob {blob_id} during {context}"
+            ))
+        })?;
+    }
+    Ok(counts.into_iter().collect())
+}
 
 pub(crate) async fn copy_file_in_scope(
     state: &PrimaryAppState,
@@ -145,19 +163,11 @@ async fn batch_duplicate_file_records_with_specs_in_scope(
     // 这避免了并发场景下的 TOCTOU 问题
     workspace_storage_service::update_storage_used(&txn, scope, total_size).await?;
 
-    let mut blob_counts: std::collections::HashMap<i64, i32> = std::collections::HashMap::new();
-    for spec in copy_specs {
-        let entry = blob_counts.entry(spec.src.blob_id).or_default();
-        *entry = entry.checked_add(1).ok_or_else(|| {
-            AsterError::internal_error(format!(
-                "blob copy count overflow for blob {} during batch copy",
-                spec.src.blob_id
-            ))
-        })?;
-    }
-    for (&blob_id, &count) in &blob_counts {
-        file_repo::increment_blob_ref_count_by(&txn, blob_id, count).await?;
-    }
+    let blob_counts = collect_blob_ref_count_increments(
+        copy_specs.iter().map(|spec| spec.src.blob_id),
+        "batch copy",
+    )?;
+    file_repo::increment_blob_ref_counts_by(&txn, &blob_counts).await?;
 
     let models: Vec<file::ActiveModel> = copy_specs
         .iter()
@@ -321,19 +331,11 @@ pub(crate) async fn batch_duplicate_file_records_to_mixed_folders_in_scope(
     let txn = crate::db::transaction::begin(&state.db).await?;
     workspace_storage_service::check_quota(&txn, scope, total_size).await?;
 
-    let mut blob_counts: std::collections::HashMap<i64, i32> = std::collections::HashMap::new();
-    for spec in copy_specs {
-        let entry = blob_counts.entry(spec.src.blob_id).or_default();
-        *entry = entry.checked_add(1).ok_or_else(|| {
-            AsterError::internal_error(format!(
-                "blob copy count overflow for blob {} during folder copy",
-                spec.src.blob_id
-            ))
-        })?;
-    }
-    for (&blob_id, &count) in &blob_counts {
-        file_repo::increment_blob_ref_count_by(&txn, blob_id, count).await?;
-    }
+    let blob_counts = collect_blob_ref_count_increments(
+        copy_specs.iter().map(|spec| spec.src.blob_id),
+        "folder copy",
+    )?;
+    file_repo::increment_blob_ref_counts_by(&txn, &blob_counts).await?;
 
     let models: Vec<file::ActiveModel> = copy_specs
         .iter()

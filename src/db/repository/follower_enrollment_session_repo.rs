@@ -50,6 +50,27 @@ pub async fn find_latest_for_managed_follower<C: ConnectionTrait>(
         .map_err(AsterError::from)
 }
 
+pub async fn find_by_managed_follower_ids<C: ConnectionTrait>(
+    db: &C,
+    managed_follower_ids: &[i64],
+) -> Result<Vec<follower_enrollment_session::Model>> {
+    if managed_follower_ids.is_empty() {
+        return Ok(vec![]);
+    }
+
+    FollowerEnrollmentSession::find()
+        .filter(
+            follower_enrollment_session::Column::ManagedFollowerId
+                .is_in(managed_follower_ids.iter().copied()),
+        )
+        .order_by_asc(follower_enrollment_session::Column::ManagedFollowerId)
+        .order_by_desc(follower_enrollment_session::Column::CreatedAt)
+        .order_by_desc(follower_enrollment_session::Column::Id)
+        .all(db)
+        .await
+        .map_err(AsterError::from)
+}
+
 pub async fn has_completed_for_managed_follower<C: ConnectionTrait>(
     db: &C,
     managed_follower_id: i64,

@@ -1,5 +1,7 @@
 //! 服务模块：`version_service`。
 
+use std::collections::BTreeMap;
+
 use chrono::Utc;
 use sea_orm::{ActiveModelTrait, Set};
 
@@ -44,6 +46,16 @@ fn storage_scope_from_file(file: &crate::entities::file::Model) -> WorkspaceStor
 fn add_reclaimed_bytes(total: &mut i64, bytes: i64, context: &str) -> Result<()> {
     *total = total.checked_add(bytes).ok_or_else(|| {
         AsterError::internal_error(format!("version storage accounting overflow: {context}"))
+    })?;
+    Ok(())
+}
+
+fn add_cleanup_count(counts: &mut BTreeMap<i64, i32>, blob_id: i64, context: &str) -> Result<()> {
+    let entry = counts.entry(blob_id).or_default();
+    *entry = entry.checked_add(1).ok_or_else(|| {
+        AsterError::internal_error(format!(
+            "version blob cleanup count overflow for blob {blob_id}: {context}"
+        ))
     })?;
     Ok(())
 }
@@ -123,23 +135,31 @@ async fn restore_version_inner(
         ),
     );
 
-    let mut cleanup_counts = std::collections::HashMap::<i64, usize>::new();
+    let mut cleanup_counts = BTreeMap::<i64, i32>::new();
     for blob_id in truncated_blob_ids {
-        *cleanup_counts.entry(blob_id).or_default() += 1;
+        add_cleanup_count(
+            &mut cleanup_counts,
+            blob_id,
+            "restore truncated version cleanup",
+        )?;
     }
 
     if previous_blob_id != target_blob_id {
-        *cleanup_counts.entry(previous_blob_id).or_default() += 1;
+        add_cleanup_count(
+            &mut cleanup_counts,
+            previous_blob_id,
+            "restore previous current blob cleanup",
+        )?;
         if let Some(count) = cleanup_counts.get_mut(&target_blob_id) {
             *count = count.saturating_sub(1);
         }
     }
 
-    for (blob_id, count) in cleanup_counts {
-        for _ in 0..count {
-            cleanup_blob_if_unused(state, blob_id).await?;
-        }
-    }
+    let cleanup_counts: Vec<(i64, i32)> = cleanup_counts
+        .into_iter()
+        .filter(|(_, count)| *count > 0)
+        .collect();
+    cleanup_blobs_if_unused_by_counts(state, &cleanup_counts).await?;
 
     Ok(updated)
 }
@@ -378,6 +398,28 @@ async fn cleanup_blob_if_unused(state: &PrimaryAppState, blob_id: i64) -> Result
             blob_id = blob.id,
             "blob cleanup incomplete after version cleanup; blob row retained for retry"
         );
+    }
+
+    Ok(())
+}
+
+async fn cleanup_blobs_if_unused_by_counts(
+    state: &PrimaryAppState,
+    blob_counts: &[(i64, i32)],
+) -> Result<()> {
+    if blob_counts.is_empty() {
+        return Ok(());
+    }
+
+    file_repo::decrement_blob_ref_counts_by(&state.db, blob_counts).await?;
+    for &(blob_id, _) in blob_counts {
+        if !crate::services::file_service::ensure_blob_cleanup_if_unreferenced(state, blob_id).await
+        {
+            tracing::warn!(
+                blob_id,
+                "blob cleanup incomplete after version cleanup; blob row retained for retry"
+            );
+        }
     }
 
     Ok(())

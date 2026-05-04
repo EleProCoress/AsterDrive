@@ -2,12 +2,16 @@
 
 use chrono::Utc;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, QueryOrder, Set,
-    TryInsertResult,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, ExprTrait, QueryFilter,
+    QueryOrder, Set, TryInsertResult,
+    sea_query::{Expr, Query, SelectStatement},
 };
 
 use crate::db::repository::pagination_repo::fetch_offset_page;
-use crate::entities::resource_lock::{self, Entity as ResourceLock};
+use crate::entities::{
+    file, folder,
+    resource_lock::{self, Entity as ResourceLock},
+};
 use crate::errors::{AsterError, Result};
 use crate::types::EntityType;
 
@@ -183,10 +187,16 @@ pub async fn delete_by_path_prefix<C: ConnectionTrait>(db: &C, prefix: &str) -> 
 
 /// 查找并返回所有过期锁
 pub async fn find_expired<C: ConnectionTrait>(db: &C) -> Result<Vec<resource_lock::Model>> {
-    let now = Utc::now();
+    find_expired_before(db, Utc::now()).await
+}
+
+pub async fn find_expired_before<C: ConnectionTrait>(
+    db: &C,
+    cutoff: chrono::DateTime<Utc>,
+) -> Result<Vec<resource_lock::Model>> {
     ResourceLock::find()
         .filter(resource_lock::Column::TimeoutAt.is_not_null())
-        .filter(resource_lock::Column::TimeoutAt.lt(now))
+        .filter(resource_lock::Column::TimeoutAt.lt(cutoff))
         .all(db)
         .await
         .map_err(AsterError::from)
@@ -194,14 +204,90 @@ pub async fn find_expired<C: ConnectionTrait>(db: &C) -> Result<Vec<resource_loc
 
 /// 删除过期锁（返回删除数量）
 pub async fn delete_expired<C: ConnectionTrait>(db: &C) -> Result<u64> {
-    let now = Utc::now();
+    delete_expired_before(db, Utc::now()).await
+}
+
+pub async fn delete_expired_before<C: ConnectionTrait>(
+    db: &C,
+    cutoff: chrono::DateTime<Utc>,
+) -> Result<u64> {
     let res = ResourceLock::delete_many()
         .filter(resource_lock::Column::TimeoutAt.is_not_null())
-        .filter(resource_lock::Column::TimeoutAt.lt(now))
+        .filter(resource_lock::Column::TimeoutAt.lt(cutoff))
         .exec(db)
         .await
         .map_err(AsterError::from)?;
     Ok(res.rows_affected)
+}
+
+pub async fn clear_file_locked_flags_without_locks<C: ConnectionTrait>(
+    db: &C,
+    file_ids: &[i64],
+) -> Result<u64> {
+    if file_ids.is_empty() {
+        return Ok(0);
+    }
+
+    let result = file::Entity::update_many()
+        .col_expr(file::Column::IsLocked, Expr::value(false))
+        .col_expr(file::Column::UpdatedAt, Expr::value(Utc::now()))
+        .filter(file::Column::Id.is_in(file_ids.iter().copied()))
+        .filter(file::Column::IsLocked.eq(true))
+        .filter(Expr::not_exists(lock_exists_for_file_query()))
+        .exec(db)
+        .await
+        .map_err(AsterError::from)?;
+    Ok(result.rows_affected)
+}
+
+pub async fn clear_folder_locked_flags_without_locks<C: ConnectionTrait>(
+    db: &C,
+    folder_ids: &[i64],
+) -> Result<u64> {
+    if folder_ids.is_empty() {
+        return Ok(0);
+    }
+
+    let result = folder::Entity::update_many()
+        .col_expr(folder::Column::IsLocked, Expr::value(false))
+        .col_expr(folder::Column::UpdatedAt, Expr::value(Utc::now()))
+        .filter(folder::Column::Id.is_in(folder_ids.iter().copied()))
+        .filter(folder::Column::IsLocked.eq(true))
+        .filter(Expr::not_exists(lock_exists_for_folder_query()))
+        .exec(db)
+        .await
+        .map_err(AsterError::from)?;
+    Ok(result.rows_affected)
+}
+
+fn lock_exists_for_file_query() -> SelectStatement {
+    Query::select()
+        .expr(Expr::value(1i32))
+        .from(resource_lock::Entity)
+        .and_where(
+            Expr::col((resource_lock::Entity, resource_lock::Column::EntityType))
+                .eq(EntityType::File),
+        )
+        .and_where(
+            Expr::col((resource_lock::Entity, resource_lock::Column::EntityId))
+                .eq(Expr::col((file::Entity, file::Column::Id))),
+        )
+        .to_owned()
+}
+
+fn lock_exists_for_folder_query() -> SelectStatement {
+    Query::select()
+        .expr(Expr::value(1i32))
+        .from(resource_lock::Entity)
+        .and_where(
+            Expr::col((resource_lock::Entity, resource_lock::Column::EntityType))
+                .eq(EntityType::Folder),
+        )
+        .and_where(
+            Expr::col((resource_lock::Entity, resource_lock::Column::EntityId))
+                .eq(Expr::col((folder::Entity, folder::Column::Id))),
+        )
+        .to_owned()
 }
 
 pub async fn refresh<C: ConnectionTrait>(
@@ -276,5 +362,41 @@ mod tests {
             "{sql}"
         );
         assert!(!sql.contains(" WHERE "), "{sql}");
+    }
+
+    #[test]
+    fn postgres_clear_file_locked_flags_sql_requires_absent_replacement_lock() {
+        let sql = file::Entity::update_many()
+            .col_expr(file::Column::IsLocked, Expr::value(false))
+            .filter(file::Column::Id.is_in([7, 9]))
+            .filter(Expr::not_exists(lock_exists_for_file_query()))
+            .build(DbBackend::Postgres)
+            .to_string();
+
+        assert!(sql.contains("NOT EXISTS"), "{sql}");
+        assert!(sql.contains(r#""resource_locks""#), "{sql}");
+        assert!(sql.contains(r#""entity_type" = 'file'"#), "{sql}");
+        assert!(
+            sql.contains(r#""resource_locks"."entity_id" = "files"."id""#),
+            "{sql}"
+        );
+    }
+
+    #[test]
+    fn postgres_clear_folder_locked_flags_sql_requires_absent_replacement_lock() {
+        let sql = folder::Entity::update_many()
+            .col_expr(folder::Column::IsLocked, Expr::value(false))
+            .filter(folder::Column::Id.is_in([11, 13]))
+            .filter(Expr::not_exists(lock_exists_for_folder_query()))
+            .build(DbBackend::Postgres)
+            .to_string();
+
+        assert!(sql.contains("NOT EXISTS"), "{sql}");
+        assert!(sql.contains(r#""resource_locks""#), "{sql}");
+        assert!(sql.contains(r#""entity_type" = 'folder'"#), "{sql}");
+        assert!(
+            sql.contains(r#""resource_locks"."entity_id" = "folders"."id""#),
+            "{sql}"
+        );
     }
 }

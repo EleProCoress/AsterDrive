@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use futures::{StreamExt, stream};
 
 use crate::db::repository::file_repo;
@@ -5,7 +7,7 @@ use crate::entities::file;
 use crate::errors::{AsterError, Result};
 use crate::runtime::PrimaryAppState;
 use crate::services::workspace_storage_service::{self, WorkspaceStorageScope};
-use crate::utils::numbers::usize_to_u32;
+use crate::utils::numbers::{i64_to_i32, usize_to_u32};
 
 use super::blob_cleanup::ensure_blob_cleanup_if_unreferenced;
 
@@ -71,7 +73,7 @@ pub(crate) async fn batch_purge_in_scope(
 
     file_repo::delete_many(&txn, &file_ids).await?;
 
-    let mut blob_decrements: std::collections::HashMap<i64, i64> = std::collections::HashMap::new();
+    let mut blob_decrements = BTreeMap::<i64, i64>::new();
     for &blob_id in &blob_ids {
         *blob_decrements.entry(blob_id).or_default() += 1;
     }
@@ -82,6 +84,7 @@ pub(crate) async fn batch_purge_in_scope(
     let blob_ids: Vec<i64> = blob_decrements.keys().copied().collect();
     let blobs_by_id = file_repo::find_blobs_by_ids(&txn, &blob_ids).await?;
     let mut total_freed_bytes = 0i64;
+    let mut ref_count_decrements = Vec::with_capacity(blob_decrements.len());
 
     for (&blob_id, &decrement) in &blob_decrements {
         if let Some(blob) = blobs_by_id.get(&blob_id) {
@@ -93,14 +96,13 @@ pub(crate) async fn batch_purge_in_scope(
             total_freed_bytes = total_freed_bytes.checked_add(freed_bytes).ok_or_else(|| {
                 AsterError::internal_error("total freed byte count overflow during batch purge")
             })?;
-            let decrement_i32 = i32::try_from(decrement).map_err(|_| {
-                AsterError::internal_error(format!(
-                    "blob decrement overflow for blob {blob_id} during batch purge"
-                ))
-            })?;
-            file_repo::decrement_blob_ref_count_by(&txn, blob_id, decrement_i32).await?;
+            ref_count_decrements.push((
+                blob_id,
+                i64_to_i32(decrement, "blob decrement during batch purge")?,
+            ));
         }
     }
+    file_repo::decrement_blob_ref_counts_by(&txn, &ref_count_decrements).await?;
 
     workspace_storage_service::update_storage_used(&txn, scope, -total_freed_bytes).await?;
 
