@@ -313,7 +313,7 @@ pub async fn find_all_children_in_parents<C: ConnectionTrait>(
         return Ok(vec![]);
     }
     Folder::find()
-        .filter(folder::Column::ParentId.is_in(parent_ids.to_vec()))
+        .filter(folder::Column::ParentId.is_in(parent_ids.iter().copied()))
         .all(db)
         .await
         .map_err(AsterError::from)

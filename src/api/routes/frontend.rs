@@ -91,10 +91,7 @@ impl FrontendService {
                 "%ASTERDRIVE_FAVICON_URL%",
                 &escape_html(branding::favicon_url_or_default(&state.runtime_config)),
             )
-            .replace(
-                "%ASTERDRIVE_CSP%",
-                &escape_html(FRONTEND_CSP_META.to_string()),
-            );
+            .replace("%ASTERDRIVE_CSP%", &escape_html(FRONTEND_CSP_META));
 
         HttpResponse::Ok()
             .insert_header(("Content-Security-Policy", FRONTEND_CSP_HEADER))
@@ -187,8 +184,9 @@ impl FrontendService {
     }
 }
 
-fn escape_html(value: String) -> String {
+fn escape_html(value: impl AsRef<str>) -> String {
     value
+        .as_ref()
         .replace('&', "&amp;")
         .replace('"', "&quot;")
         .replace('\'', "&#39;")

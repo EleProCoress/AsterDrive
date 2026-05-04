@@ -145,14 +145,14 @@ pub async fn delete_all_by_file_ids<C: ConnectionTrait>(
         return Ok(vec![]);
     }
     let versions = FileVersion::find()
-        .filter(file_version::Column::FileId.is_in(file_ids.to_vec()))
+        .filter(file_version::Column::FileId.is_in(file_ids.iter().copied()))
         .all(db)
         .await
         .map_err(AsterError::from)?;
     let blob_ids: Vec<i64> = versions.iter().map(|v| v.blob_id).collect();
 
     FileVersion::delete_many()
-        .filter(file_version::Column::FileId.is_in(file_ids.to_vec()))
+        .filter(file_version::Column::FileId.is_in(file_ids.iter().copied()))
         .exec(db)
         .await
         .map_err(AsterError::from)?;

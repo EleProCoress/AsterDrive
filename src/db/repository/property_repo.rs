@@ -140,7 +140,7 @@ pub async fn delete_all_for_entities<C: ConnectionTrait>(
     }
     EntityProperty::delete_many()
         .filter(entity_property::Column::EntityType.eq(entity_type))
-        .filter(entity_property::Column::EntityId.is_in(entity_ids.to_vec()))
+        .filter(entity_property::Column::EntityId.is_in(entity_ids.iter().copied()))
         .exec(db)
         .await
         .map_err(AsterError::from)?;

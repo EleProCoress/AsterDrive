@@ -31,20 +31,20 @@ fn driver_type_name(driver_type: DriverType) -> &'static str {
 }
 
 fn ensure_storage_native_thumbnail_supported(
-    connection: &StoragePolicyConnectionInput,
+    driver_type: DriverType,
     options: &StoragePolicyOptions,
 ) -> Result<()> {
     if !options.uses_storage_native_thumbnail() {
         return Ok(());
     }
 
-    if crate::storage::driver_type_supports_native_thumbnail(connection.driver_type) {
+    if crate::storage::driver_type_supports_native_thumbnail(driver_type) {
         return Ok(());
     }
 
     Err(AsterError::validation_error(format!(
         "storage policy driver '{}' does not expose storage-native thumbnail processing",
-        driver_type_name(connection.driver_type),
+        driver_type_name(driver_type),
     )))
 }
 
@@ -92,16 +92,7 @@ pub async fn create(
     let options = options.unwrap_or_default().normalized();
     let serialized_options = serialize_options(&options)?;
     let chunk_size = chunk_size.unwrap_or(5_242_880);
-    let connection = StoragePolicyConnectionInput {
-        driver_type,
-        endpoint: endpoint.clone(),
-        bucket: bucket.clone(),
-        access_key: access_key.clone(),
-        secret_key: secret_key.clone(),
-        base_path: base_path.clone(),
-        remote_node_id,
-    };
-    ensure_storage_native_thumbnail_supported(&connection, &options)?;
+    ensure_storage_native_thumbnail_supported(driver_type, &options)?;
 
     let txn = crate::db::transaction::begin(&state.db).await?;
     let now = Utc::now();
@@ -208,22 +199,10 @@ pub async fn update(
     let existing = policy_repo::find_by_id(&txn, id).await?;
     let existing_endpoint = existing.endpoint.clone();
     let existing_bucket = existing.bucket.clone();
-    let existing_base_path = existing.base_path.clone();
-    let existing_access_key = existing.access_key.clone();
-    let existing_secret_key = existing.secret_key.clone();
     let existing_remote_node_id = existing.remote_node_id;
     let existing_options = parse_storage_policy_options(existing.options.as_ref());
     let final_endpoint = endpoint.unwrap_or_else(|| existing_endpoint.clone());
     let final_bucket = bucket.unwrap_or_else(|| existing_bucket.clone());
-    let final_base_path = base_path
-        .clone()
-        .unwrap_or_else(|| existing_base_path.clone());
-    let final_access_key = access_key
-        .clone()
-        .unwrap_or_else(|| existing_access_key.clone());
-    let final_secret_key = secret_key
-        .clone()
-        .unwrap_or_else(|| existing_secret_key.clone());
     let (normalized_endpoint, normalized_bucket) =
         normalize_connection_fields(existing.driver_type, &final_endpoint, &final_bucket)?;
     let normalized_remote_node_id = validate_remote_binding(
@@ -235,16 +214,7 @@ pub async fn update(
     let options_provided = options.is_some();
     let final_options = options.unwrap_or(existing_options).normalized();
     let serialized_final_options = serialize_options(&final_options)?;
-    let final_connection = StoragePolicyConnectionInput {
-        driver_type: existing.driver_type,
-        endpoint: normalized_endpoint.clone(),
-        bucket: normalized_bucket.clone(),
-        access_key: final_access_key,
-        secret_key: final_secret_key,
-        base_path: final_base_path.clone(),
-        remote_node_id: normalized_remote_node_id,
-    };
-    ensure_storage_native_thumbnail_supported(&final_connection, &final_options)?;
+    ensure_storage_native_thumbnail_supported(existing.driver_type, &final_options)?;
 
     if let Some(false) = is_default
         && existing.is_default

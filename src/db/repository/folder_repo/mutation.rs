@@ -48,7 +48,7 @@ pub async fn move_many_to_parent<C: ConnectionTrait>(
     Folder::update_many()
         .col_expr(folder::Column::ParentId, Expr::value(parent_id))
         .col_expr(folder::Column::UpdatedAt, Expr::value(now))
-        .filter(folder::Column::Id.is_in(ids.to_vec()))
+        .filter(folder::Column::Id.is_in(ids.iter().copied()))
         .exec(db)
         .await
         .map_err(|err| {
@@ -72,7 +72,7 @@ pub async fn delete_many<C: ConnectionTrait>(db: &C, ids: &[i64]) -> Result<()> 
         return Ok(());
     }
     Folder::delete_many()
-        .filter(folder::Column::Id.is_in(ids.to_vec()))
+        .filter(folder::Column::Id.is_in(ids.iter().copied()))
         .exec(db)
         .await
         .map_err(AsterError::from)?;

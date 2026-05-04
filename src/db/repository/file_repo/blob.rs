@@ -264,7 +264,7 @@ pub async fn find_blobs_by_ids<C: ConnectionTrait>(
         return Ok(std::collections::HashMap::new());
     }
     let blobs = FileBlob::find()
-        .filter(file_blob::Column::Id.is_in(ids.to_vec()))
+        .filter(file_blob::Column::Id.is_in(ids.iter().copied()))
         .all(db)
         .await
         .map_err(AsterError::from)?;
@@ -277,7 +277,7 @@ pub async fn delete_blobs<C: ConnectionTrait>(db: &C, ids: &[i64]) -> Result<()>
         return Ok(());
     }
     FileBlob::delete_many()
-        .filter(file_blob::Column::Id.is_in(ids.to_vec()))
+        .filter(file_blob::Column::Id.is_in(ids.iter().copied()))
         .exec(db)
         .await
         .map_err(AsterError::from)?;
@@ -297,7 +297,7 @@ pub async fn decrement_blob_ref_counts<C: ConnectionTrait>(db: &C, ids: &[i64]) 
                 .into(),
         )
         .col_expr(file_blob::Column::UpdatedAt, Expr::value(Utc::now()))
-        .filter(file_blob::Column::Id.is_in(ids.to_vec()))
+        .filter(file_blob::Column::Id.is_in(ids.iter().copied()))
         .exec(db)
         .await
         .map_err(AsterError::from)?;

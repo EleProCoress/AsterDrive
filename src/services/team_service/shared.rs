@@ -316,26 +316,23 @@ pub(super) async fn ensure_not_last_manager<C: ConnectionTrait>(
     Ok(())
 }
 
-pub(super) async fn load_team_metadata(
+pub(super) async fn load_team_metadata<'a>(
     state: &PrimaryAppState,
-    teams: &[team::Model],
+    teams: impl IntoIterator<Item = &'a team::Model>,
 ) -> Result<(HashMap<i64, String>, HashMap<i64, u64>)> {
-    if teams.is_empty() {
+    let mut creator_ids = HashSet::new();
+    let mut team_ids = HashSet::new();
+    for team in teams {
+        creator_ids.insert(team.created_by);
+        team_ids.insert(team.id);
+    }
+
+    if team_ids.is_empty() {
         return Ok((HashMap::new(), HashMap::new()));
     }
 
-    let creator_ids: Vec<i64> = teams
-        .iter()
-        .map(|team| team.created_by)
-        .collect::<HashSet<_>>()
-        .into_iter()
-        .collect();
-    let team_ids: Vec<i64> = teams
-        .iter()
-        .map(|team| team.id)
-        .collect::<HashSet<_>>()
-        .into_iter()
-        .collect();
+    let creator_ids: Vec<i64> = creator_ids.into_iter().collect();
+    let team_ids: Vec<i64> = team_ids.into_iter().collect();
     let (creators, member_counts) = tokio::try_join!(
         user_repo::find_by_ids(&state.db, &creator_ids),
         team_member_repo::count_by_team_ids(&state.db, &team_ids),

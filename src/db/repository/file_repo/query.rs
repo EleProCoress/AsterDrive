@@ -178,7 +178,7 @@ pub async fn find_all_in_folders<C: ConnectionTrait>(
         return Ok(vec![]);
     }
     File::find()
-        .filter(file::Column::FolderId.is_in(folder_ids.to_vec()))
+        .filter(file::Column::FolderId.is_in(folder_ids.iter().copied()))
         .all(db)
         .await
         .map_err(AsterError::from)

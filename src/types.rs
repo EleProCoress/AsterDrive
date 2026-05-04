@@ -1143,6 +1143,13 @@ fn normalize_thumbnail_extension(value: &str) -> Option<String> {
     (!normalized.is_empty()).then_some(normalized)
 }
 
+#[inline]
+fn has_normalizable_thumbnail_extension(values: &[String]) -> bool {
+    values
+        .iter()
+        .any(|value| !value.trim().trim_start_matches('.').is_empty())
+}
+
 fn file_extension_suffix(file_name: &str) -> Option<String> {
     Path::new(file_name)
         .extension()
@@ -1153,9 +1160,9 @@ fn file_extension_suffix(file_name: &str) -> Option<String> {
 fn validate_storage_policy_options(
     value: &StoragePolicyOptions,
 ) -> std::result::Result<(), ValidationError> {
-    let normalized = value.clone().normalized();
-    let uses_storage_native_thumbnail = normalized.uses_storage_native_thumbnail();
-    let has_thumbnail_extensions = !normalized.thumbnail_extensions.is_empty();
+    let uses_storage_native_thumbnail = value.uses_storage_native_thumbnail();
+    let has_thumbnail_extensions =
+        has_normalizable_thumbnail_extension(&value.thumbnail_extensions);
 
     if uses_storage_native_thumbnail && !has_thumbnail_extensions {
         let mut error = ValidationError::new("invalid");

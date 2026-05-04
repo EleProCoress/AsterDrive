@@ -10,7 +10,16 @@ pub fn escape_like_query(query: &str) -> String {
 }
 
 pub fn lower_like_condition(column: impl IntoColumnRef + Copy, query: &str) -> SimpleExpr {
-    let pattern = format!("%{}%", escape_like_query(query)).to_lowercase();
+    let mut pattern = String::with_capacity(query.len() + 2);
+    pattern.push('%');
+    for ch in query.chars() {
+        match ch {
+            '%' => pattern.push_str("\\%"),
+            '_' => pattern.push_str("\\_"),
+            _ => pattern.extend(ch.to_lowercase()),
+        }
+    }
+    pattern.push('%');
     Expr::expr(Func::lower(Expr::col(column))).like(pattern)
 }
 

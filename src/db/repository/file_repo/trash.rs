@@ -107,7 +107,7 @@ pub async fn delete_many<C: ConnectionTrait>(db: &C, ids: &[i64]) -> Result<()> 
         return Ok(());
     }
     File::delete_many()
-        .filter(file::Column::Id.is_in(ids.to_vec()))
+        .filter(file::Column::Id.is_in(ids.iter().copied()))
         .exec(db)
         .await
         .map_err(AsterError::from)?;
@@ -134,7 +134,7 @@ pub async fn soft_delete_many<C: ConnectionTrait>(
     }
     File::update_many()
         .col_expr(file::Column::DeletedAt, Expr::value(Some(now)))
-        .filter(file::Column::Id.is_in(ids.to_vec()))
+        .filter(file::Column::Id.is_in(ids.iter().copied()))
         .exec(db)
         .await
         .map_err(AsterError::from)?;
@@ -164,7 +164,7 @@ pub async fn restore_many<C: ConnectionTrait>(db: &C, ids: &[i64]) -> Result<()>
             file::Column::DeletedAt,
             Expr::value(Option::<chrono::DateTime<Utc>>::None),
         )
-        .filter(file::Column::Id.is_in(ids.to_vec()))
+        .filter(file::Column::Id.is_in(ids.iter().copied()))
         .exec(db)
         .await
         .map_err(|err| {

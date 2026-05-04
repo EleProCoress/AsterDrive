@@ -82,7 +82,7 @@ pub async fn move_many_to_folder<C: ConnectionTrait>(
     File::update_many()
         .col_expr(file::Column::FolderId, Expr::value(folder_id))
         .col_expr(file::Column::UpdatedAt, Expr::value(now))
-        .filter(file::Column::Id.is_in(ids.to_vec()))
+        .filter(file::Column::Id.is_in(ids.iter().copied()))
         .exec(db)
         .await
         .map_err(|err| {

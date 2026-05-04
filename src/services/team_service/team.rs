@@ -28,8 +28,8 @@ pub async fn list_teams(
         return Ok(vec![]);
     }
 
-    let teams_only: Vec<team::Model> = memberships.iter().map(|(_, team)| team.clone()).collect();
-    let (creator_usernames, member_counts) = load_team_metadata(state, &teams_only).await?;
+    let (creator_usernames, member_counts) =
+        load_team_metadata(state, memberships.iter().map(|(_, team)| team)).await?;
 
     let mut teams = Vec::with_capacity(memberships.len());
     for (membership, team) in memberships {

@@ -250,10 +250,14 @@ impl S3Driver {
 
     fn truncate_for_log(text: &str, limit: usize) -> String {
         let mut result = String::new();
-        for ch in text.chars().take(limit) {
+        let mut chars = text.chars();
+        for _ in 0..limit {
+            let Some(ch) = chars.next() else {
+                return result;
+            };
             result.push(ch);
         }
-        if text.chars().count() > limit {
+        if chars.next().is_some() {
             result.push_str("...");
         }
         result
