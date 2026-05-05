@@ -70,6 +70,20 @@ macro_rules! multipart_request {
     }};
 }
 
+fn build_binary_multipart_payload(filename: &str, data: &[u8]) -> (String, Vec<u8>) {
+    let boundary = format!("----AsterTeamBoundary{}", uuid::Uuid::new_v4().simple());
+    let mut payload = Vec::new();
+    payload.extend_from_slice(format!("--{boundary}\r\n").as_bytes());
+    payload.extend_from_slice(
+        format!("Content-Disposition: form-data; name=\"file\"; filename=\"{filename}\"\r\n")
+            .as_bytes(),
+    );
+    payload.extend_from_slice(b"Content-Type: application/octet-stream\r\n\r\n");
+    payload.extend_from_slice(data);
+    payload.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
+    (boundary, payload)
+}
+
 async fn set_default_policy_chunk_size(
     state: &aster_drive::runtime::PrimaryAppState,
     chunk_size: i64,
@@ -2100,6 +2114,70 @@ async fn test_team_space_chunked_upload_flow_and_personal_route_rejection() {
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 403);
+}
+
+#[actix_web::test]
+async fn test_team_empty_upload_flow_uses_direct_and_creates_file() {
+    let state = common::setup().await;
+    let db = state.db.clone();
+    let mail_sender = state.mail_sender.clone();
+    let app = create_test_app!(state);
+
+    let _owner_id = register_user!(
+        app,
+        db,
+        mail_sender,
+        "spaceempty",
+        "spaceempty@example.com",
+        "password123"
+    );
+    let owner_token = login_user!(app, "spaceempty", "password123");
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/teams")
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
+        .set_json(serde_json::json!({ "name": "Empty Upload Team" }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let team_id = body["data"]["id"].as_i64().unwrap();
+
+    let req = test::TestRequest::post()
+        .uri(&format!("/api/v1/teams/{team_id}/files/upload/init"))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
+        .set_json(serde_json::json!({
+            "filename": "empty-team.txt",
+            "total_size": 0
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["mode"], "direct");
+    assert!(body["data"]["upload_id"].is_null());
+
+    let (boundary, payload) = build_binary_multipart_payload("empty-team.txt", b"");
+    let req = test::TestRequest::post()
+        .uri(&format!(
+            "/api/v1/teams/{team_id}/files/upload?declared_size=0"
+        ))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
+        .insert_header((
+            "Content-Type",
+            format!("multipart/form-data; boundary={boundary}"),
+        ))
+        .set_payload(payload)
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["name"], "empty-team.txt");
+    assert_eq!(body["data"]["team_id"].as_i64().unwrap(), team_id);
+    assert_eq!(body["data"]["size"], 0);
 }
 
 #[actix_web::test]

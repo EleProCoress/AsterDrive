@@ -144,8 +144,8 @@ mod tests {
 
     #[derive(validator::Validate)]
     struct SizeReq {
-        #[validate(range(min = 1, message = "total_size must be positive"))]
-        total_size: i64,
+        #[validate(range(min = 1, message = "page_size must be positive"))]
+        page_size: i64,
     }
 
     #[test]
@@ -159,8 +159,8 @@ mod tests {
 
     #[test]
     fn validate_request_surfaces_range_messages() {
-        let err = validate_request(&SizeReq { total_size: 0 }).unwrap_err();
-        assert_eq!(err.message(), "total_size must be positive");
+        let err = validate_request(&SizeReq { page_size: 0 }).unwrap_err();
+        assert_eq!(err.message(), "page_size must be positive");
     }
 
     #[derive(validator::Validate)]

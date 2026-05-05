@@ -741,7 +741,74 @@ async fn test_init_upload_validates_filename_and_total_size() {
         }))
         .to_request();
     let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["mode"], "direct");
+    assert!(body["data"]["upload_id"].is_null());
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/files/upload/init")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .set_json(serde_json::json!({
+            "filename": "negative.bin",
+            "total_size": -1
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 400);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["msg"], "total_size cannot be negative");
+}
+
+#[actix_web::test]
+async fn test_empty_file_upload_flow_uses_direct_and_creates_file() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/files/upload/init")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .set_json(serde_json::json!({
+            "filename": "empty-upload.txt",
+            "total_size": 0
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["mode"], "direct");
+    assert!(body["data"]["upload_id"].is_null());
+
+    let (boundary, payload) = build_multipart_payload("empty-upload.txt", b"");
+    let req = test::TestRequest::post()
+        .uri("/api/v1/files/upload?declared_size=0")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .insert_header((
+            "Content-Type",
+            format!("multipart/form-data; boundary={boundary}"),
+        ))
+        .set_payload(payload)
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let file_id = body["data"]["id"].as_i64().unwrap();
+    assert_eq!(body["data"]["name"], "empty-upload.txt");
+    assert_eq!(body["data"]["size"], 0);
+
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/files/{file_id}/download"))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let bytes = test::read_body(resp).await;
+    assert!(bytes.is_empty());
 }
 
 #[actix_web::test]

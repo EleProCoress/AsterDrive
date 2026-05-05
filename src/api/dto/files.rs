@@ -71,7 +71,7 @@ pub struct FileQuery {
 pub struct InitUploadReq {
     #[validate(custom(function = "crate::api::dto::validation::validate_name"))]
     pub filename: String,
-    #[validate(range(min = 1, message = "total_size must be positive"))]
+    #[validate(range(min = 0, message = "total_size cannot be negative"))]
     pub total_size: i64,
     pub folder_id: Option<i64>,
     pub relative_path: Option<String>,

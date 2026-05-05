@@ -114,6 +114,12 @@ async fn resolve_init_upload_policy(
     folder_id: Option<i64>,
     total_size: i64,
 ) -> Result<storage_policy::Model> {
+    if total_size < 0 {
+        return Err(AsterError::validation_error(
+            "total_size cannot be negative",
+        ));
+    }
+
     // upload 模式协商建立在“最终会写到哪条策略”之上，而不是客户端自己传 mode。
     let policy =
         workspace_storage_service::resolve_policy_for_size(state, scope, folder_id, total_size)

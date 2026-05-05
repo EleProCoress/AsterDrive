@@ -14,7 +14,7 @@ use crate::types::DriverType;
 
 use super::{
     StoreFromTempHints, StoreFromTempParams, StorePreuploadedNondedupParams, WorkspaceStorageScope,
-    check_quota, cleanup_preuploaded_blob_upload, ensure_upload_parent_path,
+    check_quota, cleanup_preuploaded_blob_upload, create_empty, ensure_upload_parent_path,
     local_content_dedup_enabled, parse_relative_upload_path, prepare_non_dedup_blob_upload,
     resolve_policy_for_size, store_from_temp, store_from_temp_with_hints,
     store_preuploaded_nondedup, streaming_direct_upload_eligible, verify_folder_access,
@@ -81,6 +81,13 @@ fn upload_temp_file_flush_failed(message: String) -> AsterError {
 
 fn upload_empty_file_error() -> AsterError {
     validation_error_with_subcode("upload.empty_file", "empty file")
+}
+
+fn upload_size_mismatch_error(declared_size: i64, actual_size: i64) -> AsterError {
+    AsterError::validation_error(format!(
+        "size mismatch: declared {} bytes, received {} bytes",
+        declared_size, actual_size
+    ))
 }
 
 async fn upload_local_direct(
@@ -170,18 +177,14 @@ async fn upload_local_direct(
                 return Err(err);
             }
 
-            if size == 0 {
-                crate::utils::cleanup_temp_file(&staging_path).await;
-                return Err(upload_empty_file_error());
-            }
-
-            // 验证实际接收大小与声明大小一致
             if size != declared_size {
                 crate::utils::cleanup_temp_file(&staging_path).await;
-                return Err(AsterError::validation_error(format!(
-                    "size mismatch: declared {} bytes, received {} bytes",
-                    declared_size, size
-                )));
+                return Err(upload_size_mismatch_error(declared_size, size));
+            }
+
+            if size == 0 {
+                crate::utils::cleanup_temp_file(&staging_path).await;
+                return create_empty(state, scope, folder_id, &filename).await;
             }
 
             let precomputed_hash =
@@ -457,6 +460,7 @@ pub(crate) async fn upload(
     }
 
     let mut filename = String::from("unnamed");
+    let mut saw_file_field = false;
     let temp_dir = &state.config.server.temp_dir;
     let runtime_temp_dir = crate::utils::paths::runtime_temp_dir(temp_dir);
     let temp_path =
@@ -477,6 +481,7 @@ pub(crate) async fn upload(
             .and_then(|content| content.get_filename().map(|name| name.to_string()));
 
         if let Some(name) = is_file {
+            saw_file_field = true;
             filename = if relative_path.is_some() {
                 resolved_filename.clone()
             } else {
@@ -508,9 +513,21 @@ pub(crate) async fn upload(
         .map_aster_err_ctx("flush temp", upload_temp_file_flush_failed)?;
     drop(temp_file);
 
-    if size == 0 {
+    if !saw_file_field {
         crate::utils::cleanup_temp_file(&temp_path).await;
         return Err(upload_empty_file_error());
+    }
+
+    if let Some(declared_size) = declared_size
+        && size != declared_size
+    {
+        crate::utils::cleanup_temp_file(&temp_path).await;
+        return Err(upload_size_mismatch_error(declared_size, size));
+    }
+
+    if size == 0 {
+        crate::utils::cleanup_temp_file(&temp_path).await;
+        return create_empty(state, scope, effective_folder_id, &filename).await;
     }
 
     let result = store_from_temp(

@@ -50,6 +50,17 @@ async fn init_upload_for_scope(
             .await?;
     let transport = resolve_policy_upload_transport(&ctx.policy);
 
+    if ctx.total_size == 0 {
+        tracing::debug!(
+            scope = ?ctx.scope,
+            policy_id = ctx.policy.id,
+            mode = ?UploadMode::Direct,
+            folder_id = ctx.target.folder_id,
+            "selected direct upload mode for empty file"
+        );
+        return Ok(direct_upload_response());
+    }
+
     if let Some(response) = s3::init_s3_upload(state, &ctx).await? {
         return Ok(response);
     }
