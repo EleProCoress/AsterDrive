@@ -17,7 +17,7 @@ pub struct TrashFileItem {
     #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
     pub updated_at: chrono::DateTime<chrono::Utc>,
     #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
-    pub deleted_at: chrono::DateTime<chrono::Utc>,
+    pub expires_at: chrono::DateTime<chrono::Utc>,
     pub is_locked: bool,
     pub original_path: String,
 }
@@ -32,7 +32,7 @@ pub struct TrashFolderItem {
     #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
     pub updated_at: chrono::DateTime<chrono::Utc>,
     #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
-    pub deleted_at: chrono::DateTime<chrono::Utc>,
+    pub expires_at: chrono::DateTime<chrono::Utc>,
     pub is_locked: bool,
     pub original_path: String,
 }
@@ -51,6 +51,6 @@ pub struct TrashContents {
 #[derive(Serialize)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct TrashFileCursor {
-    pub deleted_at: chrono::DateTime<chrono::Utc>,
+    pub expires_at: chrono::DateTime<chrono::Utc>,
     pub id: i64,
 }

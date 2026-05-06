@@ -14,7 +14,23 @@ use crate::services::{
 };
 use crate::types::EntityType;
 
+use super::DEFAULT_RETENTION_DAYS;
 use super::models::{TrashFileItem, TrashFolderItem};
+
+pub fn load_retention_days(state: &PrimaryAppState) -> i64 {
+    state
+        .runtime_config
+        .get_i64("trash_retention_days")
+        .unwrap_or_else(|| {
+            if let Some(raw) = state.runtime_config.get("trash_retention_days") {
+                tracing::warn!(
+                    "invalid trash_retention_days value '{}', using default",
+                    raw
+                );
+            }
+            DEFAULT_RETENTION_DAYS
+        })
+}
 
 pub(super) async fn build_trash_path_cache(
     db: &DatabaseConnection,
@@ -35,7 +51,11 @@ pub(super) async fn build_trash_path_cache(
 pub(super) fn build_trash_file_item(
     file: file::Model,
     folder_paths: &HashMap<i64, String>,
+    retention_days: i64,
 ) -> Result<TrashFileItem> {
+    let deleted_at = file
+        .deleted_at
+        .ok_or_else(|| AsterError::validation_error("file is not in trash"))?;
     Ok(TrashFileItem {
         id: file.id,
         name: file.name,
@@ -43,9 +63,7 @@ pub(super) fn build_trash_file_item(
         mime_type: file.mime_type,
         created_at: file.created_at,
         updated_at: file.updated_at,
-        deleted_at: file
-            .deleted_at
-            .ok_or_else(|| AsterError::validation_error("file is not in trash"))?,
+        expires_at: deleted_at + chrono::Duration::days(retention_days),
         is_locked: file.is_locked,
         original_path: resolve_folder_path(folder_paths, file.folder_id)?,
     })
@@ -54,15 +72,17 @@ pub(super) fn build_trash_file_item(
 pub(super) fn build_trash_folder_item(
     folder: folder::Model,
     folder_paths: &HashMap<i64, String>,
+    retention_days: i64,
 ) -> Result<TrashFolderItem> {
+    let deleted_at = folder
+        .deleted_at
+        .ok_or_else(|| AsterError::validation_error("folder is not in trash"))?;
     Ok(TrashFolderItem {
         id: folder.id,
         name: folder.name,
         created_at: folder.created_at,
         updated_at: folder.updated_at,
-        deleted_at: folder
-            .deleted_at
-            .ok_or_else(|| AsterError::validation_error("folder is not in trash"))?,
+        expires_at: deleted_at + chrono::Duration::days(retention_days),
         is_locked: folder.is_locked,
         original_path: resolve_folder_path(folder_paths, folder.parent_id)?,
     })

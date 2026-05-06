@@ -25,7 +25,7 @@ describe("trashService", () => {
 	it("uses the expected trash list and restore routes", () => {
 		const params = {
 			file_limit: 100,
-			file_after_deleted_at: "2026-03-28T00:00:00Z",
+			file_after_expires_at: "2026-04-04T00:00:00Z",
 			file_after_id: 9,
 		};
 

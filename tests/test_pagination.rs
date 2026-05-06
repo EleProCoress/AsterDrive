@@ -343,13 +343,13 @@ async fn test_trash_pagination() {
         cursor.is_object(),
         "should have next_file_cursor after page 1"
     );
-    let after_deleted_at = cursor["deleted_at"].as_str().unwrap();
+    let after_expires_at = cursor["expires_at"].as_str().unwrap();
     let after_id = cursor["id"].as_i64().unwrap();
 
     // Page 2: use cursor, should get remaining 2 files and no more cursor
     let req = test::TestRequest::get()
         .uri(&format!(
-            "/api/v1/trash?folder_limit=0&file_limit=3&file_after_deleted_at={after_deleted_at}&file_after_id={after_id}"
+            "/api/v1/trash?folder_limit=0&file_limit=3&file_after_expires_at={after_expires_at}&file_after_id={after_id}"
         ))
         .insert_header(("Cookie", common::access_cookie_header(&token)))
         .insert_header(common::csrf_header_for(&token))

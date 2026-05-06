@@ -41,6 +41,9 @@ async fn test_trash_restore_purge() {
     assert_eq!(resp.status(), 200);
     let body: Value = test::read_body_json(resp).await;
     assert_eq!(body["data"]["files"].as_array().unwrap().len(), 1);
+    let trash_file = &body["data"]["files"][0];
+    assert!(trash_file["expires_at"].is_string());
+    assert!(trash_file.get("deleted_at").is_none());
 
     // 恢复
     let req = test::TestRequest::post()

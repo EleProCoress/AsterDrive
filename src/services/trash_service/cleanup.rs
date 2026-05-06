@@ -10,24 +10,11 @@ use crate::errors::Result;
 use crate::runtime::PrimaryAppState;
 use crate::services::{file_service, workspace_storage_service::WorkspaceStorageScope};
 
-use super::DEFAULT_RETENTION_DAYS;
-use super::common::recursive_purge_folder_in_scope;
+use super::common::{load_retention_days, recursive_purge_folder_in_scope};
 
 /// 自动清理过期回收站条目（后台任务调用）
 pub async fn cleanup_expired(state: &PrimaryAppState) -> Result<u32> {
-    let retention_days = state
-        .runtime_config
-        .get_i64("trash_retention_days")
-        .unwrap_or_else(|| {
-            if let Some(raw) = state.runtime_config.get("trash_retention_days") {
-                tracing::warn!(
-                    "invalid trash_retention_days value '{}', using default",
-                    raw
-                );
-            }
-            DEFAULT_RETENTION_DAYS
-        });
-
+    let retention_days = load_retention_days(state);
     let cutoff = Utc::now() - Duration::days(retention_days);
     let mut count: u32 = 0;
 

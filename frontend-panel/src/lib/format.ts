@@ -139,6 +139,46 @@ export function formatDate(dateStr: string, i18n?: DateFormatI18n): string {
 	);
 }
 
+export function formatDateUntil(
+	dateStr: string,
+	i18n?: DateFormatI18n,
+): string {
+	const date = new Date(dateStr);
+	const now = new Date();
+	const diff = date.getTime() - now.getTime();
+	if (diff <= 0) {
+		return translateRelativeDate(i18n, "core:expired", "expired");
+	}
+
+	const minutes = Math.ceil(diff / 60000);
+	if (minutes < 60) {
+		return translateRelativeDate(
+			i18n,
+			"core:date_relative_minutes_later",
+			`in ${minutes}m`,
+			minutes,
+		);
+	}
+
+	const hours = Math.ceil(diff / 3600000);
+	if (hours < 24) {
+		return translateRelativeDate(
+			i18n,
+			"core:date_relative_hours_later",
+			`in ${hours}h`,
+			hours,
+		);
+	}
+
+	const days = Math.ceil(diff / 86400000);
+	return translateRelativeDate(
+		i18n,
+		"core:date_relative_days_later",
+		`in ${days}d`,
+		days,
+	);
+}
+
 export function formatDateAbsolute(dateStr: string): string {
 	return new Date(dateStr).toLocaleString(
 		undefined,

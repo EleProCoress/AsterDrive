@@ -4797,13 +4797,13 @@ export interface components {
         };
         TrashFileCursor: {
             /** Format: date-time */
-            deleted_at: string;
+            expires_at: string;
             /** Format: int64 */
             id: number;
         };
         TrashFileItem: {
             created_at: string;
-            deleted_at: string;
+            expires_at: string;
             /** Format: int64 */
             id: number;
             is_locked: boolean;
@@ -4816,7 +4816,7 @@ export interface components {
         };
         TrashFolderItem: {
             created_at: string;
-            deleted_at: string;
+            expires_at: string;
             /** Format: int64 */
             id: number;
             is_locked: boolean;
@@ -16908,8 +16908,8 @@ export interface operations {
                 folder_offset?: number | null;
                 /** @description 文件最大返回数量（默认 100，最大 1000；传 0 跳过文件查询） */
                 file_limit?: number | null;
-                /** @description cursor 分页：上一页最后一条文件的 deleted_at（ISO 8601） */
-                file_after_deleted_at?: string | null;
+                /** @description cursor 分页：上一页最后一条文件的 expires_at（ISO 8601） */
+                file_after_expires_at?: string | null;
                 /** @description cursor 分页：上一页最后一条文件的 id */
                 file_after_id?: number | null;
             };
@@ -17106,8 +17106,8 @@ export interface operations {
                 folder_offset?: number | null;
                 /** @description 文件最大返回数量（默认 100，最大 1000；传 0 跳过文件查询） */
                 file_limit?: number | null;
-                /** @description cursor 分页：上一页最后一条文件的 deleted_at（ISO 8601） */
-                file_after_deleted_at?: string | null;
+                /** @description cursor 分页：上一页最后一条文件的 expires_at（ISO 8601） */
+                file_after_expires_at?: string | null;
                 /** @description cursor 分页：上一页最后一条文件的 id */
                 file_after_id?: number | null;
             };

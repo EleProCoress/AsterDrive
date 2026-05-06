@@ -67,16 +67,14 @@ vi.mock("@/components/ui/item-checkbox", () => ({
 
 vi.mock("@/lib/format", () => ({
 	formatBytes: (value: number) => `bytes:${value}`,
-	formatDate: (value: string) => `date:${value}`,
-	formatDateAbsolute: (value: string) => `absolute:${value}`,
-	formatDateAbsoluteWithOffset: (value: string) =>
-		`absolute-with-offset:${value}`,
+	formatDateUntil: (value: string) => `until:${value}`,
+	formatDateTimeWithOffset: (value: string) => `datetime-with-offset:${value}`,
 }));
 
 function createFileItem(overrides: Partial<TrashItem> = {}) {
 	return {
-		deleted_at: "2026-03-28T00:00:00Z",
 		entity_type: "file",
+		expires_at: "2026-04-04T00:00:00Z",
 		id: 1,
 		mime_type: "application/pdf",
 		name: "report.pdf",
@@ -88,8 +86,8 @@ function createFileItem(overrides: Partial<TrashItem> = {}) {
 
 function createFolderItem(overrides: Partial<TrashItem> = {}) {
 	return {
-		deleted_at: "2026-03-29T00:00:00Z",
 		entity_type: "folder",
+		expires_at: "2026-04-05T00:00:00Z",
 		id: 2,
 		name: "Projects",
 		original_path: "/",
@@ -121,7 +119,7 @@ describe("TrashTable", () => {
 			screen.getByText("file-icon:report.pdf:application/pdf"),
 		).toBeInTheDocument();
 		expect(screen.getByText("/Docs")).toBeInTheDocument();
-		expect(screen.getByText("date:2026-03-28T00:00:00Z")).toBeInTheDocument();
+		expect(screen.getByText("until:2026-04-04T00:00:00Z")).toBeInTheDocument();
 		expect(screen.getByText("bytes:12")).toBeInTheDocument();
 		expect(screen.getByText("Projects")).toBeInTheDocument();
 		expect(screen.getByText("files:root")).toBeInTheDocument();

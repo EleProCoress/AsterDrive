@@ -8,6 +8,7 @@ import {
 	formatDateShort,
 	formatDateTime,
 	formatDateTimeWithOffset,
+	formatDateUntil,
 	formatNumber,
 } from "@/lib/format";
 import {
@@ -34,6 +35,14 @@ function createI18nStub(
 					return language === "zh" ? `${count}小时前` : `${count}h ago`;
 				case "core:date_relative_days_ago":
 					return language === "zh" ? `${count}天前` : `${count}d ago`;
+				case "core:date_relative_minutes_later":
+					return language === "zh" ? `${count}分钟后` : `in ${count}m`;
+				case "core:date_relative_hours_later":
+					return language === "zh" ? `${count}小时后` : `in ${count}h`;
+				case "core:date_relative_days_later":
+					return language === "zh" ? `${count}天后` : `in ${count}d`;
+				case "core:expired":
+					return language === "zh" ? "已过期" : "Expired";
 				default:
 					return key;
 			}
@@ -99,6 +108,22 @@ describe("format helpers", () => {
 		expect(formatDate("2026-03-25T12:00:00Z", zhI18n)).toBe("3天前");
 	});
 
+	it("formats future relative dates until expiry", () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(new Date("2026-03-28T12:00:00Z"));
+		const enI18n = createI18nStub("en");
+		const zhI18n = createI18nStub("zh");
+
+		expect(formatDateUntil("2026-03-28T12:00:20Z", enI18n)).toBe("in 1m");
+		expect(formatDateUntil("2026-03-28T12:05:00Z", enI18n)).toBe("in 5m");
+		expect(formatDateUntil("2026-03-28T14:00:00Z", enI18n)).toBe("in 2h");
+		expect(formatDateUntil("2026-04-04T12:00:00Z", enI18n)).toBe("in 7d");
+		expect(formatDateUntil("2026-03-28T12:05:00Z", zhI18n)).toBe("5分钟后");
+		expect(formatDateUntil("2026-03-28T14:00:00Z", zhI18n)).toBe("2小时后");
+		expect(formatDateUntil("2026-04-04T12:00:00Z", zhI18n)).toBe("7天后");
+		expect(formatDateUntil("2026-03-28T11:59:00Z", zhI18n)).toBe("已过期");
+	});
+
 	it("uses the i18n locale when formatDate falls back to calendar dates", () => {
 		vi.useFakeTimers();
 		vi.setSystemTime(new Date("2026-03-28T12:00:00Z"));
@@ -121,6 +146,10 @@ describe("format helpers", () => {
 		expect(formatDate("2026-03-28T11:55:00Z")).toBe("5m ago");
 		expect(formatDate("2026-03-28T10:00:00Z")).toBe("2h ago");
 		expect(formatDate("2026-03-25T12:00:00Z")).toBe("3d ago");
+		expect(formatDateUntil("2026-03-28T12:05:00Z")).toBe("in 5m");
+		expect(formatDateUntil("2026-03-28T14:00:00Z")).toBe("in 2h");
+		expect(formatDateUntil("2026-04-04T12:00:00Z")).toBe("in 7d");
+		expect(formatDateUntil("2026-03-28T11:59:00Z")).toBe("expired");
 		expect(formatDate(value)).toBe(
 			new Date(value).toLocaleDateString(undefined, {
 				timeZone: getActiveDisplayTimeZone(),

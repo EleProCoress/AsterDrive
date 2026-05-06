@@ -17,7 +17,7 @@
 
 - `folder_limit` / `folder_offset`
 - `file_limit`
-- `file_after_deleted_at` / `file_after_id`
+- `file_after_expires_at` / `file_after_id`
 
 返回体会带：
 
@@ -27,7 +27,7 @@
 - `files_total`
 - `next_file_cursor`
 
-也就是说，回收站和普通目录列表一样，文件夹用 offset 分页，文件用 cursor 分页。
+也就是说，回收站和普通目录列表一样，文件夹用 offset 分页，文件用 cursor 分页。回收站条目返回 `expires_at`，表示该条目按当前 `trash_retention_days` 计算出的自动清理时间。
 
 ## 恢复与清理规则
 

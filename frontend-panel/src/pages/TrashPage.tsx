@@ -57,7 +57,7 @@ function toTrashItems(contents: TrashContents): TrashItem[] {
 		),
 	].sort(
 		(a, b) =>
-			new Date(b.deleted_at).getTime() - new Date(a.deleted_at).getTime(),
+			new Date(b.expires_at).getTime() - new Date(a.expires_at).getTime(),
 	);
 }
 
@@ -113,7 +113,7 @@ export default function TrashPage() {
 			const data = await trashService.list({
 				folder_limit: 0,
 				file_limit: TRASH_PAGE_SIZE,
-				file_after_deleted_at: contents.next_file_cursor.deleted_at,
+				file_after_expires_at: contents.next_file_cursor.expires_at,
 				file_after_id: contents.next_file_cursor.id,
 			});
 			setContents((prev) => ({

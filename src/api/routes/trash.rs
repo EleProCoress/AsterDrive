@@ -51,13 +51,16 @@ pub async fn list_trash(
     claims: web::ReqData<Claims>,
     query: web::Query<TrashListQuery>,
 ) -> Result<HttpResponse> {
+    let file_cursor = query.file_cursor().map(|(expires_at, id)| {
+        trash_service::expires_cursor_to_deleted_cursor(&state, expires_at, id)
+    });
     let contents = trash_service::list_trash(
         &state,
         claims.user_id,
         query.folder_limit(),
         query.folder_offset(),
         query.file_limit(),
-        query.file_cursor(),
+        file_cursor,
     )
     .await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(contents)))
@@ -211,6 +214,9 @@ pub(crate) async fn team_list_trash(
     query: web::Query<TrashListQuery>,
 ) -> Result<HttpResponse> {
     let team_id = *path;
+    let file_cursor = query.file_cursor().map(|(expires_at, id)| {
+        trash_service::expires_cursor_to_deleted_cursor(&state, expires_at, id)
+    });
     let contents = trash_service::list_team_trash(
         &state,
         team_id,
@@ -218,7 +224,7 @@ pub(crate) async fn team_list_trash(
         query.folder_limit(),
         query.folder_offset(),
         query.file_limit(),
-        query.file_cursor(),
+        file_cursor,
     )
     .await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(contents)))

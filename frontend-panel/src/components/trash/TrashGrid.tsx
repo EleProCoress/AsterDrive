@@ -6,8 +6,8 @@ import { Icon } from "@/components/ui/icon";
 import { ItemCheckbox } from "@/components/ui/item-checkbox";
 import {
 	formatBytes,
-	formatDate,
-	formatDateAbsoluteWithOffset,
+	formatDateTimeWithOffset,
+	formatDateUntil,
 } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { TrashItem } from "@/types/api-helpers";
@@ -98,12 +98,12 @@ export function TrashGrid({
 									</p>
 								</div>
 								<div className="space-y-1">
-									<p>{t("admin:deleted_at")}</p>
+									<p>{t("files:trash_expires_at")}</p>
 									<p
 										className="font-medium text-foreground"
-										title={formatDateAbsoluteWithOffset(item.deleted_at)}
+										title={formatDateTimeWithOffset(item.expires_at)}
 									>
-										{formatDate(item.deleted_at, i18n)}
+										{formatDateUntil(item.expires_at, i18n)}
 									</p>
 								</div>
 								<div className="space-y-1">

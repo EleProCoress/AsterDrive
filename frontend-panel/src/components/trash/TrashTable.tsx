@@ -13,8 +13,8 @@ import {
 } from "@/components/ui/table";
 import {
 	formatBytes,
-	formatDate,
-	formatDateAbsoluteWithOffset,
+	formatDateTimeWithOffset,
+	formatDateUntil,
 } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { TrashItem } from "@/types/api-helpers";
@@ -58,7 +58,9 @@ export function TrashTable({
 					</TableHead>
 					<TableHead>{t("name")}</TableHead>
 					<TableHead>{t("original_location")}</TableHead>
-					<TableHead className="w-[160px]">{t("admin:deleted_at")}</TableHead>
+					<TableHead className="w-[180px]">
+						{t("files:trash_expires_at")}
+					</TableHead>
 					<TableHead className="w-[100px]">{t("size")}</TableHead>
 					<TableHead className="w-[180px] text-right">{t("actions")}</TableHead>
 				</TableRow>
@@ -116,8 +118,8 @@ export function TrashTable({
 							>
 								{originalPath}
 							</TableCell>
-							<TableCell title={formatDateAbsoluteWithOffset(item.deleted_at)}>
-								{formatDate(item.deleted_at, i18n)}
+							<TableCell title={formatDateTimeWithOffset(item.expires_at)}>
+								{formatDateUntil(item.expires_at, i18n)}
 							</TableCell>
 							<TableCell>
 								{item.entity_type === "file" ? formatBytes(item.size) : "—"}

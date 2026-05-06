@@ -6,8 +6,19 @@ use crate::runtime::PrimaryAppState;
 use crate::services::workspace_storage_service::{self, WorkspaceStorageScope};
 use crate::utils::numbers::usize_to_u64;
 
-use super::common::{build_trash_file_item, build_trash_folder_item, build_trash_path_cache};
+use super::common::{
+    build_trash_file_item, build_trash_folder_item, build_trash_path_cache, load_retention_days,
+};
 use super::models::{TrashContents, TrashFileCursor};
+
+pub fn expires_cursor_to_deleted_cursor(
+    state: &PrimaryAppState,
+    expires_at: chrono::DateTime<chrono::Utc>,
+    id: i64,
+) -> (chrono::DateTime<chrono::Utc>, i64) {
+    let retention_days = load_retention_days(state);
+    (expires_at - chrono::Duration::days(retention_days), id)
+}
 
 async fn list_trash_in_scope(
     state: &PrimaryAppState,
@@ -26,6 +37,7 @@ async fn list_trash_in_scope(
         "listing trash contents"
     );
     workspace_storage_service::require_scope_access(state, scope).await?;
+    let retention_days = load_retention_days(state);
 
     let (raw_folders, folders_total) = match scope {
         WorkspaceStorageScope::Personal { user_id } => {
@@ -70,7 +82,7 @@ async fn list_trash_in_scope(
     let next_file_cursor = if file_limit > 0 && raw_file_count == file_limit {
         raw_files.last().and_then(|file| {
             file.deleted_at.map(|deleted_at| TrashFileCursor {
-                deleted_at,
+                expires_at: deleted_at + chrono::Duration::days(retention_days),
                 id: file.id,
             })
         })
@@ -80,12 +92,12 @@ async fn list_trash_in_scope(
 
     let folders = raw_folders
         .into_iter()
-        .map(|folder| build_trash_folder_item(folder, &folder_paths))
+        .map(|folder| build_trash_folder_item(folder, &folder_paths, retention_days))
         .collect::<Result<Vec<_>>>()?;
 
     let files = raw_files
         .into_iter()
-        .map(|file| build_trash_file_item(file, &folder_paths))
+        .map(|file| build_trash_file_item(file, &folder_paths, retention_days))
         .collect::<Result<Vec<_>>>()?;
 
     let contents = TrashContents {

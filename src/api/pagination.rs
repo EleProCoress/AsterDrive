@@ -180,8 +180,8 @@ pub struct TrashListQuery {
     pub folder_offset: Option<u64>,
     /// 文件最大返回数量（默认 100，最大 1000；传 0 跳过文件查询）
     pub file_limit: Option<u64>,
-    /// cursor 分页：上一页最后一条文件的 deleted_at（ISO 8601）
-    pub file_after_deleted_at: Option<String>,
+    /// cursor 分页：上一页最后一条文件的 expires_at（ISO 8601）
+    pub file_after_expires_at: Option<String>,
     /// cursor 分页：上一页最后一条文件的 id
     pub file_after_id: Option<i64>,
 }
@@ -204,7 +204,7 @@ impl TrashListQuery {
     }
 
     pub fn file_cursor(&self) -> Option<(chrono::DateTime<chrono::Utc>, i64)> {
-        match (&self.file_after_deleted_at, self.file_after_id) {
+        match (&self.file_after_expires_at, self.file_after_id) {
             (Some(dt_str), Some(id)) => dt_str
                 .parse::<chrono::DateTime<chrono::Utc>>()
                 .ok()

@@ -306,8 +306,8 @@ vi.mock("@/stores/authStore", () => ({
 }));
 
 const fileItem = {
-	deleted_at: "2026-04-01T00:00:00Z",
 	entity_type: "file",
+	expires_at: "2026-04-08T00:00:00Z",
 	id: 1,
 	name: "report.pdf",
 	original_path: "/Docs",

@@ -1959,12 +1959,12 @@ async fn test_team_trash_pagination_preserves_totals_and_membership() {
         next_file_cursor.is_object(),
         "should have next_file_cursor after first page"
     );
-    let after_deleted_at = next_file_cursor["deleted_at"].as_str().unwrap();
+    let after_expires_at = next_file_cursor["expires_at"].as_str().unwrap();
     let after_id = next_file_cursor["id"].as_i64().unwrap();
 
     let req = test::TestRequest::get()
         .uri(&format!(
-            "/api/v1/teams/{team_id}/trash?folder_limit=0&file_limit=3&file_after_deleted_at={after_deleted_at}&file_after_id={after_id}"
+            "/api/v1/teams/{team_id}/trash?folder_limit=0&file_limit=3&file_after_expires_at={after_expires_at}&file_after_id={after_id}"
         ))
         .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
         .insert_header(common::csrf_header_for(&owner_token))
