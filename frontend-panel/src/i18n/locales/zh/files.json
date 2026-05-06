@@ -223,6 +223,8 @@
 	"upload_resume_mismatch": "所选文件与已保存的上传会话不一致（期望 {{name}}，{{size}}）",
 	"upload_resume_found": "发现 {{count}} 个可恢复的上传",
 	"upload_resume_expired": "上传会话已过期",
+	"upload_empty": "暂无上传任务",
+	"upload_summary_empty": "没有正在上传的文件",
 	"clipboard_copied": "已复制 {{count}} 项到剪贴板",
 	"clipboard_cut": "已剪切 {{count}} 项",
 	"info": "详细信息",

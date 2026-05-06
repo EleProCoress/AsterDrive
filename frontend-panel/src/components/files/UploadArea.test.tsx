@@ -59,7 +59,10 @@ vi.mock("react-i18next", () => ({
 
 vi.mock("@/components/files/UploadPanel", () => ({
 	UploadPanel: (props: {
+		emptyText: string;
+		open: boolean;
 		overallProgress?: number;
+		summary: string;
 		tasks: Array<{
 			id: string;
 			mode: string;
@@ -71,8 +74,10 @@ vi.mock("@/components/files/UploadPanel", () => ({
 	}) => {
 		uploadPanelSpy(props);
 		return (
-			<div data-testid="upload-panel">
+			<div data-testid="upload-panel" data-open={String(props.open)}>
 				<div>{`overall:${props.overallProgress ?? 0}`}</div>
+				<div>{props.summary}</div>
+				{props.tasks.length === 0 ? <div>{props.emptyText}</div> : null}
 				{props.tasks.map((task) => (
 					<div key={task.id}>
 						<div>{`${task.title}:${task.mode}:${task.status}:${task.progress}`}</div>
@@ -216,6 +221,22 @@ describe("UploadArea", () => {
 		vi.unstubAllEnvs();
 	});
 
+	it("hides the upload panel before any upload activity", async () => {
+		const { UploadArea } = await import("@/components/files/UploadArea");
+
+		render(
+			<UploadArea>
+				<div>content</div>
+			</UploadArea>,
+		);
+
+		expect(screen.queryByTestId("upload-panel")).not.toBeInTheDocument();
+		await waitFor(() => {
+			expect(listRecoverableSessions).toHaveBeenCalledTimes(1);
+		});
+		expect(screen.queryByTestId("upload-panel")).not.toBeInTheDocument();
+	});
+
 	it("handles direct uploads through the form-data endpoint", async () => {
 		initUpload.mockResolvedValue({ mode: "direct" });
 		apiClientPost.mockResolvedValue({});
@@ -347,8 +368,20 @@ describe("UploadArea", () => {
 			expect(apiClientPost).toHaveBeenCalledTimes(1);
 		});
 		await waitFor(() => {
-			expect(screen.queryByTestId("upload-panel")).not.toBeInTheDocument();
+			expect(screen.getByTestId("upload-panel")).toHaveAttribute(
+				"data-open",
+				"false",
+			);
 		});
+		expect(screen.getByText("files:upload_summary_empty")).toBeInTheDocument();
+		expect(screen.getByText("files:upload_empty")).toBeInTheDocument();
+		expect(uploadPanelSpy).toHaveBeenLastCalledWith(
+			expect.objectContaining({
+				open: false,
+				summary: "files:upload_summary_empty",
+				tasks: [],
+			}),
+		);
 		await waitFor(() => {
 			expect(refresh).toHaveBeenCalledTimes(1);
 			expect(refreshUser).toHaveBeenCalledTimes(1);

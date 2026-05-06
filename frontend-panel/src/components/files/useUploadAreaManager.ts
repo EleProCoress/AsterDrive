@@ -61,12 +61,14 @@ export function useUploadAreaManager({
 	const [uploadPanelOpen, setUploadPanelOpen] = useState(true);
 	const [uploadSettings, setUploadSettings] = useState(readUploadSettings);
 	const [tasks, setTasks] = useState<UploadTask[]>([]);
+	const [hasUploadActivity, setHasUploadActivity] = useState(false);
 	const tasksRef = useRef<UploadTask[]>([]);
 	const abortFlagsRef = useRef(new Map<string, boolean>());
 	const directAbortRef = useRef(new Map<string, AbortController>());
 	const presignedXhrRef = useRef(new Map<string, XMLHttpRequest>());
 	const multipartInFlightRef = useRef(new Map<string, number>());
 	const pendingRefreshFolderIdsRef = useRef(new Set<number | null>());
+	const previousTaskCountRef = useRef(0);
 	const queueWasActiveRef = useRef(false);
 	const resumeTaskIdRef = useRef<string | null>(null);
 	const restoredWorkspaceKeysRef = useRef(new Set<string>());
@@ -80,6 +82,16 @@ export function useUploadAreaManager({
 	useEffect(() => {
 		tasksRef.current = tasks;
 	}, [tasks]);
+
+	useEffect(() => {
+		const previousTaskCount = previousTaskCountRef.current;
+		if (tasks.length > 0) {
+			setHasUploadActivity(true);
+		} else if (previousTaskCount > 0) {
+			setUploadPanelOpen(false);
+		}
+		previousTaskCountRef.current = tasks.length;
+	}, [tasks.length]);
 
 	useEffect(() => {
 		return () => {
@@ -458,6 +470,7 @@ export function useUploadAreaManager({
 		activeCount,
 		clearCompletedTasks,
 		failedCount,
+		hasUploadActivity,
 		handleDragEnter,
 		handleDragLeave,
 		handleDragOver,

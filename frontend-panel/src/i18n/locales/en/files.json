@@ -223,6 +223,8 @@
 	"upload_resume_mismatch": "This file does not match the saved upload session (expected {{name}}, {{size}})",
 	"upload_resume_found": "Found {{count}} resumable upload(s)",
 	"upload_resume_expired": "Saved upload session expired",
+	"upload_empty": "No upload tasks",
+	"upload_summary_empty": "No active uploads",
 	"clipboard_copied": "{{count}} item(s) copied to clipboard",
 	"clipboard_cut": "{{count}} item(s) cut to clipboard",
 	"info": "Details",

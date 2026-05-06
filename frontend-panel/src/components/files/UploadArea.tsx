@@ -33,6 +33,7 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 			activeCount,
 			clearCompletedTasks,
 			failedCount,
+			hasUploadActivity,
 			handleDragEnter,
 			handleDragLeave,
 			handleDragOver,
@@ -60,6 +61,7 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 			resumeFileInputRef,
 			workspace,
 		});
+		const showUploadPanel = hasUploadActivity || uploadTasks.length > 0;
 
 		useImperativeHandle(
 			ref,
@@ -71,14 +73,16 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 		);
 
 		const uploadSummary =
-			totalCount > 0 && successCount === totalCount
-				? t("files:upload_summary_done", { total: totalCount })
-				: t("files:upload_summary", {
-						total: totalCount,
-						success: successCount,
-						failed: failedCount,
-						active: activeCount,
-					});
+			totalCount === 0
+				? t("files:upload_summary_empty")
+				: successCount === totalCount
+					? t("files:upload_summary_done", { total: totalCount })
+					: t("files:upload_summary", {
+							total: totalCount,
+							success: successCount,
+							failed: failedCount,
+							active: activeCount,
+						});
 
 		return (
 			<>
@@ -119,14 +123,14 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 				>
 					{children}
 
-					{uploadTasks.length > 0 && (
+					{showUploadPanel && (
 						<UploadPanel
 							open={uploadPanelOpen}
 							onToggle={() => setUploadPanelOpen((prev) => !prev)}
 							title={t("files:upload")}
 							summary={uploadSummary}
 							tasks={uploadTasks}
-							emptyText={t("no_data")}
+							emptyText={t("files:upload_empty")}
 							totalCount={totalCount}
 							successCount={successCount}
 							failedCount={failedCount}
