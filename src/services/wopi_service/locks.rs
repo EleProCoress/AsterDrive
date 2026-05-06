@@ -8,7 +8,10 @@ use crate::db::repository::lock_repo;
 use crate::entities::{file, resource_lock};
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::PrimaryAppState;
-use crate::services::lock_service;
+use crate::services::{
+    audit_service::{self, AuditRequestInfo},
+    lock_service,
+};
 use crate::types::EntityType;
 
 use super::session::{WopiAccessTokenPayload, resolve_access_token};
@@ -52,6 +55,7 @@ pub async fn lock_file(
     file_id: i64,
     access_token: &str,
     requested_lock: &str,
+    request_info: &AuditRequestInfo,
     request_source: WopiRequestSource<'_>,
 ) -> Result<WopiLockOperationResult> {
     let resolved = resolve_access_token(state, file_id, access_token, request_source).await?;
@@ -64,6 +68,14 @@ pub async fn lock_file(
             // 官方 key concepts 明确要求 lock 不能绑定到特定用户。
             if payload.lock == lock_value {
                 refresh_lock_model(state, active_lock.lock).await?;
+                log_wopi_lock_action(
+                    state,
+                    request_info,
+                    resolved.payload.actor_user_id,
+                    audit_service::AuditAction::FileLock,
+                    &resolved.file,
+                )
+                .await;
                 return Ok(WopiLockOperationResult::Success);
             }
 
@@ -80,6 +92,14 @@ pub async fn lock_file(
     }
 
     create_wopi_lock(state, &resolved.payload, &resolved.file, &lock_value).await?;
+    log_wopi_lock_action(
+        state,
+        request_info,
+        resolved.payload.actor_user_id,
+        audit_service::AuditAction::FileLock,
+        &resolved.file,
+    )
+    .await;
     Ok(WopiLockOperationResult::Success)
 }
 
@@ -89,6 +109,7 @@ pub async fn unlock_and_relock_file(
     access_token: &str,
     requested_lock: &str,
     old_lock: &str,
+    request_info: &AuditRequestInfo,
     request_source: WopiRequestSource<'_>,
 ) -> Result<WopiLockOperationResult> {
     let resolved = resolve_access_token(state, file_id, access_token, request_source).await?;
@@ -104,6 +125,14 @@ pub async fn unlock_and_relock_file(
     match active_lock.payload {
         Some(payload) if payload.lock == old_lock => {
             replace_wopi_lock_model(state, active_lock.lock, &resolved.payload, &new_lock).await?;
+            log_wopi_lock_action(
+                state,
+                request_info,
+                resolved.payload.actor_user_id,
+                audit_service::AuditAction::FileLock,
+                &resolved.file,
+            )
+            .await;
             Ok(WopiLockOperationResult::Success)
         }
         Some(payload) => Ok(WopiLockOperationResult::Conflict(WopiConflict {
@@ -122,6 +151,7 @@ pub async fn refresh_lock(
     file_id: i64,
     access_token: &str,
     requested_lock: &str,
+    request_info: &AuditRequestInfo,
     request_source: WopiRequestSource<'_>,
 ) -> Result<WopiLockOperationResult> {
     let resolved = resolve_access_token(state, file_id, access_token, request_source).await?;
@@ -136,6 +166,14 @@ pub async fn refresh_lock(
     match active_lock.payload {
         Some(payload) if payload.lock == lock_value => {
             refresh_lock_model(state, active_lock.lock).await?;
+            log_wopi_lock_action(
+                state,
+                request_info,
+                resolved.payload.actor_user_id,
+                audit_service::AuditAction::FileLock,
+                &resolved.file,
+            )
+            .await;
             Ok(WopiLockOperationResult::Success)
         }
         Some(payload) => Ok(WopiLockOperationResult::Conflict(WopiConflict {
@@ -154,6 +192,7 @@ pub async fn unlock_file(
     file_id: i64,
     access_token: &str,
     requested_lock: &str,
+    request_info: &AuditRequestInfo,
     request_source: WopiRequestSource<'_>,
 ) -> Result<WopiLockOperationResult> {
     let resolved = resolve_access_token(state, file_id, access_token, request_source).await?;
@@ -170,6 +209,14 @@ pub async fn unlock_file(
             lock_service::set_entity_locked(&state.db, EntityType::File, resolved.file.id, false)
                 .await?;
             lock_repo::delete_by_id(&state.db, active_lock.lock.id).await?;
+            log_wopi_lock_action(
+                state,
+                request_info,
+                resolved.payload.actor_user_id,
+                audit_service::AuditAction::FileUnlock,
+                &resolved.file,
+            )
+            .await;
             Ok(WopiLockOperationResult::Success)
         }
         Some(payload) => Ok(WopiLockOperationResult::Conflict(WopiConflict {
@@ -181,6 +228,26 @@ pub async fn unlock_file(
             reason: "file is locked outside WOPI".to_string(),
         })),
     }
+}
+
+async fn log_wopi_lock_action(
+    state: &PrimaryAppState,
+    request_info: &AuditRequestInfo,
+    actor_user_id: i64,
+    action: audit_service::AuditAction,
+    file: &file::Model,
+) {
+    let audit_ctx = request_info.to_context(actor_user_id);
+    audit_service::log(
+        state,
+        &audit_ctx,
+        action,
+        Some("file"),
+        Some(file.id),
+        Some(&file.name),
+        Some(serde_json::json!({ "source": "wopi" })),
+    )
+    .await;
 }
 
 pub(crate) async fn ensure_wopi_lock_matches(

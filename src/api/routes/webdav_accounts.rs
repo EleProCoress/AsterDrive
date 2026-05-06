@@ -12,7 +12,7 @@ use crate::config::RateLimitConfig;
 use crate::config::site_url;
 use crate::errors::Result;
 use crate::runtime::PrimaryAppState;
-use crate::services::{auth_service::Claims, webdav_account_service};
+use crate::services::{audit_service, auth_service::Claims, webdav_account_service};
 use actix_governor::Governor;
 use actix_web::middleware::Condition;
 use actix_web::{HttpRequest, HttpResponse, web};
@@ -106,6 +106,7 @@ pub async fn list_accounts(
 pub async fn create_account(
     state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
+    req: HttpRequest,
     body: web::Json<CreateWebdavAccountReq>,
 ) -> Result<HttpResponse> {
     validate_request(&*body)?;
@@ -117,6 +118,17 @@ pub async fn create_account(
         body.root_folder_id,
     )
     .await?;
+    let ctx = audit_service::AuditContext::from_request(&req, &claims);
+    audit_service::log(
+        &state,
+        &ctx,
+        audit_service::AuditAction::WebdavAccountCreate,
+        Some("webdav_account"),
+        Some(result.id),
+        Some(&result.username),
+        None,
+    )
+    .await;
     Ok(HttpResponse::Created().json(ApiResponse::ok(result)))
 }
 
@@ -136,9 +148,21 @@ pub async fn create_account(
 pub async fn delete_account(
     state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
+    req: HttpRequest,
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
     webdav_account_service::delete(&state, *path, claims.user_id).await?;
+    let ctx = audit_service::AuditContext::from_request(&req, &claims);
+    audit_service::log(
+        &state,
+        &ctx,
+        audit_service::AuditAction::WebdavAccountDelete,
+        Some("webdav_account"),
+        Some(*path),
+        None,
+        None,
+    )
+    .await;
     Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
 }
 
@@ -158,9 +182,23 @@ pub async fn delete_account(
 pub async fn toggle_account(
     state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
+    req: HttpRequest,
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
     let account = webdav_account_service::toggle_active(&state, *path, claims.user_id).await?;
+    let ctx = audit_service::AuditContext::from_request(&req, &claims);
+    audit_service::log(
+        &state,
+        &ctx,
+        audit_service::AuditAction::WebdavAccountToggle,
+        Some("webdav_account"),
+        Some(account.id),
+        Some(&account.username),
+        audit_service::details(serde_json::json!({
+            "is_active": account.is_active,
+        })),
+    )
+    .await;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(account)))
 }
 

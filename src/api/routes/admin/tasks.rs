@@ -8,8 +8,8 @@ use crate::api::pagination::OffsetPage;
 use crate::api::response::{ApiResponse, RemovedCountResponse};
 use crate::errors::Result;
 use crate::runtime::PrimaryAppState;
-use crate::services::task_service;
-use actix_web::{HttpResponse, web};
+use crate::services::{audit_service, auth_service::Claims, task_service};
+use actix_web::{HttpRequest, HttpResponse, web};
 
 #[api_docs_macros::path(
     get,
@@ -58,6 +58,8 @@ pub async fn list_tasks(
 )]
 pub async fn cleanup_tasks(
     state: web::Data<PrimaryAppState>,
+    claims: web::ReqData<Claims>,
+    req: HttpRequest,
     body: web::Json<AdminTaskCleanupReq>,
 ) -> Result<HttpResponse> {
     validate_request(&*body)?;
@@ -70,5 +72,21 @@ pub async fn cleanup_tasks(
         },
     )
     .await?;
+    let ctx = audit_service::AuditContext::from_request(&req, &claims);
+    audit_service::log(
+        &state,
+        &ctx,
+        audit_service::AuditAction::AdminCleanupTasks,
+        Some("task"),
+        None,
+        None,
+        audit_service::details(audit_service::AdminTaskCleanupAuditDetails {
+            removed,
+            finished_before: body.finished_before,
+            kind: body.kind,
+            status: body.status,
+        }),
+    )
+    .await;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(RemovedCountResponse { removed })))
 }

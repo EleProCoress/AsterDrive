@@ -166,7 +166,9 @@ const baseProps = {
 	submitting: false,
 } as const;
 
-const remoteNode = (overrides: Partial<RemoteNodeInfo> = {}): RemoteNodeInfo => ({
+const remoteNode = (
+	overrides: Partial<RemoteNodeInfo> = {},
+): RemoteNodeInfo => ({
 	id: 7,
 	name: "Edge Alpha",
 	base_url: "https://edge.example.com",

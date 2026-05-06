@@ -34,6 +34,11 @@ import {
 } from "@/components/ui/tooltip";
 import { useApiList } from "@/hooks/useApiList";
 import { usePageTitle } from "@/hooks/usePageTitle";
+import {
+	AUDIT_ENTITY_TYPE_FILTER_VALUES,
+	formatAuditAction,
+	formatAuditEntityType,
+} from "@/lib/audit";
 import { ADMIN_CONTROL_HEIGHT_CLASS } from "@/lib/constants";
 import { formatDateAbsolute, formatDateAbsoluteWithOffset } from "@/lib/format";
 import {
@@ -57,7 +62,7 @@ const AUDIT_TEXT_CELL_CONTENT_CLASS =
 const AUDIT_BADGE_CELL_CONTENT_CLASS =
 	"flex items-center rounded-lg bg-muted/30 px-3 py-3 text-left ring-1 ring-border/35 transition-colors duration-200 dark:bg-muted/20";
 
-type AuditEntityTypeFilter = "__all__" | "file" | "folder" | "team";
+type AuditEntityTypeFilter = "__all__" | string;
 
 function normalizeOffset(offset: number) {
 	return Math.max(0, Math.floor(offset));
@@ -66,9 +71,8 @@ function normalizeOffset(offset: number) {
 function parseEntityTypeSearchParam(
 	value: string | null,
 ): AuditEntityTypeFilter {
-	return value === "file" || value === "folder" || value === "team"
-		? value
-		: "__all__";
+	const normalized = value?.trim();
+	return normalized ? normalized : "__all__";
 }
 
 function buildManagedAuditSearchParams({
@@ -230,9 +234,10 @@ export default function AdminAuditPage() {
 	const nextPageDisabled = offset + pageSize >= total;
 	const entityTypeOptions = [
 		{ label: t("audit_all_types"), value: "__all__" },
-		{ label: t("core:file"), value: "file" },
-		{ label: t("core:folder"), value: "folder" },
-		{ label: t("teams"), value: "team" },
+		...AUDIT_ENTITY_TYPE_FILTER_VALUES.map((value) => ({
+			label: formatAuditEntityType(t, value),
+			value,
+		})),
 	] satisfies ReadonlyArray<{ label: string; value: AuditEntityTypeFilter }>;
 	const pageSizeOptions = AUDIT_PAGE_SIZE_OPTIONS.map((size) => ({
 		label: t("page_size_option", { count: size }),
@@ -396,14 +401,14 @@ export default function AdminAuditPage() {
 											<TableCell>
 												<div className={AUDIT_BADGE_CELL_CONTENT_CLASS}>
 													<span className="inline-flex items-center rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-950 dark:text-blue-300">
-														{t(item.action, { defaultValue: item.action })}
+														{formatAuditAction(t, item.action)}
 													</span>
 												</div>
 											</TableCell>
 											<TableCell>
 												<div className={AUDIT_TEXT_CELL_CONTENT_CLASS}>
 													<span className="text-sm text-muted-foreground">
-														{item.entity_type ?? "---"}
+														{formatAuditEntityType(t, item.entity_type)}
 													</span>
 												</div>
 											</TableCell>

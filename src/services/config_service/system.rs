@@ -197,6 +197,26 @@ pub async fn delete(state: &PrimaryAppState, key: &str) -> Result<()> {
     Ok(())
 }
 
+pub async fn delete_with_audit(
+    state: &PrimaryAppState,
+    key: &str,
+    audit_ctx: &AuditContext,
+) -> Result<()> {
+    let config = get_by_key(state, key).await?;
+    delete(state, key).await?;
+    audit_service::log(
+        state,
+        audit_ctx,
+        audit_service::AuditAction::AdminDeleteConfig,
+        Some("system_config"),
+        Some(config.id),
+        Some(key),
+        None,
+    )
+    .await;
+    Ok(())
+}
+
 pub async fn set_with_audit(
     state: &PrimaryAppState,
     key: &str,

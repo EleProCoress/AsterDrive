@@ -68,6 +68,39 @@ async fn test_audit_log_recorded_on_upload() {
 }
 
 #[actix_web::test]
+async fn test_audit_log_recorded_on_file_access_token_creation() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+    let file_id = upload_test_file_named!(app, token, "token-audit.txt");
+
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/files/{file_id}/direct-link"))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let req = test::TestRequest::post()
+        .uri(&format!("/api/v1/files/{file_id}/preview-link"))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let items = fetch_audit_items!(app, token);
+    let direct_entry = assert_action_present(&items, "file_direct_link_create");
+    assert_eq!(direct_entry["entity_type"], "file");
+    assert_eq!(direct_entry["entity_id"], file_id);
+
+    let preview_entry = assert_action_present(&items, "file_preview_link_create");
+    assert_eq!(preview_entry["entity_type"], "file");
+    assert_eq!(preview_entry["entity_id"], file_id);
+}
+
+#[actix_web::test]
 async fn test_audit_log_recorded_on_admin_create_user() {
     let state = common::setup().await;
     let app = create_test_app!(state);
@@ -106,6 +139,31 @@ async fn test_audit_log_recorded_on_admin_create_user() {
     let entry = entry.unwrap();
     assert_eq!(entry["entity_type"], "user");
     assert_eq!(entry["entity_name"], "audituser");
+}
+
+#[actix_web::test]
+async fn test_audit_log_recorded_on_admin_task_cleanup() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/admin/tasks/cleanup")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .set_json(serde_json::json!({
+            "finished_before": chrono::Utc::now().to_rfc3339()
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let items = fetch_audit_items!(app, token);
+    let cleanup_entry = assert_action_present(&items, "admin_cleanup_tasks");
+    assert_eq!(cleanup_entry["entity_type"], "task");
+    let details: Value = serde_json::from_str(cleanup_entry["details"].as_str().unwrap()).unwrap();
+    assert_eq!(details["removed"], 0);
+    assert!(details["finished_before"].is_string());
 }
 
 #[actix_web::test]

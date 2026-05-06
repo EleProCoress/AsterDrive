@@ -13,7 +13,10 @@ use crate::db::repository::{file_repo, folder_repo, lock_repo};
 use crate::entities::resource_lock;
 use crate::errors::{AsterError, Result};
 use crate::runtime::PrimaryAppState;
-use crate::services::folder_service;
+use crate::services::{
+    audit_service::{self, AuditContext},
+    folder_service,
+};
 use crate::types::{EntityType, StoredLockOwnerInfo};
 use crate::utils::numbers::usize_to_u64;
 
@@ -215,6 +218,31 @@ pub async fn force_unlock(state: &PrimaryAppState, lock_id: i64) -> Result<()> {
     Ok(())
 }
 
+pub async fn force_unlock_with_audit(
+    state: &PrimaryAppState,
+    lock_id: i64,
+    audit_ctx: &AuditContext,
+) -> Result<()> {
+    let lock = lock_repo::find_by_id(&state.db, lock_id)
+        .await?
+        .ok_or_else(|| AsterError::record_not_found("lock not found"))?;
+    force_unlock(state, lock_id).await?;
+    audit_service::log(
+        state,
+        audit_ctx,
+        audit_service::AuditAction::AdminForceUnlock,
+        Some("resource_lock"),
+        Some(lock_id),
+        Some(&lock.path),
+        audit_service::details(audit_service::LockAuditDetails {
+            entity_type: lock.entity_type,
+            entity_id: lock.entity_id,
+        }),
+    )
+    .await;
+    Ok(())
+}
+
 /// 清理过期锁（后台任务用）
 pub async fn cleanup_expired(state: &PrimaryAppState) -> Result<u64> {
     let db = &state.db;
@@ -259,6 +287,24 @@ pub async fn cleanup_expired(state: &PrimaryAppState) -> Result<u64> {
         );
     }
 
+    Ok(count)
+}
+
+pub async fn cleanup_expired_with_audit(
+    state: &PrimaryAppState,
+    audit_ctx: &AuditContext,
+) -> Result<u64> {
+    let count = cleanup_expired(state).await?;
+    audit_service::log(
+        state,
+        audit_ctx,
+        audit_service::AuditAction::AdminCleanupExpiredLocks,
+        Some("resource_lock"),
+        None,
+        None,
+        audit_service::details(audit_service::LockCleanupAuditDetails { removed: count }),
+    )
+    .await;
     Ok(count)
 }
 

@@ -7,11 +7,10 @@ use crate::api::routes::team_scope;
 use crate::errors::Result;
 use crate::runtime::PrimaryAppState;
 use crate::services::{
-    audit_service::AuditContext,
+    audit_service::{self, AuditContext},
     auth_service::Claims,
     file_service,
-    workspace_models::FileInfo,
-    workspace_storage_service::{self, WorkspaceStorageScope},
+    workspace_storage_service::WorkspaceStorageScope,
 };
 use actix_web::{HttpRequest, HttpResponse, web};
 
@@ -31,10 +30,13 @@ use actix_web::{HttpRequest, HttpResponse, web};
 pub async fn create_empty(
     state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
+    req: HttpRequest,
     body: web::Json<CreateEmptyRequest>,
 ) -> Result<HttpResponse> {
     create_empty_response(
         &state,
+        &claims,
+        &req,
         WorkspaceStorageScope::Personal {
             user_id: claims.user_id,
         },
@@ -61,11 +63,14 @@ pub async fn create_empty(
 pub async fn extract_archive(
     state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
+    req: HttpRequest,
     path: web::Path<i64>,
     body: web::Json<ExtractArchiveRequest>,
 ) -> Result<HttpResponse> {
     extract_archive_response(
         &state,
+        &claims,
+        &req,
         WorkspaceStorageScope::Personal {
             user_id: claims.user_id,
         },
@@ -193,11 +198,14 @@ pub async fn update_content(
 pub async fn set_lock(
     state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
+    req: HttpRequest,
     path: web::Path<i64>,
     body: web::Json<SetLockReq>,
 ) -> Result<HttpResponse> {
     set_lock_response(
         &state,
+        &claims,
+        &req,
         WorkspaceStorageScope::Personal {
             user_id: claims.user_id,
         },
@@ -249,7 +257,7 @@ pub async fn copy_file(
     params(("team_id" = i64, Path, description = "Team ID")),
     request_body = CreateEmptyRequest,
     responses(
-        (status = 201, description = "Empty team file created", body = inline(ApiResponse<FileInfo>)),
+        (status = 201, description = "Empty team file created", body = inline(ApiResponse<crate::services::workspace_models::FileInfo>)),
         (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "Forbidden"),
     ),
@@ -258,10 +266,18 @@ pub async fn copy_file(
 pub(crate) async fn team_create_empty(
     state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
+    req: HttpRequest,
     path: web::Path<i64>,
     body: web::Json<CreateEmptyRequest>,
 ) -> Result<HttpResponse> {
-    create_empty_response(&state, team_scope(*path, claims.user_id), &body).await
+    create_empty_response(
+        &state,
+        &claims,
+        &req,
+        team_scope(*path, claims.user_id),
+        &body,
+    )
+    .await
 }
 
 #[api_docs_macros::path(
@@ -275,7 +291,7 @@ pub(crate) async fn team_create_empty(
     ),
     request_body(content = Vec<u8>, content_type = "application/octet-stream"),
     responses(
-        (status = 200, description = "Content updated", body = inline(ApiResponse<FileInfo>)),
+        (status = 200, description = "Content updated", body = inline(ApiResponse<crate::services::workspace_models::FileInfo>)),
         (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "Forbidden"),
         (status = 404, description = "File not found"),
@@ -325,11 +341,20 @@ pub(crate) async fn team_update_content(
 pub(crate) async fn team_extract_archive(
     state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
+    req: HttpRequest,
     path: web::Path<(i64, i64)>,
     body: web::Json<ExtractArchiveRequest>,
 ) -> Result<HttpResponse> {
     let (team_id, file_id) = path.into_inner();
-    extract_archive_response(&state, team_scope(team_id, claims.user_id), file_id, &body).await
+    extract_archive_response(
+        &state,
+        &claims,
+        &req,
+        team_scope(team_id, claims.user_id),
+        file_id,
+        &body,
+    )
+    .await
 }
 
 #[api_docs_macros::path(
@@ -343,7 +368,7 @@ pub(crate) async fn team_extract_archive(
     ),
     request_body = SetLockReq,
     responses(
-        (status = 200, description = "Lock state updated", body = inline(ApiResponse<FileInfo>)),
+        (status = 200, description = "Lock state updated", body = inline(ApiResponse<crate::services::workspace_models::FileInfo>)),
         (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "Forbidden"),
         (status = 404, description = "File not found"),
@@ -353,12 +378,15 @@ pub(crate) async fn team_extract_archive(
 pub(crate) async fn team_set_lock(
     state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
+    req: HttpRequest,
     path: web::Path<(i64, i64)>,
     body: web::Json<SetLockReq>,
 ) -> Result<HttpResponse> {
     let (team_id, file_id) = path.into_inner();
     set_lock_response(
         &state,
+        &claims,
+        &req,
         team_scope(team_id, claims.user_id),
         file_id,
         body.locked,
@@ -377,7 +405,7 @@ pub(crate) async fn team_set_lock(
     ),
     request_body = PatchFileReq,
     responses(
-        (status = 200, description = "Team file updated", body = inline(ApiResponse<FileInfo>)),
+        (status = 200, description = "Team file updated", body = inline(ApiResponse<crate::services::workspace_models::FileInfo>)),
         (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "Forbidden"),
         (status = 404, description = "File not found"),
@@ -414,7 +442,7 @@ pub(crate) async fn team_patch_file(
     ),
     request_body = CopyFileReq,
     responses(
-        (status = 201, description = "Team file copied", body = inline(ApiResponse<FileInfo>)),
+        (status = 201, description = "Team file copied", body = inline(ApiResponse<crate::services::workspace_models::FileInfo>)),
         (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "Forbidden"),
         (status = 404, description = "File not found"),
@@ -476,17 +504,28 @@ pub(crate) async fn team_delete_file(
 
 pub(crate) async fn create_empty_response(
     state: &PrimaryAppState,
+    claims: &Claims,
+    req: &HttpRequest,
     scope: WorkspaceStorageScope,
     body: &CreateEmptyRequest,
 ) -> Result<HttpResponse> {
     validate_request(body)?;
-    let file =
-        workspace_storage_service::create_empty(state, scope, body.folder_id, &body.name).await?;
-    Ok(HttpResponse::Created().json(ApiResponse::ok(FileInfo::from(file))))
+    let ctx = AuditContext::from_request(req, claims);
+    let file = file_service::create_empty_in_scope_with_audit(
+        state,
+        scope,
+        body.folder_id,
+        &body.name,
+        &ctx,
+    )
+    .await?;
+    Ok(HttpResponse::Created().json(ApiResponse::ok(file)))
 }
 
 pub(crate) async fn extract_archive_response(
     state: &PrimaryAppState,
+    claims: &Claims,
+    req: &HttpRequest,
     scope: WorkspaceStorageScope,
     file_id: i64,
     body: &ExtractArchiveRequest,
@@ -501,6 +540,23 @@ pub(crate) async fn extract_archive_response(
         },
     )
     .await?;
+    let ctx = AuditContext::from_request(req, claims);
+    let file_ids = [file_id];
+    audit_service::log(
+        state,
+        &ctx,
+        audit_service::AuditAction::ArchiveExtract,
+        Some("task"),
+        Some(task.id),
+        Some(&task.display_name),
+        audit_service::details(audit_service::ArchiveSelectionAuditDetails {
+            file_ids: &file_ids,
+            folder_ids: &[],
+            archive_name: body.output_folder_name.as_deref(),
+            target_folder_id: body.target_folder_id,
+        }),
+    )
+    .await;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(task)))
 }
 
@@ -578,12 +634,16 @@ fn request_content_length(req: &HttpRequest) -> Option<i64> {
 
 pub(crate) async fn set_lock_response(
     state: &PrimaryAppState,
+    claims: &Claims,
+    req: &HttpRequest,
     scope: WorkspaceStorageScope,
     file_id: i64,
     locked: bool,
 ) -> Result<HttpResponse> {
-    let file = file_service::set_lock_in_scope(state, scope, file_id, locked).await?;
-    Ok(HttpResponse::Ok().json(ApiResponse::ok(FileInfo::from(file))))
+    let ctx = AuditContext::from_request(req, claims);
+    let file =
+        file_service::set_lock_in_scope_with_audit(state, scope, file_id, locked, &ctx).await?;
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(file)))
 }
 
 pub(crate) async fn copy_file_response(

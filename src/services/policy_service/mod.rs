@@ -8,6 +8,7 @@ mod shared;
 use crate::errors::Result;
 use crate::runtime::PrimaryAppState;
 use crate::services::audit_service::{self, AuditContext};
+use crate::types::DriverType;
 
 pub use groups::{
     create_group, delete_group, ensure_policy_groups_seeded, get_group, list_groups_paginated,
@@ -23,6 +24,83 @@ pub use policies::{
     create, delete, get, list_paginated, test_connection, test_connection_params,
     test_default_connection, update,
 };
+
+fn driver_type_audit_name(driver_type: DriverType) -> &'static str {
+    match driver_type {
+        DriverType::Local => "local",
+        DriverType::S3 => "s3",
+        DriverType::Remote => "remote",
+    }
+}
+
+fn policy_audit_details(policy: &StoragePolicy) -> Option<serde_json::Value> {
+    audit_service::details(audit_service::StoragePolicyAuditDetails {
+        driver_type: driver_type_audit_name(policy.driver_type),
+        remote_node_id: policy.remote_node_id,
+        max_file_size: policy.max_file_size,
+        chunk_size: policy.chunk_size,
+        is_default: policy.is_default,
+    })
+}
+
+pub async fn create_with_audit(
+    state: &PrimaryAppState,
+    input: CreateStoragePolicyInput,
+    audit_ctx: &AuditContext,
+) -> Result<StoragePolicy> {
+    let policy = create(state, input).await?;
+    audit_service::log(
+        state,
+        audit_ctx,
+        audit_service::AuditAction::AdminCreatePolicy,
+        Some("storage_policy"),
+        Some(policy.id),
+        Some(&policy.name),
+        policy_audit_details(&policy),
+    )
+    .await;
+    Ok(policy)
+}
+
+pub async fn update_with_audit(
+    state: &PrimaryAppState,
+    id: i64,
+    input: UpdateStoragePolicyInput,
+    audit_ctx: &AuditContext,
+) -> Result<StoragePolicy> {
+    let policy = update(state, id, input).await?;
+    audit_service::log(
+        state,
+        audit_ctx,
+        audit_service::AuditAction::AdminUpdatePolicy,
+        Some("storage_policy"),
+        Some(policy.id),
+        Some(&policy.name),
+        policy_audit_details(&policy),
+    )
+    .await;
+    Ok(policy)
+}
+
+pub async fn delete_with_audit(
+    state: &PrimaryAppState,
+    id: i64,
+    audit_ctx: &AuditContext,
+) -> Result<()> {
+    let policy = get(state, id).await?;
+    delete(state, id).await?;
+    audit_service::log(
+        state,
+        audit_ctx,
+        audit_service::AuditAction::AdminDeletePolicy,
+        Some("storage_policy"),
+        Some(policy.id),
+        Some(&policy.name),
+        policy_audit_details(&policy),
+    )
+    .await;
+    Ok(())
+}
 
 pub async fn create_group_with_audit(
     state: &PrimaryAppState,

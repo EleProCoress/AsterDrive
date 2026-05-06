@@ -7,7 +7,7 @@ use super::{
 use crate::api::response::ApiResponse;
 use crate::errors::Result;
 use crate::runtime::PrimaryAppState;
-use crate::services::audit_service::AuditContext;
+use crate::services::audit_service::{self, AuditContext};
 use crate::services::auth_service::Claims;
 use crate::services::{auth_service, profile_service, user_service};
 use actix_web::{HttpRequest, HttpResponse, web};
@@ -93,10 +93,22 @@ pub async fn resend_email_change(
 )]
 pub async fn patch_preferences(
     state: web::Data<PrimaryAppState>,
+    req: HttpRequest,
     claims: web::ReqData<Claims>,
     body: web::Json<UpdatePreferencesReq>,
 ) -> Result<HttpResponse> {
     let prefs = user_service::update_preferences(&state, claims.user_id, body.into_inner()).await?;
+    let ctx = AuditContext::from_request(&req, &claims);
+    audit_service::log(
+        &state,
+        &ctx,
+        audit_service::AuditAction::UserUpdatePreferences,
+        Some("user"),
+        Some(claims.user_id),
+        None,
+        None,
+    )
+    .await;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(prefs)))
 }
 
@@ -115,11 +127,25 @@ pub async fn patch_preferences(
 )]
 pub async fn patch_profile(
     state: web::Data<PrimaryAppState>,
+    req: HttpRequest,
     claims: web::ReqData<Claims>,
     body: web::Json<UpdateProfileReq>,
 ) -> Result<HttpResponse> {
     let profile =
         profile_service::update_profile(&state, claims.user_id, body.display_name.clone()).await?;
+    let ctx = AuditContext::from_request(&req, &claims);
+    audit_service::log(
+        &state,
+        &ctx,
+        audit_service::AuditAction::UserUpdateProfile,
+        Some("user"),
+        Some(claims.user_id),
+        None,
+        audit_service::details(audit_service::UserProfileAuditDetails {
+            display_name: profile.display_name.as_deref(),
+        }),
+    )
+    .await;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(profile)))
 }
 
@@ -138,10 +164,22 @@ pub async fn patch_profile(
 )]
 pub async fn upload_avatar(
     state: web::Data<PrimaryAppState>,
+    req: HttpRequest,
     claims: web::ReqData<Claims>,
     mut payload: actix_multipart::Multipart,
 ) -> Result<HttpResponse> {
     let profile = profile_service::upload_avatar(&state, claims.user_id, &mut payload).await?;
+    let ctx = AuditContext::from_request(&req, &claims);
+    audit_service::log(
+        &state,
+        &ctx,
+        audit_service::AuditAction::UserUploadAvatar,
+        Some("user"),
+        Some(claims.user_id),
+        None,
+        None,
+    )
+    .await;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(profile)))
 }
 
@@ -160,10 +198,28 @@ pub async fn upload_avatar(
 )]
 pub async fn put_avatar_source(
     state: web::Data<PrimaryAppState>,
+    req: HttpRequest,
     claims: web::ReqData<Claims>,
     body: web::Json<UpdateAvatarSourceReq>,
 ) -> Result<HttpResponse> {
     let profile = profile_service::set_avatar_source(&state, claims.user_id, body.source).await?;
+    let ctx = AuditContext::from_request(&req, &claims);
+    audit_service::log(
+        &state,
+        &ctx,
+        audit_service::AuditAction::UserSetAvatarSource,
+        Some("user"),
+        Some(claims.user_id),
+        None,
+        audit_service::details(audit_service::UserAvatarSourceAuditDetails {
+            source: match body.source {
+                crate::types::AvatarSource::None => "none",
+                crate::types::AvatarSource::Gravatar => "gravatar",
+                crate::types::AvatarSource::Upload => "upload",
+            },
+        }),
+    )
+    .await;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(profile)))
 }
 

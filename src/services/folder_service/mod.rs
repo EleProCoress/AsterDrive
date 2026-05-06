@@ -115,6 +115,31 @@ pub(crate) async fn update_in_scope_with_audit(
     Ok(folder.into())
 }
 
+pub(crate) async fn set_lock_in_scope_with_audit(
+    state: &PrimaryAppState,
+    scope: WorkspaceStorageScope,
+    folder_id: i64,
+    locked: bool,
+    audit_ctx: &AuditContext,
+) -> Result<FolderInfo> {
+    let folder = set_lock_in_scope(state, scope, folder_id, locked).await?;
+    audit_service::log(
+        state,
+        audit_ctx,
+        if locked {
+            audit_service::AuditAction::FolderLock
+        } else {
+            audit_service::AuditAction::FolderUnlock
+        },
+        Some("folder"),
+        Some(folder.id),
+        Some(&folder.name),
+        None,
+    )
+    .await;
+    Ok(folder.into())
+}
+
 pub(crate) async fn copy_folder_in_scope_with_audit(
     state: &PrimaryAppState,
     scope: WorkspaceStorageScope,

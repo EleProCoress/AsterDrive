@@ -11,11 +11,12 @@ use crate::config::RateLimitConfig;
 use crate::errors::Result;
 use crate::runtime::PrimaryAppState;
 use crate::services::{
-    auth_service::Claims, task_service, workspace_storage_service::WorkspaceStorageScope,
+    audit_service::AuditContext, auth_service::Claims, task_service,
+    workspace_storage_service::WorkspaceStorageScope,
 };
 use actix_governor::Governor;
 use actix_web::middleware::Condition;
-use actix_web::{HttpResponse, web};
+use actix_web::{HttpRequest, HttpResponse, web};
 
 pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory + use<> {
     let limiter = rate_limit::build_governor(&rl.api, &rl.trusted_proxies);
@@ -107,14 +108,17 @@ pub async fn get_task(
 pub async fn retry_task(
     state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
+    req: HttpRequest,
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
+    let ctx = AuditContext::from_request(&req, &claims);
     retry_task_response(
         &state,
         WorkspaceStorageScope::Personal {
             user_id: claims.user_id,
         },
         *path,
+        &ctx,
     )
     .await
 }
@@ -191,10 +195,12 @@ pub(crate) async fn team_get_task(
 pub(crate) async fn team_retry_task(
     state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
+    req: HttpRequest,
     path: web::Path<(i64, i64)>,
 ) -> Result<HttpResponse> {
     let (team_id, task_id) = path.into_inner();
-    retry_task_response(&state, team_scope(team_id, claims.user_id), task_id).await
+    let ctx = AuditContext::from_request(&req, &claims);
+    retry_task_response(&state, team_scope(team_id, claims.user_id), task_id, &ctx).await
 }
 
 pub(crate) async fn list_tasks_response(
@@ -225,7 +231,9 @@ pub(crate) async fn retry_task_response(
     state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     task_id: i64,
+    audit_ctx: &AuditContext,
 ) -> Result<HttpResponse> {
-    let task = task_service::retry_task_in_scope(state, scope, task_id).await?;
+    let task =
+        task_service::retry_task_in_scope_with_audit(state, scope, task_id, audit_ctx).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(task)))
 }

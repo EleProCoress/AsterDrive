@@ -15,6 +15,20 @@ vi.mock("react-i18next", () => ({
 			if (key === "entries_page") {
 				return `entries:${options?.current}/${options?.pages}/${options?.total}`;
 			}
+			const namespace = typeof options?.ns === "string" ? options.ns : "admin";
+			const translations: Record<string, string> = {
+				"admin:audit_action_file_delete": "Deleted file",
+				"admin:audit_action_file_upload": "Uploaded file",
+				"admin:audit_entity_type_file": "File",
+				"admin:audit_entity_type_folder": "Folder",
+			};
+			const translated = translations[`${namespace}:${key}`];
+			if (translated) {
+				return translated;
+			}
+			if (typeof options?.defaultValue === "string") {
+				return options.defaultValue;
+			}
 			return key;
 		},
 	}),
@@ -311,7 +325,7 @@ describe("AdminAuditPage", () => {
 				offset: 0,
 			});
 		});
-		expect(await screen.findByText("file_delete")).toBeInTheDocument();
+		expect(await screen.findByText("Deleted file")).toBeInTheDocument();
 
 		fireEvent.click(
 			screen.getAllByRole("button", { name: "select-folder" })[0],
@@ -324,6 +338,9 @@ describe("AdminAuditPage", () => {
 				limit: 20,
 				offset: 0,
 			});
+		});
+		await waitFor(() => {
+			expect(screen.getAllByText("Folder").length).toBeGreaterThan(0);
 		});
 	});
 

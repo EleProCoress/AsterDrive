@@ -170,10 +170,13 @@ pub async fn list_policies(
 )]
 pub async fn create_policy(
     state: web::Data<PrimaryAppState>,
+    claims: web::ReqData<Claims>,
+    req: HttpRequest,
     body: web::Json<CreatePolicyReq>,
 ) -> Result<HttpResponse> {
     validate_request(&*body)?;
-    let policy = policy_service::create(&state, body.into_inner().into()).await?;
+    let ctx = audit_service::AuditContext::from_request(&req, &claims);
+    let policy = policy_service::create_with_audit(&state, body.into_inner().into(), &ctx).await?;
     Ok(HttpResponse::Created().json(ApiResponse::ok(policy)))
 }
 
@@ -216,11 +219,15 @@ pub async fn get_policy(
 )]
 pub async fn update_policy(
     state: web::Data<PrimaryAppState>,
+    claims: web::ReqData<Claims>,
+    req: HttpRequest,
     path: web::Path<i64>,
     body: web::Json<PatchPolicyReq>,
 ) -> Result<HttpResponse> {
     validate_request(&*body)?;
-    let policy = policy_service::update(&state, *path, body.into_inner().into()).await?;
+    let ctx = audit_service::AuditContext::from_request(&req, &claims);
+    let policy =
+        policy_service::update_with_audit(&state, *path, body.into_inner().into(), &ctx).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(policy)))
 }
 
@@ -240,9 +247,12 @@ pub async fn update_policy(
 )]
 pub async fn delete_policy(
     state: web::Data<PrimaryAppState>,
+    claims: web::ReqData<Claims>,
+    req: HttpRequest,
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
-    policy_service::delete(&state, *path).await?;
+    let ctx = audit_service::AuditContext::from_request(&req, &claims);
+    policy_service::delete_with_audit(&state, *path, &ctx).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
 }
 

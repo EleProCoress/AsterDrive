@@ -8,7 +8,11 @@ use tokio::io::AsyncRead;
 
 use crate::db::repository::{file_repo, folder_repo, property_repo, user_repo};
 use crate::runtime::PrimaryAppState;
-use crate::services::{file_service, folder_service, webdav_service};
+use crate::services::{
+    audit_service::{self, AuditContext},
+    file_service, folder_service, webdav_service,
+    workspace_storage_service::WorkspaceStorageScope,
+};
 use crate::types::{EntityType, NullablePatch};
 use crate::utils::numbers::i64_to_u64;
 use crate::webdav::dav::{
@@ -27,6 +31,7 @@ pub struct AsterDavFs {
     user_id: i64,
     /// 限制访问范围：None = 用户全部文件，Some(id) = 只能访问该文件夹及子目录
     root_folder_id: Option<i64>,
+    audit_ctx: AuditContext,
 }
 
 impl std::fmt::Debug for AsterDavFs {
@@ -40,15 +45,40 @@ impl std::fmt::Debug for AsterDavFs {
 
 impl AsterDavFs {
     pub fn new(state: PrimaryAppState, user_id: i64, root_folder_id: Option<i64>) -> Self {
+        Self::new_with_audit(
+            state,
+            user_id,
+            root_folder_id,
+            AuditContext {
+                user_id,
+                ip_address: None,
+                user_agent: None,
+            },
+        )
+    }
+
+    pub fn new_with_audit(
+        state: PrimaryAppState,
+        user_id: i64,
+        root_folder_id: Option<i64>,
+        audit_ctx: AuditContext,
+    ) -> Self {
         Self {
             state,
             user_id,
             root_folder_id,
+            audit_ctx,
         }
     }
 
     fn app_state(&self) -> PrimaryAppState {
         self.state.clone()
+    }
+
+    fn scope(&self) -> WorkspaceStorageScope {
+        WorkspaceStorageScope::Personal {
+            user_id: self.user_id,
+        }
     }
 
     pub(crate) async fn open_read_stream(
@@ -78,10 +108,21 @@ impl AsterDavFs {
             .get_driver(&policy)
             .map_err(|_| FsError::GeneralFailure)?;
 
-        driver
+        let stream = driver
             .get_stream(&blob.storage_path)
             .await
-            .map_err(|_| FsError::NotFound)
+            .map_err(|_| FsError::NotFound)?;
+        audit_service::log(
+            &self.state,
+            &self.audit_ctx,
+            audit_service::AuditAction::FileDownload,
+            Some("file"),
+            Some(file.id),
+            Some(&file.name),
+            Some(serde_json::json!({ "source": "webdav" })),
+        )
+        .await;
+        Ok(stream)
     }
 }
 
@@ -120,13 +161,14 @@ impl DavFileSystem for AsterDavFs {
                     return Err(FsError::Exists);
                 }
 
-                let dav_file = AsterDavFile::for_write(
+                let dav_file = AsterDavFile::for_write_with_audit(
                     self.app_state(),
                     self.user_id,
                     parent_id,
                     filename,
                     existing_file_id,
                     options.size,
+                    self.audit_ctx.clone(),
                 )
                 .await?;
 
@@ -228,9 +270,15 @@ impl DavFileSystem for AsterDavFs {
             .await?;
 
             let state = self.app_state();
-            folder_service::create(&state, self.user_id, &name, parent_id)
-                .await
-                .map_err(to_fs_error)?;
+            folder_service::create_in_scope_with_audit(
+                &state,
+                self.scope(),
+                &name,
+                parent_id,
+                &self.audit_ctx,
+            )
+            .await
+            .map_err(to_fs_error)?;
 
             Ok(())
         })
@@ -254,6 +302,16 @@ impl DavFileSystem for AsterDavFs {
             webdav_service::recursive_soft_delete(&state, self.user_id, folder.id)
                 .await
                 .map_err(to_fs_error)?;
+            audit_service::log(
+                &state,
+                &self.audit_ctx,
+                audit_service::AuditAction::FolderDelete,
+                Some("folder"),
+                Some(folder.id),
+                Some(&folder.name),
+                Some(serde_json::json!({ "source": "webdav" })),
+            )
+            .await;
 
             Ok(())
         })
@@ -274,9 +332,14 @@ impl DavFileSystem for AsterDavFs {
             };
 
             let state = self.app_state();
-            file_service::delete(&state, file.id, self.user_id)
-                .await
-                .map_err(to_fs_error)?;
+            file_service::delete_in_scope_with_audit(
+                &state,
+                self.scope(),
+                file.id,
+                &self.audit_ctx,
+            )
+            .await
+            .map_err(to_fs_error)?;
 
             Ok(())
         })
@@ -314,29 +377,36 @@ impl DavFileSystem for AsterDavFs {
                     .await
                     .map_err(|_| FsError::GeneralFailure)?
                     {
-                        file_service::delete(&state, existing.id, self.user_id)
-                            .await
-                            .map_err(to_fs_error)?;
+                        file_service::delete_in_scope_with_audit(
+                            &state,
+                            self.scope(),
+                            existing.id,
+                            &self.audit_ctx,
+                        )
+                        .await
+                        .map_err(to_fs_error)?;
                     }
 
-                    file_service::update(
+                    file_service::update_in_scope_with_audit(
                         &state,
+                        self.scope(),
                         f.id,
-                        self.user_id,
                         Some(dest_name),
                         dest_parent_id.into(),
+                        &self.audit_ctx,
                     )
                     .await
                     .map_err(to_fs_error)?;
                 }
                 ResolvedNode::Folder(f) => {
-                    folder_service::update(
+                    folder_service::update_in_scope_with_audit(
                         &state,
+                        self.scope(),
                         f.id,
-                        self.user_id,
                         Some(dest_name),
                         dest_parent_id.into(),
                         NullablePatch::Absent,
+                        &self.audit_ctx,
                     )
                     .await
                     .map_err(to_fs_error)?;
@@ -379,17 +449,33 @@ impl DavFileSystem for AsterDavFs {
                     .await
                     .map_err(|_| FsError::GeneralFailure)?
                     {
-                        file_service::delete(&state, existing.id, self.user_id)
-                            .await
-                            .map_err(to_fs_error)?;
-                    }
-
-                    file_service::duplicate_file_record(&state, &f, dest_parent_id, &dest_name)
+                        file_service::delete_in_scope_with_audit(
+                            &state,
+                            self.scope(),
+                            existing.id,
+                            &self.audit_ctx,
+                        )
                         .await
                         .map_err(to_fs_error)?;
+                    }
+
+                    let copied =
+                        file_service::duplicate_file_record(&state, &f, dest_parent_id, &dest_name)
+                            .await
+                            .map_err(to_fs_error)?;
+                    audit_service::log(
+                        &state,
+                        &self.audit_ctx,
+                        audit_service::AuditAction::FileCopy,
+                        Some("file"),
+                        Some(copied.id),
+                        Some(&copied.name),
+                        Some(serde_json::json!({ "source": "webdav" })),
+                    )
+                    .await;
                 }
                 ResolvedNode::Folder(f) => {
-                    webdav_service::recursive_copy_folder(
+                    let copied = webdav_service::recursive_copy_folder(
                         &state,
                         self.user_id,
                         f.id,
@@ -398,6 +484,16 @@ impl DavFileSystem for AsterDavFs {
                     )
                     .await
                     .map_err(to_fs_error)?;
+                    audit_service::log(
+                        &state,
+                        &self.audit_ctx,
+                        audit_service::AuditAction::FolderCopy,
+                        Some("folder"),
+                        Some(copied.id),
+                        Some(&copied.name),
+                        Some(serde_json::json!({ "source": "webdav" })),
+                    )
+                    .await;
                 }
                 ResolvedNode::Root => return Err(FsError::Forbidden),
             }
@@ -527,6 +623,28 @@ impl DavFileSystem for AsterDavFs {
                     }
                 };
 
+                if status.is_success() {
+                    let entity_type_label = entity_type_name(entity_type);
+                    audit_service::log(
+                        &self.state,
+                        &self.audit_ctx,
+                        if set {
+                            audit_service::AuditAction::PropertySet
+                        } else {
+                            audit_service::AuditAction::PropertyDelete
+                        },
+                        Some(entity_type_label),
+                        Some(entity_id),
+                        None,
+                        audit_service::details(audit_service::PropertyAuditDetails {
+                            entity_type: entity_type_label,
+                            namespace: ns,
+                            name: &prop.name,
+                        }),
+                    )
+                    .await;
+                }
+
                 results.push((status, prop));
             }
 
@@ -546,6 +664,13 @@ async fn resolve_entity(
         Ok(ResolvedNode::File(f)) => Some((EntityType::File, f.id)),
         Ok(ResolvedNode::Folder(f)) => Some((EntityType::Folder, f.id)),
         _ => None,
+    }
+}
+
+fn entity_type_name(entity_type: EntityType) -> &'static str {
+    match entity_type {
+        EntityType::File => "file",
+        EntityType::Folder => "folder",
     }
 }
 

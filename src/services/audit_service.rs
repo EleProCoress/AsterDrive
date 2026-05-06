@@ -22,6 +22,7 @@ const MAX_AUDIT_IP_ADDRESS_LEN: usize = 45;
 const MAX_AUDIT_USER_AGENT_LEN: usize = 512;
 
 /// 从 HttpRequest 提取的审计上下文
+#[derive(Clone)]
 pub struct AuditContext {
     pub user_id: i64,
     pub ip_address: Option<String>,
@@ -29,6 +30,7 @@ pub struct AuditContext {
 }
 
 /// 从 HttpRequest 提取的请求级审计元信息。
+#[derive(Clone)]
 pub struct AuditRequestInfo {
     pub ip_address: Option<String>,
     pub user_agent: Option<String>,
@@ -167,6 +169,15 @@ pub struct PolicyGroupMigrationDetails<'a> {
 }
 
 #[derive(Serialize)]
+pub struct StoragePolicyAuditDetails<'a> {
+    pub driver_type: &'a str,
+    pub remote_node_id: Option<i64>,
+    pub max_file_size: i64,
+    pub chunk_size: i64,
+    pub is_default: bool,
+}
+
+#[derive(Serialize)]
 pub struct BatchDeleteDetails<'a> {
     pub file_ids: &'a [i64],
     pub folder_ids: &'a [i64],
@@ -184,6 +195,61 @@ pub struct BatchTransferDetails<'a> {
 }
 
 #[derive(Serialize)]
+pub struct ArchiveSelectionAuditDetails<'a> {
+    pub file_ids: &'a [i64],
+    pub folder_ids: &'a [i64],
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub archive_name: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target_folder_id: Option<i64>,
+}
+
+#[derive(Serialize)]
+pub struct UploadCancelAuditDetails<'a> {
+    pub upload_id: &'a str,
+}
+
+#[derive(Serialize)]
+pub struct FileAccessTokenAuditDetails<'a> {
+    pub source: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub app_key: Option<&'a str>,
+}
+
+#[derive(Serialize)]
+pub struct PropertyAuditDetails<'a> {
+    pub entity_type: &'a str,
+    pub namespace: &'a str,
+    pub name: &'a str,
+}
+
+#[derive(Serialize)]
+pub struct FileVersionAuditDetails {
+    pub version_id: i64,
+}
+
+#[derive(Serialize)]
+pub struct TrashPurgeAllAuditDetails {
+    pub purged: u32,
+}
+
+#[derive(Serialize)]
+pub struct TaskRetryAuditDetails {
+    pub kind: String,
+    pub previous_attempt_count: i32,
+}
+
+#[derive(Serialize)]
+pub struct AdminTaskCleanupAuditDetails {
+    pub removed: u64,
+    pub finished_before: DateTime<Utc>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub kind: Option<crate::types::BackgroundTaskKind>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<crate::types::BackgroundTaskStatus>,
+}
+
+#[derive(Serialize)]
 pub struct ShareBatchDeleteDetails<'a> {
     pub share_ids: &'a [i64],
     pub succeeded: u32,
@@ -195,6 +261,51 @@ pub struct ShareUpdateDetails {
     pub has_password: bool,
     pub expires_at: Option<DateTime<Utc>>,
     pub max_downloads: i64,
+}
+
+#[derive(Serialize)]
+pub struct AuthSessionAuditDetails<'a> {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub removed: Option<u64>,
+    pub revoked_current: bool,
+}
+
+#[derive(Serialize)]
+pub struct UserProfileAuditDetails<'a> {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub display_name: Option<&'a str>,
+}
+
+#[derive(Serialize)]
+pub struct UserAvatarSourceAuditDetails<'a> {
+    pub source: &'a str,
+}
+
+#[derive(Serialize)]
+pub struct RemoteNodeAuditDetails<'a> {
+    pub base_url: &'a str,
+    pub is_enabled: bool,
+    pub enrollment_status: &'a str,
+}
+
+#[derive(Serialize)]
+pub struct RemoteIngressProfileAuditDetails<'a> {
+    pub profile_key: &'a str,
+    pub driver_type: &'a str,
+    pub is_default: bool,
+}
+
+#[derive(Serialize)]
+pub struct LockAuditDetails {
+    pub entity_type: crate::types::EntityType,
+    pub entity_id: i64,
+}
+
+#[derive(Serialize)]
+pub struct LockCleanupAuditDetails {
+    pub removed: u64,
 }
 
 #[derive(Serialize)]
@@ -541,6 +652,9 @@ mod tests {
             (AuditAction::AdminCreateUser, "admin_create_user"),
             (AuditAction::AdminForceDeleteUser, "admin_force_delete_user"),
             (AuditAction::AdminCreateTeam, "admin_create_team"),
+            (AuditAction::AdminCreatePolicy, "admin_create_policy"),
+            (AuditAction::AdminUpdatePolicy, "admin_update_policy"),
+            (AuditAction::AdminDeletePolicy, "admin_delete_policy"),
             (
                 AuditAction::AdminCreatePolicyGroup,
                 "admin_create_policy_group",
@@ -569,24 +683,81 @@ mod tests {
                 "admin_update_policy_group",
             ),
             (AuditAction::AdminUpdateUser, "admin_update_user"),
+            (AuditAction::AdminDeleteConfig, "admin_delete_config"),
+            (AuditAction::AdminDeleteShare, "admin_delete_share"),
+            (AuditAction::AdminForceUnlock, "admin_force_unlock"),
+            (
+                AuditAction::AdminCleanupExpiredLocks,
+                "admin_cleanup_expired_locks",
+            ),
+            (AuditAction::AdminCleanupTasks, "admin_cleanup_tasks"),
+            (
+                AuditAction::AdminCreateRemoteNode,
+                "admin_create_remote_node",
+            ),
+            (
+                AuditAction::AdminUpdateRemoteNode,
+                "admin_update_remote_node",
+            ),
+            (
+                AuditAction::AdminDeleteRemoteNode,
+                "admin_delete_remote_node",
+            ),
+            (AuditAction::AdminTestRemoteNode, "admin_test_remote_node"),
+            (
+                AuditAction::AdminCreateRemoteNodeEnrollmentToken,
+                "admin_create_remote_node_enrollment_token",
+            ),
+            (
+                AuditAction::AdminCreateRemoteIngressProfile,
+                "admin_create_remote_ingress_profile",
+            ),
+            (
+                AuditAction::AdminUpdateRemoteIngressProfile,
+                "admin_update_remote_ingress_profile",
+            ),
+            (
+                AuditAction::AdminDeleteRemoteIngressProfile,
+                "admin_delete_remote_ingress_profile",
+            ),
             (AuditAction::BatchCopy, "batch_copy"),
             (AuditAction::BatchDelete, "batch_delete"),
             (AuditAction::BatchMove, "batch_move"),
             (AuditAction::ConfigActionExecute, "config_action_execute"),
             (AuditAction::ConfigUpdate, "config_update"),
             (AuditAction::FileCopy, "file_copy"),
+            (AuditAction::FileCreate, "file_create"),
             (AuditAction::FileDelete, "file_delete"),
             (AuditAction::FileDownload, "file_download"),
+            (AuditAction::FileDirectLinkCreate, "file_direct_link_create"),
             (AuditAction::FileEdit, "file_edit"),
             (AuditAction::FileMove, "file_move"),
             (AuditAction::FileRename, "file_rename"),
             (AuditAction::FileUpload, "file_upload"),
+            (
+                AuditAction::FilePreviewLinkCreate,
+                "file_preview_link_create",
+            ),
+            (AuditAction::FileWopiOpen, "file_wopi_open"),
+            (AuditAction::FileUploadCancel, "file_upload_cancel"),
+            (AuditAction::FileRestore, "file_restore"),
+            (AuditAction::FilePurge, "file_purge"),
+            (AuditAction::FileLock, "file_lock"),
+            (AuditAction::FileUnlock, "file_unlock"),
+            (AuditAction::FileVersionRestore, "file_version_restore"),
+            (AuditAction::FileVersionDelete, "file_version_delete"),
             (AuditAction::FolderCopy, "folder_copy"),
             (AuditAction::FolderCreate, "folder_create"),
             (AuditAction::FolderDelete, "folder_delete"),
             (AuditAction::FolderMove, "folder_move"),
             (AuditAction::FolderPolicyChange, "folder_policy_change"),
             (AuditAction::FolderRename, "folder_rename"),
+            (AuditAction::FolderRestore, "folder_restore"),
+            (AuditAction::FolderPurge, "folder_purge"),
+            (AuditAction::FolderLock, "folder_lock"),
+            (AuditAction::FolderUnlock, "folder_unlock"),
+            (AuditAction::PropertySet, "property_set"),
+            (AuditAction::PropertyDelete, "property_delete"),
             (AuditAction::ShareBatchDelete, "share_batch_delete"),
             (AuditAction::ShareCreate, "share_create"),
             (AuditAction::ShareDelete, "share_delete"),
@@ -600,6 +771,32 @@ mod tests {
             (AuditAction::TeamMemberUpdate, "team_member_update"),
             (AuditAction::TeamRestore, "team_restore"),
             (AuditAction::TeamUpdate, "team_update"),
+            (AuditAction::TaskRetry, "task_retry"),
+            (AuditAction::ArchiveCompress, "archive_compress"),
+            (AuditAction::ArchiveExtract, "archive_extract"),
+            (AuditAction::ArchiveDownload, "archive_download"),
+            (AuditAction::TrashPurgeAll, "trash_purge_all"),
+            (
+                AuditAction::RemoteEnrollmentRedeem,
+                "remote_enrollment_redeem",
+            ),
+            (AuditAction::RemoteEnrollmentAck, "remote_enrollment_ack"),
+            (
+                AuditAction::UserRevokeOtherSessions,
+                "user_revoke_other_sessions",
+            ),
+            (AuditAction::UserRevokeSession, "user_revoke_session"),
+            (
+                AuditAction::UserUpdatePreferences,
+                "user_update_preferences",
+            ),
+            (AuditAction::UserUpdateProfile, "user_update_profile"),
+            (AuditAction::UserUploadAvatar, "user_upload_avatar"),
+            (AuditAction::UserSetAvatarSource, "user_set_avatar_source"),
+            (AuditAction::UserUpdateWopiInfo, "user_update_wopi_info"),
+            (AuditAction::WebdavAccountCreate, "webdav_account_create"),
+            (AuditAction::WebdavAccountDelete, "webdav_account_delete"),
+            (AuditAction::WebdavAccountToggle, "webdav_account_toggle"),
             (AuditAction::UserChangePassword, "user_change_password"),
             (
                 AuditAction::UserConfirmPasswordReset,
@@ -642,6 +839,7 @@ mod tests {
             assert_eq!(action.as_str(), expected);
             assert_eq!(action.as_ref(), expected);
             assert_eq!(action.to_string(), expected);
+            assert_eq!(AuditAction::from_str_name(expected), Some(action));
         }
     }
 }

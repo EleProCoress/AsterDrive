@@ -31,6 +31,7 @@ import {
 } from "@/components/ui/table";
 import { handleApiError } from "@/hooks/useApiError";
 import { usePageTitle } from "@/hooks/usePageTitle";
+import { formatAuditAction, formatAuditEntityType } from "@/lib/audit";
 import {
 	ADMIN_CONTROL_HEIGHT_CLASS,
 	PAGE_SECTION_PADDING_CLASS,
@@ -771,7 +772,7 @@ export default function AdminOverviewPage() {
 													variant="outline"
 													className={getActionBadgeClass(event.action)}
 												>
-													{event.action}
+													{formatAuditAction(t, event.action)}
 												</Badge>
 											</TableCell>
 											<TableCell className="text-muted-foreground">
@@ -780,10 +781,11 @@ export default function AdminOverviewPage() {
 											<TableCell>
 												<div className="flex flex-col gap-1">
 													<span className="text-sm">
-														{event.entity_name ?? event.entity_type ?? "---"}
+														{event.entity_name ??
+															formatAuditEntityType(t, event.entity_type)}
 													</span>
 													<span className="text-xs text-muted-foreground">
-														{event.entity_type ?? "---"}
+														{formatAuditEntityType(t, event.entity_type)}
 													</span>
 												</div>
 											</TableCell>

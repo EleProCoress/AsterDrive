@@ -10,8 +10,10 @@ use crate::config::RateLimitConfig;
 use crate::errors::Result;
 use crate::runtime::PrimaryAppState;
 use crate::services::{
-    audit_service::AuditContext, auth_service::Claims, batch_service, stream_ticket_service,
-    task_service, workspace_storage_service::WorkspaceStorageScope,
+    audit_service::{self, AuditContext},
+    auth_service::Claims,
+    batch_service, stream_ticket_service, task_service,
+    workspace_storage_service::WorkspaceStorageScope,
 };
 use actix_governor::Governor;
 use actix_web::middleware::Condition;
@@ -159,11 +161,14 @@ pub async fn batch_copy(
 pub async fn archive_download(
     state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
+    req: HttpRequest,
     body: web::Json<ArchiveDownloadReq>,
 ) -> Result<HttpResponse> {
     let body = body.into_inner();
     archive_download_ticket_response(
         &state,
+        &claims,
+        &req,
         WorkspaceStorageScope::Personal {
             user_id: claims.user_id,
         },
@@ -188,11 +193,14 @@ pub async fn archive_download(
 pub async fn archive_compress(
     state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
+    req: HttpRequest,
     body: web::Json<ArchiveCompressReq>,
 ) -> Result<HttpResponse> {
     let body = body.into_inner();
     archive_compress_response(
         &state,
+        &claims,
+        &req,
         WorkspaceStorageScope::Personal {
             user_id: claims.user_id,
         },
@@ -350,12 +358,20 @@ pub(crate) async fn team_batch_copy(
 pub(crate) async fn team_archive_download(
     state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
+    req: HttpRequest,
     path: web::Path<i64>,
     body: web::Json<ArchiveDownloadReq>,
 ) -> Result<HttpResponse> {
     let team_id = *path;
     let body = body.into_inner();
-    archive_download_ticket_response(&state, team_scope(team_id, claims.user_id), &body).await
+    archive_download_ticket_response(
+        &state,
+        &claims,
+        &req,
+        team_scope(team_id, claims.user_id),
+        &body,
+    )
+    .await
 }
 
 #[api_docs_macros::path(
@@ -376,12 +392,20 @@ pub(crate) async fn team_archive_download(
 pub(crate) async fn team_archive_compress(
     state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
+    req: HttpRequest,
     path: web::Path<i64>,
     body: web::Json<ArchiveCompressReq>,
 ) -> Result<HttpResponse> {
     let team_id = *path;
     let body = body.into_inner();
-    archive_compress_response(&state, team_scope(team_id, claims.user_id), &body).await
+    archive_compress_response(
+        &state,
+        &claims,
+        &req,
+        team_scope(team_id, claims.user_id),
+        &body,
+    )
+    .await
 }
 
 #[api_docs_macros::path(
@@ -474,6 +498,8 @@ pub(crate) async fn batch_copy_response(
 
 pub(crate) async fn archive_download_ticket_response(
     state: &PrimaryAppState,
+    claims: &Claims,
+    req: &HttpRequest,
     scope: WorkspaceStorageScope,
     body: &ArchiveDownloadReq,
 ) -> Result<HttpResponse> {
@@ -488,12 +514,30 @@ pub(crate) async fn archive_download_ticket_response(
         },
     )
     .await?;
+    let ctx = AuditContext::from_request(req, claims);
+    audit_service::log(
+        state,
+        &ctx,
+        audit_service::AuditAction::ArchiveDownload,
+        Some("stream_ticket"),
+        None,
+        Some(&ticket.token),
+        audit_service::details(audit_service::ArchiveSelectionAuditDetails {
+            file_ids: &body.file_ids,
+            folder_ids: &body.folder_ids,
+            archive_name: body.archive_name.as_deref(),
+            target_folder_id: None,
+        }),
+    )
+    .await;
 
     Ok(HttpResponse::Ok().json(ApiResponse::ok(ticket)))
 }
 
 pub(crate) async fn archive_compress_response(
     state: &PrimaryAppState,
+    claims: &Claims,
+    req: &HttpRequest,
     scope: WorkspaceStorageScope,
     body: &ArchiveCompressReq,
 ) -> Result<HttpResponse> {
@@ -509,6 +553,22 @@ pub(crate) async fn archive_compress_response(
         },
     )
     .await?;
+    let ctx = AuditContext::from_request(req, claims);
+    audit_service::log(
+        state,
+        &ctx,
+        audit_service::AuditAction::ArchiveCompress,
+        Some("task"),
+        Some(task.id),
+        Some(&task.display_name),
+        audit_service::details(audit_service::ArchiveSelectionAuditDetails {
+            file_ids: &body.file_ids,
+            folder_ids: &body.folder_ids,
+            archive_name: body.archive_name.as_deref(),
+            target_folder_id: body.target_folder_id,
+        }),
+    )
+    .await;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(task)))
 }
 

@@ -22,6 +22,7 @@ import {
 	TableHeader,
 	TableRow,
 } from "@/components/ui/table";
+import { formatAuditAction } from "@/lib/audit";
 import { ADMIN_CONTROL_HEIGHT_CLASS } from "@/lib/constants";
 import { formatDateAbsolute, formatDateShort } from "@/lib/format";
 import { formatTeamAuditSummary, getTeamRoleBadgeClass } from "@/lib/team";
@@ -675,9 +676,7 @@ export function AdminTeamDetailAuditSection({
 										<div className="space-y-2">
 											<div className="flex flex-wrap items-center gap-2">
 												<Badge variant="outline">
-													{t(`settings:${entry.action}`, {
-														defaultValue: entry.action,
-													})}
+													{formatAuditAction(t, entry.action)}
 												</Badge>
 												<span className="text-sm text-foreground">
 													@{entry.actor_username}

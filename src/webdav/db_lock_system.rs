@@ -9,6 +9,8 @@ use xmltree::Element;
 
 use crate::db::repository::lock_repo;
 use crate::entities::resource_lock;
+use crate::runtime::PrimaryAppState;
+use crate::services::audit_service::{self, AuditContext};
 use crate::types::EntityType;
 use crate::webdav::dav::{DavLock, DavLockSystem, DavPath, LsFuture};
 use crate::webdav::path_resolver::{self, ResolvedNode};
@@ -16,11 +18,13 @@ use crate::webdav::path_resolver::{self, ResolvedNode};
 /// 数据库支持的 WebDAV 锁系统
 ///
 /// Per-request 创建（需要 user_id 做 path → entity_id 解析）
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct DbLockSystem {
     db: DatabaseConnection,
     user_id: i64,
     root_folder_id: Option<i64>,
+    audit_state: Option<PrimaryAppState>,
+    audit_ctx: AuditContext,
 }
 
 impl DbLockSystem {
@@ -29,7 +33,50 @@ impl DbLockSystem {
             db,
             user_id,
             root_folder_id,
+            audit_state: None,
+            audit_ctx: AuditContext {
+                user_id,
+                ip_address: None,
+                user_agent: None,
+            },
         })
+    }
+
+    pub fn new_with_audit(
+        state: PrimaryAppState,
+        user_id: i64,
+        root_folder_id: Option<i64>,
+        audit_ctx: AuditContext,
+    ) -> Box<Self> {
+        Box::new(Self {
+            db: state.db.clone(),
+            user_id,
+            root_folder_id,
+            audit_state: Some(state),
+            audit_ctx,
+        })
+    }
+
+    async fn log_lock_action(&self, entity_type: EntityType, entity_id: i64, locked: bool) {
+        let Some(state) = &self.audit_state else {
+            return;
+        };
+        let action = match (entity_type, locked) {
+            (EntityType::File, true) => audit_service::AuditAction::FileLock,
+            (EntityType::File, false) => audit_service::AuditAction::FileUnlock,
+            (EntityType::Folder, true) => audit_service::AuditAction::FolderLock,
+            (EntityType::Folder, false) => audit_service::AuditAction::FolderUnlock,
+        };
+        audit_service::log(
+            state,
+            &self.audit_ctx,
+            action,
+            Some(entity_type_name(entity_type)),
+            Some(entity_id),
+            None,
+            Some(serde_json::json!({ "source": "webdav" })),
+        )
+        .await;
     }
 }
 
@@ -101,7 +148,7 @@ impl DavLockSystem for DbLockSystem {
                 token: sea_orm::Set(token.clone()),
                 entity_type: sea_orm::Set(entity_type),
                 entity_id: sea_orm::Set(entity_id),
-                path: sea_orm::Set(path_str),
+                path: sea_orm::Set(path_str.clone()),
                 owner_id: sea_orm::Set(None), // WebDAV 没有 user_id（用 principal 代替）
                 owner_info: sea_orm::Set(
                     crate::services::lock_service::serialize_resource_lock_owner_info(
@@ -131,6 +178,7 @@ impl DavLockSystem for DbLockSystem {
             {
                 tracing::warn!("failed to sync is_locked for {entity_type:?}#{entity_id}: {e}");
             }
+            self.log_lock_action(entity_type, entity_id, true).await;
 
             Ok(DavLock {
                 token,
@@ -169,6 +217,8 @@ impl DavLockSystem for DbLockSystem {
             {
                 tracing::warn!("failed to sync is_locked after unlock: {e}");
             }
+            self.log_lock_action(lock.entity_type, lock.entity_id, false)
+                .await;
             Ok(())
         })
     }
@@ -192,6 +242,8 @@ impl DavLockSystem for DbLockSystem {
                 .await
                 .map_err(|_| ())?
                 .ok_or(())?;
+            self.log_lock_action(lock.entity_type, lock.entity_id, true)
+                .await;
             let owner = lock_owner_xml(&lock)
                 .as_deref()
                 .and_then(deserialize_element)
@@ -423,5 +475,12 @@ fn lock_owner_xml(lock: &resource_lock::Model) -> Option<String> {
             Some(payload.xml)
         }
         _ => None,
+    }
+}
+
+fn entity_type_name(entity_type: EntityType) -> &'static str {
+    match entity_type {
+        EntityType::File => "file",
+        EntityType::Folder => "folder",
     }
 }

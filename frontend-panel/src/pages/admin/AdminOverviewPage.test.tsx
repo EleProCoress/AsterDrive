@@ -43,6 +43,18 @@ vi.mock("react-i18next", () => ({
 			if (key === "overview_today_shares_badge") {
 				return `shares:${options?.count}`;
 			}
+			const namespace = typeof options?.ns === "string" ? options.ns : "admin";
+			const translations: Record<string, string> = {
+				"admin:audit_action_share_create": "Created share",
+				"admin:audit_entity_type_file": "File",
+			};
+			const translated = translations[`${namespace}:${key}`];
+			if (translated) {
+				return translated;
+			}
+			if (typeof options?.defaultValue === "string") {
+				return options.defaultValue;
+			}
 			return key;
 		},
 	}),
@@ -379,7 +391,9 @@ describe("AdminOverviewPage", () => {
 		expect(screen.getByText("99")).toBeInTheDocument();
 		expect(screen.getByText("bytes:4096")).toBeInTheDocument();
 		expect(screen.getByText("bytes:2048")).toBeInTheDocument();
+		expect(screen.getByText("Created share")).toBeInTheDocument();
 		expect(screen.getByText("report.pdf")).toBeInTheDocument();
+		expect(screen.getAllByText("File").length).toBeGreaterThan(0);
 		expect(screen.getByText("Trash cleanup")).toBeInTheDocument();
 		expect(
 			screen.getByText("cleaned up 2 expired trash entries"),

@@ -24,7 +24,10 @@ use crate::db::repository::background_task_repo;
 use crate::entities::background_task;
 use crate::errors::{AsterError, Result, precondition_failed_with_subcode};
 use crate::runtime::PrimaryAppState;
-use crate::services::workspace_storage_service::{self, WorkspaceStorageScope};
+use crate::services::{
+    audit_service::{self, AuditContext},
+    workspace_storage_service::{self, WorkspaceStorageScope},
+};
 use crate::types::{BackgroundTaskKind, BackgroundTaskStatus, StoredTaskResult};
 use crate::utils::numbers::{i64_to_i32, i64_to_u64};
 
@@ -280,6 +283,30 @@ pub(crate) async fn retry_task_in_scope(
     }
 
     get_task_in_scope(state, scope, task_id).await
+}
+
+pub(crate) async fn retry_task_in_scope_with_audit(
+    state: &PrimaryAppState,
+    scope: WorkspaceStorageScope,
+    task_id: i64,
+    audit_ctx: &AuditContext,
+) -> Result<TaskInfo> {
+    let previous = get_task_in_scope(state, scope, task_id).await?;
+    let task = retry_task_in_scope(state, scope, task_id).await?;
+    audit_service::log(
+        state,
+        audit_ctx,
+        audit_service::AuditAction::TaskRetry,
+        Some("task"),
+        Some(task.id),
+        Some(&task.display_name),
+        audit_service::details(audit_service::TaskRetryAuditDetails {
+            kind: format!("{:?}", previous.kind),
+            previous_attempt_count: previous.attempt_count,
+        }),
+    )
+    .await;
+    Ok(task)
 }
 
 async fn build_task_info(

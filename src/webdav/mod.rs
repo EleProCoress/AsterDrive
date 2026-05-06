@@ -22,6 +22,7 @@ use xmltree::{Element, XMLNode};
 
 use crate::config::WebDavConfig;
 use crate::runtime::PrimaryAppState;
+use crate::services::audit_service;
 use crate::webdav::dav::{
     DavFileSystem, DavLock, DavLockSystem, DavMetaData, DavPath, DavProp, FsError, OpenOptions,
     ReadDirMeta,
@@ -90,15 +91,20 @@ pub async fn webdav_handler(
         Err(_) => return unauthorized_response(),
     };
 
-    let dav_fs = fs::AsterDavFs::new(
+    let audit_info = audit_service::AuditRequestInfo::from_request(&req);
+    let audit_ctx = audit_info.to_context(auth_result.user_id);
+
+    let dav_fs = fs::AsterDavFs::new_with_audit(
         state.get_ref().clone(),
         auth_result.user_id,
         auth_result.root_folder_id,
+        audit_ctx.clone(),
     );
-    let lock_system = db_lock_system::DbLockSystem::new(
-        state.db.clone(),
+    let lock_system = db_lock_system::DbLockSystem::new_with_audit(
+        state.get_ref().clone(),
         auth_result.user_id,
         auth_result.root_folder_id,
+        audit_ctx,
     );
 
     match req.method().as_str() {

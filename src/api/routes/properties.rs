@@ -10,12 +10,18 @@ use crate::api::response::ApiResponse;
 use crate::config::RateLimitConfig;
 use crate::errors::Result;
 use crate::runtime::PrimaryAppState;
-use crate::services::{auth_service::Claims, property_service};
-#[cfg(all(feature = "openapi", debug_assertions))]
+use crate::services::{audit_service, auth_service::Claims, property_service};
 use crate::types::EntityType;
 use actix_governor::Governor;
 use actix_web::middleware::Condition;
-use actix_web::{HttpResponse, web};
+use actix_web::{HttpRequest, HttpResponse, web};
+
+fn entity_type_name(entity_type: EntityType) -> &'static str {
+    match entity_type {
+        EntityType::File => "file",
+        EntityType::Folder => "folder",
+    }
+}
 
 pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory + use<> {
     let limiter = rate_limit::build_governor(&rl.api, &rl.trusted_proxies);
@@ -80,6 +86,7 @@ pub async fn list_props(
 pub async fn set_prop(
     state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
+    req: HttpRequest,
     path: web::Path<EntityPath>,
     body: web::Json<SetPropReq>,
 ) -> Result<HttpResponse> {
@@ -97,6 +104,22 @@ pub async fn set_prop(
         body.value.as_deref(),
     )
     .await?;
+    let ctx = audit_service::AuditContext::from_request(&req, &claims);
+    let property_name = format!("{}:{}", body.namespace, body.name);
+    audit_service::log(
+        &state,
+        &ctx,
+        audit_service::AuditAction::PropertySet,
+        Some(entity_type_name(path.entity_type)),
+        Some(path.entity_id),
+        Some(&property_name),
+        audit_service::details(audit_service::PropertyAuditDetails {
+            entity_type: entity_type_name(path.entity_type),
+            namespace: &body.namespace,
+            name: &body.name,
+        }),
+    )
+    .await;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(prop)))
 }
 
@@ -122,6 +145,7 @@ pub async fn set_prop(
 pub async fn delete_prop(
     state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
+    req: HttpRequest,
     path: web::Path<PropPath>,
 ) -> Result<HttpResponse> {
     let path = path.into_inner();
@@ -135,5 +159,21 @@ pub async fn delete_prop(
         &path.name,
     )
     .await?;
+    let ctx = audit_service::AuditContext::from_request(&req, &claims);
+    let property_name = format!("{}:{}", path.namespace, path.name);
+    audit_service::log(
+        &state,
+        &ctx,
+        audit_service::AuditAction::PropertyDelete,
+        Some(entity_type_name(path.entity_type)),
+        Some(path.entity_id),
+        Some(&property_name),
+        audit_service::details(audit_service::PropertyAuditDetails {
+            entity_type: entity_type_name(path.entity_type),
+            namespace: &path.namespace,
+            name: &path.name,
+        }),
+    )
+    .await;
     Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
 }

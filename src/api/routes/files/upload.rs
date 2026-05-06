@@ -219,9 +219,25 @@ pub async fn get_upload_progress(
 pub async fn cancel_upload(
     state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
+    req: HttpRequest,
     path: web::Path<UploadIdPath>,
 ) -> Result<HttpResponse> {
     upload_service::cancel_upload(&state, &path.upload_id, claims.user_id).await?;
+    let ctx = AuditContext::from_request(&req, &claims);
+    crate::services::audit_service::log(
+        &state,
+        &ctx,
+        crate::services::audit_service::AuditAction::FileUploadCancel,
+        Some("upload_session"),
+        None,
+        Some(&path.upload_id),
+        crate::services::audit_service::details(
+            crate::services::audit_service::UploadCancelAuditDetails {
+                upload_id: &path.upload_id,
+            },
+        ),
+    )
+    .await;
     Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
 }
 
@@ -485,10 +501,26 @@ pub(crate) async fn team_get_upload_progress(
 pub(crate) async fn team_cancel_upload(
     state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
+    req: HttpRequest,
     path: web::Path<(i64, String)>,
 ) -> Result<HttpResponse> {
     let (team_id, upload_id) = path.into_inner();
     upload_service::cancel_upload_for_team(&state, team_id, &upload_id, claims.user_id).await?;
+    let ctx = AuditContext::from_request(&req, &claims);
+    crate::services::audit_service::log(
+        &state,
+        &ctx,
+        crate::services::audit_service::AuditAction::FileUploadCancel,
+        Some("upload_session"),
+        None,
+        Some(&upload_id),
+        crate::services::audit_service::details(
+            crate::services::audit_service::UploadCancelAuditDetails {
+                upload_id: &upload_id,
+            },
+        ),
+    )
+    .await;
     Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
 }
 

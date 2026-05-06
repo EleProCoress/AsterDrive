@@ -10,6 +10,7 @@ use crate::entities::file_version;
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::PrimaryAppState;
 use crate::services::{
+    audit_service::{self, AuditContext},
     storage_change_service,
     workspace_models::{FileInfo, FileVersion},
     workspace_storage_service::{self, WorkspaceStorageScope},
@@ -273,6 +274,27 @@ pub async fn restore_version(
     .map(FileInfo::from)
 }
 
+pub async fn restore_version_with_audit(
+    state: &PrimaryAppState,
+    file_id: i64,
+    version_id: i64,
+    user_id: i64,
+    audit_ctx: &AuditContext,
+) -> Result<FileInfo> {
+    let file = restore_version(state, file_id, version_id, user_id).await?;
+    audit_service::log(
+        state,
+        audit_ctx,
+        audit_service::AuditAction::FileVersionRestore,
+        Some("file"),
+        Some(file.id),
+        Some(&file.name),
+        audit_service::details(audit_service::FileVersionAuditDetails { version_id }),
+    )
+    .await;
+    Ok(file)
+}
+
 pub async fn restore_version_for_team(
     state: &PrimaryAppState,
     team_id: i64,
@@ -293,6 +315,28 @@ pub async fn restore_version_for_team(
     .map(FileInfo::from)
 }
 
+pub async fn restore_version_for_team_with_audit(
+    state: &PrimaryAppState,
+    team_id: i64,
+    file_id: i64,
+    version_id: i64,
+    user_id: i64,
+    audit_ctx: &AuditContext,
+) -> Result<FileInfo> {
+    let file = restore_version_for_team(state, team_id, file_id, version_id, user_id).await?;
+    audit_service::log(
+        state,
+        audit_ctx,
+        audit_service::AuditAction::FileVersionRestore,
+        Some("file"),
+        Some(file.id),
+        Some(&file.name),
+        audit_service::details(audit_service::FileVersionAuditDetails { version_id }),
+    )
+    .await;
+    Ok(file)
+}
+
 /// 删除指定版本（减 blob ref_count）
 pub async fn delete_version(
     state: &PrimaryAppState,
@@ -307,6 +351,34 @@ pub async fn delete_version(
         version_id,
     )
     .await
+}
+
+pub async fn delete_version_with_audit(
+    state: &PrimaryAppState,
+    file_id: i64,
+    version_id: i64,
+    user_id: i64,
+    audit_ctx: &AuditContext,
+) -> Result<()> {
+    let file = workspace_storage_service::verify_file_access(
+        state,
+        WorkspaceStorageScope::Personal { user_id },
+        file_id,
+    )
+    .await?;
+    let _version = load_version_for_file(&state.db, file_id, version_id).await?;
+    delete_version(state, file_id, version_id, user_id).await?;
+    audit_service::log(
+        state,
+        audit_ctx,
+        audit_service::AuditAction::FileVersionDelete,
+        Some("file"),
+        Some(file.id),
+        Some(&file.name),
+        audit_service::details(audit_service::FileVersionAuditDetails { version_id }),
+    )
+    .await;
+    Ok(())
 }
 
 pub async fn delete_version_for_team(
@@ -326,6 +398,38 @@ pub async fn delete_version_for_team(
         version_id,
     )
     .await
+}
+
+pub async fn delete_version_for_team_with_audit(
+    state: &PrimaryAppState,
+    team_id: i64,
+    file_id: i64,
+    version_id: i64,
+    user_id: i64,
+    audit_ctx: &AuditContext,
+) -> Result<()> {
+    let file = workspace_storage_service::verify_file_access(
+        state,
+        WorkspaceStorageScope::Team {
+            team_id,
+            actor_user_id: user_id,
+        },
+        file_id,
+    )
+    .await?;
+    let _version = load_version_for_file(&state.db, file_id, version_id).await?;
+    delete_version_for_team(state, team_id, file_id, version_id, user_id).await?;
+    audit_service::log(
+        state,
+        audit_ctx,
+        audit_service::AuditAction::FileVersionDelete,
+        Some("file"),
+        Some(file.id),
+        Some(&file.name),
+        audit_service::details(audit_service::FileVersionAuditDetails { version_id }),
+    )
+    .await;
+    Ok(())
 }
 
 /// 超出版本上限时清理最旧版本

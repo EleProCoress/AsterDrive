@@ -6,8 +6,11 @@ use crate::api::routes::team_scope;
 use crate::errors::Result;
 use crate::runtime::PrimaryAppState;
 use crate::services::{
-    audit_service::AuditContext, auth_service::Claims, direct_link_service, file_service,
-    media_processing_service, preview_link_service, wopi_service, workspace_models::FileInfo,
+    audit_service::{self, AuditContext},
+    auth_service::Claims,
+    direct_link_service, file_service, media_processing_service, preview_link_service,
+    wopi_service,
+    workspace_models::FileInfo,
     workspace_storage_service::WorkspaceStorageScope,
 };
 use actix_web::{HttpRequest, HttpResponse, web};
@@ -61,10 +64,13 @@ pub async fn get_file(
 pub async fn get_direct_link(
     state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
+    req: HttpRequest,
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
     direct_link_response(
         &state,
+        &claims,
+        &req,
         WorkspaceStorageScope::Personal {
             user_id: claims.user_id,
         },
@@ -94,6 +100,7 @@ pub async fn get_preview_link(
 ) -> Result<HttpResponse> {
     preview_link_response(
         &state,
+        &claims,
         &req,
         WorkspaceStorageScope::Personal {
             user_id: claims.user_id,
@@ -126,6 +133,7 @@ pub async fn open_wopi(
 ) -> Result<HttpResponse> {
     open_wopi_response(
         &state,
+        &claims,
         &req,
         WorkspaceStorageScope::Personal {
             user_id: claims.user_id,
@@ -248,10 +256,18 @@ pub(crate) async fn team_get_file(
 pub(crate) async fn team_get_direct_link(
     state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
+    req: HttpRequest,
     path: web::Path<(i64, i64)>,
 ) -> Result<HttpResponse> {
     let (team_id, file_id) = path.into_inner();
-    direct_link_response(&state, team_scope(team_id, claims.user_id), file_id).await
+    direct_link_response(
+        &state,
+        &claims,
+        &req,
+        team_scope(team_id, claims.user_id),
+        file_id,
+    )
+    .await
 }
 
 #[api_docs_macros::path(
@@ -278,7 +294,14 @@ pub(crate) async fn team_get_preview_link(
     path: web::Path<(i64, i64)>,
 ) -> Result<HttpResponse> {
     let (team_id, file_id) = path.into_inner();
-    preview_link_response(&state, &req, team_scope(team_id, claims.user_id), file_id).await
+    preview_link_response(
+        &state,
+        &claims,
+        &req,
+        team_scope(team_id, claims.user_id),
+        file_id,
+    )
+    .await
 }
 
 #[api_docs_macros::path(
@@ -309,6 +332,7 @@ pub(crate) async fn team_open_wopi(
     let (team_id, file_id) = path.into_inner();
     open_wopi_response(
         &state,
+        &claims,
         &req,
         team_scope(team_id, claims.user_id),
         file_id,
@@ -394,19 +418,38 @@ pub(crate) async fn get_file_response(
 
 pub(crate) async fn direct_link_response(
     state: &PrimaryAppState,
+    claims: &Claims,
+    req: &HttpRequest,
     scope: WorkspaceStorageScope,
     file_id: i64,
 ) -> Result<HttpResponse> {
+    let file = file_service::get_info_in_scope(state, scope, file_id).await?;
     let token = direct_link_service::create_token_in_scope(state, scope, file_id).await?;
+    let ctx = AuditContext::from_request(req, claims);
+    audit_service::log(
+        state,
+        &ctx,
+        audit_service::AuditAction::FileDirectLinkCreate,
+        Some("file"),
+        Some(file.id),
+        Some(&file.name),
+        audit_service::details(audit_service::FileAccessTokenAuditDetails {
+            source: "direct_link",
+            app_key: None,
+        }),
+    )
+    .await;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(token)))
 }
 
 pub(crate) async fn preview_link_response(
     state: &PrimaryAppState,
+    claims: &Claims,
     req: &HttpRequest,
     scope: WorkspaceStorageScope,
     file_id: i64,
 ) -> Result<HttpResponse> {
+    let file = file_service::get_info_in_scope(state, scope, file_id).await?;
     let (scheme, host) = request_origin_parts(req);
     let link = preview_link_service::create_token_for_file_in_scope_for_origin(
         state,
@@ -418,16 +461,32 @@ pub(crate) async fn preview_link_response(
         },
     )
     .await?;
+    let ctx = AuditContext::from_request(req, claims);
+    audit_service::log(
+        state,
+        &ctx,
+        audit_service::AuditAction::FilePreviewLinkCreate,
+        Some("file"),
+        Some(file.id),
+        Some(&file.name),
+        audit_service::details(audit_service::FileAccessTokenAuditDetails {
+            source: "preview_link",
+            app_key: None,
+        }),
+    )
+    .await;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(link)))
 }
 
 pub(crate) async fn open_wopi_response(
     state: &PrimaryAppState,
+    claims: &Claims,
     req: &HttpRequest,
     scope: WorkspaceStorageScope,
     file_id: i64,
     app_key: &str,
 ) -> Result<HttpResponse> {
+    let file = file_service::get_info_in_scope(state, scope, file_id).await?;
     let (scheme, host) = request_origin_parts(req);
     let session = wopi_service::create_launch_session_in_scope(
         state,
@@ -440,6 +499,20 @@ pub(crate) async fn open_wopi_response(
         }),
     )
     .await?;
+    let ctx = AuditContext::from_request(req, claims);
+    audit_service::log(
+        state,
+        &ctx,
+        audit_service::AuditAction::FileWopiOpen,
+        Some("file"),
+        Some(file.id),
+        Some(&file.name),
+        audit_service::details(audit_service::FileAccessTokenAuditDetails {
+            source: "wopi",
+            app_key: Some(app_key),
+        }),
+    )
+    .await;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(session)))
 }
 

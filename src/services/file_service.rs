@@ -13,7 +13,7 @@ use crate::errors::Result;
 use crate::runtime::PrimaryAppState;
 use crate::services::audit_service::{self, AuditContext};
 use crate::services::workspace_models::FileInfo;
-use crate::services::workspace_storage_service::WorkspaceStorageScope;
+use crate::services::workspace_storage_service::{self, WorkspaceStorageScope};
 use crate::types::NullablePatch;
 
 pub(crate) use common::{
@@ -49,6 +49,27 @@ pub(crate) use transfer::{
     batch_duplicate_file_records_with_names_in_scope, copy_file_in_scope,
 };
 pub use transfer::{batch_duplicate_file_records, copy_file, duplicate_file_record};
+
+pub(crate) async fn create_empty_in_scope_with_audit(
+    state: &PrimaryAppState,
+    scope: WorkspaceStorageScope,
+    folder_id: Option<i64>,
+    name: &str,
+    audit_ctx: &AuditContext,
+) -> Result<FileInfo> {
+    let file = workspace_storage_service::create_empty(state, scope, folder_id, name).await?;
+    audit_service::log(
+        state,
+        audit_ctx,
+        audit_service::AuditAction::FileCreate,
+        Some("file"),
+        Some(file.id),
+        Some(&file.name),
+        None,
+    )
+    .await;
+    Ok(file.into())
+}
 
 pub(crate) async fn delete_in_scope_with_audit(
     state: &PrimaryAppState,
@@ -120,6 +141,31 @@ pub(crate) async fn update_content_stream_in_scope_with_audit(
     )
     .await;
     Ok((file.into(), new_hash))
+}
+
+pub(crate) async fn set_lock_in_scope_with_audit(
+    state: &PrimaryAppState,
+    scope: WorkspaceStorageScope,
+    file_id: i64,
+    locked: bool,
+    audit_ctx: &AuditContext,
+) -> Result<FileInfo> {
+    let file = set_lock_in_scope(state, scope, file_id, locked).await?;
+    audit_service::log(
+        state,
+        audit_ctx,
+        if locked {
+            audit_service::AuditAction::FileLock
+        } else {
+            audit_service::AuditAction::FileUnlock
+        },
+        Some("file"),
+        Some(file.id),
+        Some(&file.name),
+        None,
+    )
+    .await;
+    Ok(file.into())
 }
 
 pub(crate) async fn copy_file_in_scope_with_audit(

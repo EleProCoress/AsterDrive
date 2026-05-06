@@ -277,11 +277,14 @@ pub async fn patch_folder(
 pub async fn set_lock(
     state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
+    req: HttpRequest,
     path: web::Path<i64>,
     body: web::Json<SetLockReq>,
 ) -> Result<HttpResponse> {
     set_lock_response(
         &state,
+        &claims,
+        &req,
         WorkspaceStorageScope::Personal {
             user_id: claims.user_id,
         },
@@ -598,12 +601,15 @@ pub(crate) async fn team_copy_folder(
 pub(crate) async fn team_set_lock(
     state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
+    req: HttpRequest,
     path: web::Path<(i64, i64)>,
     body: web::Json<SetLockReq>,
 ) -> Result<HttpResponse> {
     let (team_id, folder_id) = path.into_inner();
     set_lock_response(
         &state,
+        &claims,
+        &req,
         team_scope(team_id, claims.user_id),
         folder_id,
         body.locked,
@@ -692,12 +698,16 @@ pub(crate) async fn patch_folder_response(
 
 pub(crate) async fn set_lock_response(
     state: &PrimaryAppState,
+    claims: &Claims,
+    req: &HttpRequest,
     scope: WorkspaceStorageScope,
     folder_id: i64,
     locked: bool,
 ) -> Result<HttpResponse> {
-    let folder = folder_service::set_lock_in_scope(state, scope, folder_id, locked).await?;
-    Ok(HttpResponse::Ok().json(ApiResponse::ok(FolderInfo::from(folder))))
+    let ctx = AuditContext::from_request(req, claims);
+    let folder =
+        folder_service::set_lock_in_scope_with_audit(state, scope, folder_id, locked, &ctx).await?;
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(folder)))
 }
 
 pub(crate) async fn copy_folder_response(

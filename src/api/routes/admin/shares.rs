@@ -6,8 +6,8 @@ use crate::api::pagination::OffsetPage;
 use crate::api::response::ApiResponse;
 use crate::errors::Result;
 use crate::runtime::PrimaryAppState;
-use crate::services::share_service;
-use actix_web::{HttpResponse, web};
+use crate::services::{audit_service, auth_service::Claims, share_service};
+use actix_web::{HttpRequest, HttpResponse, web};
 
 #[api_docs_macros::path(
     get,
@@ -47,8 +47,21 @@ pub async fn list_all_shares(
 )]
 pub async fn admin_delete_share(
     state: web::Data<PrimaryAppState>,
+    claims: web::ReqData<Claims>,
+    req: HttpRequest,
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
     share_service::admin_delete_share(&state, *path).await?;
+    let ctx = audit_service::AuditContext::from_request(&req, &claims);
+    audit_service::log(
+        &state,
+        &ctx,
+        audit_service::AuditAction::AdminDeleteShare,
+        Some("share"),
+        Some(*path),
+        None,
+        None,
+    )
+    .await;
     Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
 }

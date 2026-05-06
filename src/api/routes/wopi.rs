@@ -21,7 +21,7 @@ use crate::api::dto::validate_request;
 use crate::api::dto::wopi::WopiAccessQuery;
 use crate::config::site_url;
 use crate::runtime::PrimaryAppState;
-use crate::services::{file_service, wopi_service};
+use crate::services::{audit_service, file_service, wopi_service};
 use actix_web::{HttpRequest, HttpResponse, web};
 
 pub fn routes() -> impl actix_web::dev::HttpServiceFactory + use<> {
@@ -74,6 +74,7 @@ pub async fn get_file_contents(
     if let Err(error) = validate_request(&*query) {
         return protocol_error_response(error);
     }
+    let audit_info = audit_service::AuditRequestInfo::from_request(&req);
     let if_none_match = req
         .headers()
         .get("If-None-Match")
@@ -85,6 +86,7 @@ pub async fn get_file_contents(
         &query.access_token,
         if_none_match,
         max_expected_size,
+        &audit_info,
         request_source(&state, &req),
     )
     .await
@@ -116,6 +118,7 @@ pub async fn put_file_contents(
     if let Err(error) = validate_request(&*query) {
         return protocol_error_response(error);
     }
+    let audit_info = audit_service::AuditRequestInfo::from_request(&req);
     let override_value = header_value(&req, "X-WOPI-Override");
     if !override_value.eq_ignore_ascii_case("PUT") {
         return HttpResponse::NotImplemented().finish();
@@ -128,6 +131,7 @@ pub async fn put_file_contents(
         &mut payload,
         request_content_length(&req),
         optional_header_value(&req, "X-WOPI-Lock"),
+        &audit_info,
         request_source(&state, &req),
     )
     .await
@@ -150,6 +154,7 @@ pub async fn file_operation(
     if let Err(error) = validate_request(&*query) {
         return protocol_error_response(error);
     }
+    let audit_info = audit_service::AuditRequestInfo::from_request(&req);
     let override_value = header_value(&req, "X-WOPI-Override");
     let requested_lock = optional_header_value(&req, "X-WOPI-Lock").unwrap_or_default();
     let old_lock = optional_header_value(&req, "X-WOPI-OldLock").unwrap_or_default();
@@ -169,6 +174,7 @@ pub async fn file_operation(
                 ),
                 size_header: optional_header_value(&req, "X-WOPI-Size"),
                 content_length: request_content_length(&req),
+                audit_info: &audit_info,
                 request_source: request_source(&state, &req),
             },
         )
@@ -208,6 +214,7 @@ pub async fn file_operation(
             &query.access_token,
             optional_header_value(&req, "X-WOPI-RequestedName"),
             optional_header_value(&req, "X-WOPI-Lock"),
+            &audit_info,
             request_source(&state, &req),
         )
         .await
@@ -231,6 +238,7 @@ pub async fn file_operation(
             *path,
             &query.access_token,
             &mut payload,
+            &audit_info,
             request_source(&state, &req),
         )
         .await
@@ -247,6 +255,7 @@ pub async fn file_operation(
             &query.access_token,
             requested_lock,
             old_lock,
+            &audit_info,
             request_source(&state, &req),
         )
         .await
@@ -256,6 +265,7 @@ pub async fn file_operation(
             *path,
             &query.access_token,
             requested_lock,
+            &audit_info,
             request_source(&state, &req),
         )
         .await
@@ -265,6 +275,7 @@ pub async fn file_operation(
             *path,
             &query.access_token,
             requested_lock,
+            &audit_info,
             request_source(&state, &req),
         )
         .await
@@ -274,6 +285,7 @@ pub async fn file_operation(
             *path,
             &query.access_token,
             requested_lock,
+            &audit_info,
             request_source(&state, &req),
         )
         .await

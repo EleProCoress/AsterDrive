@@ -9,7 +9,7 @@ use crate::api::response::{ApiResponse, RemovedCountResponse};
 use crate::config::auth_runtime::RuntimeAuthPolicy;
 use crate::errors::{AsterError, Result};
 use crate::runtime::PrimaryAppState;
-use crate::services::audit_service::{AuditContext, AuditRequestInfo};
+use crate::services::audit_service::{self, AuditContext, AuditRequestInfo};
 use crate::services::auth_service::Claims;
 use crate::services::storage_change_service::StorageChangeWorkspace;
 use crate::services::{auth_service, team_service, user_service};
@@ -371,6 +371,21 @@ pub async fn delete_other_sessions(
     let removed =
         auth_service::revoke_other_auth_sessions(&state, claims.user_id, &current_refresh_jti)
             .await?;
+    let ctx = AuditContext::from_request(&req, &claims);
+    audit_service::log(
+        &state,
+        &ctx,
+        audit_service::AuditAction::UserRevokeOtherSessions,
+        Some("auth_session"),
+        None,
+        None,
+        audit_service::details(audit_service::AuthSessionAuditDetails {
+            session_id: None,
+            removed: Some(removed),
+            revoked_current: false,
+        }),
+    )
+    .await;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(RemovedCountResponse { removed })))
 }
 
@@ -401,6 +416,21 @@ pub async fn delete_session(
         current_refresh_jti.as_deref(),
     )
     .await?;
+    let ctx = AuditContext::from_request(&req, &claims);
+    audit_service::log(
+        &state,
+        &ctx,
+        audit_service::AuditAction::UserRevokeSession,
+        Some("auth_session"),
+        None,
+        Some(path.as_str()),
+        audit_service::details(audit_service::AuthSessionAuditDetails {
+            session_id: Some(path.as_str()),
+            removed: None,
+            revoked_current,
+        }),
+    )
+    .await;
 
     let secure = RuntimeAuthPolicy::from_runtime_config(&state.runtime_config).cookie_secure;
     let mut response = HttpResponse::Ok();

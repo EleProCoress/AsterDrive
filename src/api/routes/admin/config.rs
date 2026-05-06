@@ -132,9 +132,12 @@ pub async fn set_config(
 )]
 pub async fn delete_config(
     state: web::Data<PrimaryAppState>,
+    claims: web::ReqData<crate::services::auth_service::Claims>,
+    req: HttpRequest,
     path: web::Path<String>,
 ) -> Result<HttpResponse> {
-    config_service::delete(&state, &path).await?;
+    let ctx = audit_service::AuditContext::from_request(&req, &claims);
+    config_service::delete_with_audit(&state, &path, &ctx).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
 }
 

@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::ToSchema;
 
+use crate::services::audit_service::AuditRequestInfo;
 use crate::services::preview_app_service;
 
 pub(crate) const MAX_WOPI_LOCK_LEN: usize = 1024;
@@ -138,6 +139,7 @@ pub struct WopiPutRelativeRequest<'a> {
     pub overwrite_relative_target: Option<&'a str>,
     pub size_header: Option<&'a str>,
     pub content_length: Option<i64>,
+    pub audit_info: &'a AuditRequestInfo,
     pub request_source: WopiRequestSource<'a>,
 }
 

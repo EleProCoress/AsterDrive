@@ -7,7 +7,10 @@
 use crate::db::repository::file_repo;
 use crate::errors::{AsterError, MapAsterErr, Result, precondition_failed_with_subcode};
 use crate::runtime::PrimaryAppState;
-use crate::services::{file_service, profile_service};
+use crate::services::{
+    audit_service::{self, AuditRequestInfo},
+    file_service, profile_service,
+};
 use crate::types::NullablePatch;
 use bytes::BytesMut;
 use futures::StreamExt;
@@ -74,6 +77,7 @@ pub async fn get_file_contents(
     access_token: &str,
     if_none_match: Option<&str>,
     max_expected_size: Option<&str>,
+    request_info: &AuditRequestInfo,
     request_source: WopiRequestSource<'_>,
 ) -> Result<WopiGetFileResult> {
     let resolved = resolve_access_token(state, file_id, access_token, request_source).await?;
@@ -97,6 +101,17 @@ pub async fn get_file_contents(
         if_none_match,
     )
     .await?;
+    let audit_ctx = request_info.to_context(resolved.payload.actor_user_id);
+    audit_service::log(
+        state,
+        &audit_ctx,
+        audit_service::AuditAction::FileDownload,
+        Some("file"),
+        Some(resolved.file.id),
+        Some(&resolved.file.name),
+        None,
+    )
+    .await;
     Ok(WopiGetFileResult {
         outcome,
         item_version,
@@ -110,6 +125,7 @@ pub async fn put_file_contents(
     payload: &mut actix_web::web::Payload,
     content_length: Option<i64>,
     requested_lock: Option<&str>,
+    request_info: &AuditRequestInfo,
     request_source: WopiRequestSource<'_>,
 ) -> Result<WopiPutFileResult> {
     let resolved = resolve_access_token(state, file_id, access_token, request_source).await?;
@@ -130,6 +146,17 @@ pub async fn put_file_contents(
         None,
     )
     .await?;
+    let audit_ctx = request_info.to_context(resolved.payload.actor_user_id);
+    audit_service::log(
+        state,
+        &audit_ctx,
+        audit_service::AuditAction::FileEdit,
+        Some("file"),
+        Some(updated.id),
+        Some(&updated.name),
+        None,
+    )
+    .await;
 
     Ok(WopiPutFileResult::Success {
         item_version: item_version_if_present(updated.id, item_version),
@@ -149,6 +176,7 @@ pub async fn put_relative_file(
         overwrite_relative_target,
         size_header,
         content_length,
+        audit_info,
         request_source,
     } = req;
     let request_public_origin = request_source.public_origin.clone();
@@ -162,10 +190,10 @@ pub async fn put_relative_file(
     )?;
     let scope = scope_from_payload(&resolved.payload);
 
-    let target_file = match request.target_mode {
+    let (target_file, audit_action) = match request.target_mode {
         PutRelativeTargetMode::Suggested(target_name) => {
             // SuggestedTarget 永远表示"新建一个可用名称"，不会覆盖现有文件。
-            store_relative_target_from_stream(
+            let target = store_relative_target_from_stream(
                 state,
                 StoreRelativeTargetParams::new(
                     scope,
@@ -175,7 +203,8 @@ pub async fn put_relative_file(
                 )
                 .declared_size(declared_size),
             )
-            .await?
+            .await?;
+            (target, audit_service::AuditAction::FileUpload)
         }
         PutRelativeTargetMode::Relative {
             target_name,
@@ -187,10 +216,9 @@ pub async fn put_relative_file(
                 find_file_by_name_in_scope(&state.db, scope, resolved.file.folder_id, &target_name)
                     .await?;
 
-            let existing = match existing {
-                Some(existing) => existing,
+            match existing {
                 None => {
-                    store_relative_target_from_stream(
+                    let target = store_relative_target_from_stream(
                         state,
                         StoreRelativeTargetParams::new(
                             scope,
@@ -201,63 +229,77 @@ pub async fn put_relative_file(
                         .declared_size(declared_size)
                         .exact_name(),
                     )
-                    .await?
+                    .await?;
+                    (target, audit_service::AuditAction::FileUpload)
                 }
-            };
+                Some(existing) => {
+                    if existing.id == resolved.file.id {
+                        return Err(AsterError::validation_error(
+                            "PUT_RELATIVE target must differ from source file",
+                        ));
+                    }
 
-            if existing.id == resolved.file.id {
-                return Err(AsterError::validation_error(
-                    "PUT_RELATIVE target must differ from source file",
-                ));
-            }
+                    if !overwrite {
+                        let valid_target = encode_wopi_filename(
+                            &suggest_available_relative_target(
+                                state,
+                                scope,
+                                resolved.file.folder_id,
+                                &target_name,
+                            )
+                            .await?,
+                        );
+                        return Ok(WopiPutRelativeResult::Conflict(
+                            super::types::WopiPutRelativeConflict {
+                                current_lock: Some(String::new()),
+                                reason: "target file already exists".to_string(),
+                                valid_target: Some(valid_target),
+                            },
+                        ));
+                    }
 
-            if !overwrite {
-                let valid_target = encode_wopi_filename(
-                    &suggest_available_relative_target(
+                    if let Some(active_lock) = load_active_lock(state, existing.id).await? {
+                        return Ok(WopiPutRelativeResult::Conflict(
+                            super::types::WopiPutRelativeConflict {
+                                current_lock: Some(
+                                    active_wopi_lock_value(&active_lock).unwrap_or_default(),
+                                ),
+                                reason: "target file is locked".to_string(),
+                                valid_target: None,
+                            },
+                        ));
+                    }
+
+                    let target = store_relative_target_from_stream(
                         state,
-                        scope,
-                        resolved.file.folder_id,
-                        &target_name,
+                        StoreRelativeTargetParams::new(
+                            scope,
+                            resolved.file.folder_id,
+                            &target_name,
+                            payload,
+                        )
+                        .declared_size(declared_size)
+                        .overwrite(existing.id)
+                        .exact_name(),
                     )
-                    .await?,
-                );
-                return Ok(WopiPutRelativeResult::Conflict(
-                    super::types::WopiPutRelativeConflict {
-                        current_lock: Some(String::new()),
-                        reason: "target file already exists".to_string(),
-                        valid_target: Some(valid_target),
-                    },
-                ));
+                    .await?;
+                    (target, audit_service::AuditAction::FileEdit)
+                }
             }
-
-            if let Some(active_lock) = load_active_lock(state, existing.id).await? {
-                return Ok(WopiPutRelativeResult::Conflict(
-                    super::types::WopiPutRelativeConflict {
-                        current_lock: Some(
-                            active_wopi_lock_value(&active_lock).unwrap_or_default(),
-                        ),
-                        reason: "target file is locked".to_string(),
-                        valid_target: None,
-                    },
-                ));
-            }
-
-            store_relative_target_from_stream(
-                state,
-                StoreRelativeTargetParams::new(
-                    scope,
-                    resolved.file.folder_id,
-                    &target_name,
-                    payload,
-                )
-                .declared_size(declared_size)
-                .overwrite(existing.id)
-                .exact_name(),
-            )
-            .await?
         }
     };
 
+    let audit_ctx = audit_info.to_context(resolved.payload.actor_user_id);
+    audit_service::log(
+        state,
+        &audit_ctx,
+        audit_action,
+        Some("file"),
+        Some(target_file.id),
+        Some(&target_file.name),
+        None,
+    )
+    .await;
     let response = build_put_relative_response(
         state,
         &resolved.payload,
@@ -275,6 +317,7 @@ pub async fn rename_file(
     access_token: &str,
     requested_name: Option<&str>,
     requested_lock: Option<&str>,
+    request_info: &AuditRequestInfo,
     request_source: WopiRequestSource<'_>,
 ) -> Result<WopiRenameFileResult> {
     let resolved = resolve_access_token(state, file_id, access_token, request_source).await?;
@@ -331,6 +374,17 @@ pub async fn rename_file(
         Err(err) => return Err(err),
     };
 
+    let audit_ctx = request_info.to_context(resolved.payload.actor_user_id);
+    audit_service::log(
+        state,
+        &audit_ctx,
+        audit_service::AuditAction::FileRename,
+        Some("file"),
+        Some(updated.id),
+        Some(&updated.name),
+        None,
+    )
+    .await;
     Ok(WopiRenameFileResult::Success(WopiRenameFileResponse {
         name: response_name_for_rename(&resolved.file.name, &updated.name).to_string(),
     }))
@@ -341,12 +395,26 @@ pub async fn put_user_info(
     file_id: i64,
     access_token: &str,
     payload: &mut actix_web::web::Payload,
+    request_info: &AuditRequestInfo,
     request_source: WopiRequestSource<'_>,
 ) -> Result<()> {
     let resolved = resolve_access_token(state, file_id, access_token, request_source).await?;
     let body = collect_limited_payload(payload, MAX_WOPI_USER_INFO_LEN).await?;
     let user_info = normalize_wopi_user_info(&body)?;
-    profile_service::update_wopi_user_info(state, resolved.payload.actor_user_id, user_info).await
+    profile_service::update_wopi_user_info(state, resolved.payload.actor_user_id, user_info)
+        .await?;
+    let audit_ctx = request_info.to_context(resolved.payload.actor_user_id);
+    audit_service::log(
+        state,
+        &audit_ctx,
+        audit_service::AuditAction::UserUpdateWopiInfo,
+        Some("user"),
+        Some(resolved.payload.actor_user_id),
+        None,
+        None,
+    )
+    .await;
+    Ok(())
 }
 
 fn item_version_if_present(_file_id: i64, item_version: String) -> String {

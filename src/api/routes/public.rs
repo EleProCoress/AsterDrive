@@ -4,8 +4,8 @@ use crate::api::dto::validate_request;
 use crate::api::response::ApiResponse;
 use crate::errors::Result;
 use crate::runtime::PrimaryAppState;
-use crate::services::{config_service, managed_follower_enrollment_service};
-use actix_web::{HttpResponse, web};
+use crate::services::{audit_service, config_service, managed_follower_enrollment_service};
+use actix_web::{HttpRequest, HttpResponse, web};
 use serde::Deserialize;
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::ToSchema;
@@ -94,11 +94,24 @@ pub async fn get_thumbnail_support(state: web::Data<PrimaryAppState>) -> Result<
 )]
 pub async fn redeem_remote_enrollment(
     state: web::Data<PrimaryAppState>,
+    req: HttpRequest,
     body: web::Json<RedeemRemoteEnrollmentReq>,
 ) -> Result<HttpResponse> {
     validate_request(&*body)?;
     let bootstrap =
         managed_follower_enrollment_service::redeem_enrollment_token(&state, &body.token).await?;
+    let audit_info = audit_service::AuditRequestInfo::from_request(&req);
+    let ctx = audit_info.to_context(0);
+    audit_service::log(
+        &state,
+        &ctx,
+        audit_service::AuditAction::RemoteEnrollmentRedeem,
+        Some("remote_node"),
+        Some(bootstrap.remote_node_id),
+        Some(&bootstrap.remote_node_name),
+        None,
+    )
+    .await;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(bootstrap)))
 }
 
@@ -114,9 +127,22 @@ pub async fn redeem_remote_enrollment(
 )]
 pub async fn ack_remote_enrollment(
     state: web::Data<PrimaryAppState>,
+    req: HttpRequest,
     body: web::Json<AckRemoteEnrollmentReq>,
 ) -> Result<HttpResponse> {
     validate_request(&*body)?;
     managed_follower_enrollment_service::ack_enrollment_token(&state, &body.ack_token).await?;
+    let audit_info = audit_service::AuditRequestInfo::from_request(&req);
+    let ctx = audit_info.to_context(0);
+    audit_service::log(
+        &state,
+        &ctx,
+        audit_service::AuditAction::RemoteEnrollmentAck,
+        Some("remote_node"),
+        None,
+        None,
+        None,
+    )
+    .await;
     Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
 }

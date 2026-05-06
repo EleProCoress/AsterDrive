@@ -17,5 +17,6 @@ pub use schema::{
     list_template_variable_groups,
 };
 pub use system::{
-    SystemConfig, SystemConfigValue, delete, get_by_key, list_paginated, set, set_with_audit,
+    SystemConfig, SystemConfigValue, delete, delete_with_audit, get_by_key, list_paginated, set,
+    set_with_audit,
 };

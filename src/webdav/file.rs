@@ -10,6 +10,7 @@ use tokio::io::{AsyncSeekExt, AsyncWriteExt};
 use crate::db::repository::file_repo;
 use crate::errors::Result as AsterResult;
 use crate::runtime::PrimaryAppState;
+use crate::services::audit_service::{self, AuditContext};
 use crate::services::workspace_storage_service::{self, WorkspaceStorageScope};
 use crate::storage::StorageDriver;
 use crate::utils::numbers::{i64_to_u64, u64_to_i64, usize_to_u64};
@@ -60,6 +61,7 @@ enum FileMode {
         folder_id: Option<i64>,
         filename: String,
         existing_file_id: Option<i64>,
+        audit_ctx: AuditContext,
         declared_size: Option<i64>,
         resolved_policy: Option<crate::entities::storage_policy::Model>,
         file: tokio::fs::File,
@@ -74,6 +76,7 @@ enum FileMode {
         folder_id: Option<i64>,
         filename: String,
         existing_file_id: Option<i64>,
+        audit_ctx: AuditContext,
         declared_size: i64,
         policy: crate::entities::storage_policy::Model,
         driver: Arc<dyn StorageDriver>,
@@ -94,6 +97,31 @@ impl AsterDavFile {
         filename: String,
         existing_file_id: Option<i64>,
         declared_size: Option<u64>,
+    ) -> Result<Self, FsError> {
+        Self::for_write_with_audit(
+            state,
+            user_id,
+            folder_id,
+            filename,
+            existing_file_id,
+            declared_size,
+            AuditContext {
+                user_id,
+                ip_address: None,
+                user_agent: None,
+            },
+        )
+        .await
+    }
+
+    pub async fn for_write_with_audit(
+        state: PrimaryAppState,
+        user_id: i64,
+        folder_id: Option<i64>,
+        filename: String,
+        existing_file_id: Option<i64>,
+        declared_size: Option<u64>,
+        audit_ctx: AuditContext,
     ) -> Result<Self, FsError> {
         let declared_size = declared_size.and_then(|size| i64::try_from(size).ok());
         let (file, temp_path, resolved_policy, hasher) = if let Some(size_hint) = declared_size {
@@ -175,6 +203,7 @@ impl AsterDavFile {
                         folder_id,
                         filename,
                         existing_file_id,
+                        audit_ctx,
                         declared_size: size_hint,
                         policy,
                         driver,
@@ -201,6 +230,7 @@ impl AsterDavFile {
                 folder_id,
                 filename,
                 existing_file_id,
+                audit_ctx,
                 declared_size,
                 resolved_policy,
                 file,
@@ -434,6 +464,7 @@ impl DavFile for AsterDavFile {
                     folder_id,
                     filename,
                     existing_file_id,
+                    audit_ctx,
                     declared_size,
                     resolved_policy,
                     file,
@@ -452,7 +483,12 @@ impl DavFile for AsterDavFile {
                         .clone()
                         .filter(|_| declared_size == &Some(written_size));
 
-                    workspace_storage_service::store_from_temp_with_hints(
+                    let audit_action = if existing_file_id.is_some() {
+                        audit_service::AuditAction::FileEdit
+                    } else {
+                        audit_service::AuditAction::FileUpload
+                    };
+                    let stored = workspace_storage_service::store_from_temp_with_hints(
                         state,
                         workspace_storage_service::StoreFromTempParams {
                             scope: WorkspaceStorageScope::Personal { user_id: *user_id },
@@ -470,6 +506,16 @@ impl DavFile for AsterDavFile {
                     )
                     .await
                     .map_err(map_store_error)?;
+                    audit_service::log(
+                        state,
+                        audit_ctx,
+                        audit_action,
+                        Some("file"),
+                        Some(stored.id),
+                        Some(&stored.name),
+                        Some(serde_json::json!({ "source": "webdav" })),
+                    )
+                    .await;
 
                     Ok(())
                 }
@@ -479,6 +525,7 @@ impl DavFile for AsterDavFile {
                     folder_id,
                     filename,
                     existing_file_id,
+                    audit_ctx,
                     declared_size,
                     policy,
                     driver,
@@ -525,7 +572,12 @@ impl DavFile for AsterDavFile {
                     }
 
                     let prepared_upload = prepared_upload.take().ok_or(FsError::GeneralFailure)?;
-                    workspace_storage_service::store_preuploaded_nondedup(
+                    let audit_action = if existing_file_id.is_some() {
+                        audit_service::AuditAction::FileEdit
+                    } else {
+                        audit_service::AuditAction::FileUpload
+                    };
+                    let stored = workspace_storage_service::store_preuploaded_nondedup(
                         state,
                         workspace_storage_service::StorePreuploadedNondedupParams {
                             scope: WorkspaceStorageScope::Personal { user_id: *user_id },
@@ -540,6 +592,16 @@ impl DavFile for AsterDavFile {
                     )
                     .await
                     .map_err(map_store_error)?;
+                    audit_service::log(
+                        state,
+                        audit_ctx,
+                        audit_action,
+                        Some("file"),
+                        Some(stored.id),
+                        Some(&stored.name),
+                        Some(serde_json::json!({ "source": "webdav" })),
+                    )
+                    .await;
 
                     Ok(())
                 }

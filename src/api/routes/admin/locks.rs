@@ -6,8 +6,8 @@ use crate::api::pagination::OffsetPage;
 use crate::api::response::{ApiResponse, RemovedCountResponse};
 use crate::errors::Result;
 use crate::runtime::PrimaryAppState;
-use crate::services::lock_service;
-use actix_web::{HttpResponse, web};
+use crate::services::{audit_service, auth_service::Claims, lock_service};
+use actix_web::{HttpRequest, HttpResponse, web};
 
 #[api_docs_macros::path(
     get,
@@ -45,9 +45,12 @@ pub async fn list_locks(
 )]
 pub async fn force_unlock(
     state: web::Data<PrimaryAppState>,
+    claims: web::ReqData<Claims>,
+    req: HttpRequest,
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
-    lock_service::force_unlock(&state, *path).await?;
+    let ctx = audit_service::AuditContext::from_request(&req, &claims);
+    lock_service::force_unlock_with_audit(&state, *path, &ctx).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
 }
 
@@ -62,7 +65,12 @@ pub async fn force_unlock(
     ),
     security(("bearer" = [])),
 )]
-pub async fn cleanup_expired_locks(state: web::Data<PrimaryAppState>) -> Result<HttpResponse> {
-    let count = lock_service::cleanup_expired(&state).await?;
+pub async fn cleanup_expired_locks(
+    state: web::Data<PrimaryAppState>,
+    claims: web::ReqData<Claims>,
+    req: HttpRequest,
+) -> Result<HttpResponse> {
+    let ctx = audit_service::AuditContext::from_request(&req, &claims);
+    let count = lock_service::cleanup_expired_with_audit(&state, &ctx).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(RemovedCountResponse { removed: count })))
 }

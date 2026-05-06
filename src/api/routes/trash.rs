@@ -8,11 +8,11 @@ use crate::api::response::{ApiResponse, PurgedCountResponse};
 use crate::config::RateLimitConfig;
 use crate::errors::Result;
 use crate::runtime::PrimaryAppState;
-use crate::services::{auth_service::Claims, trash_service};
+use crate::services::{audit_service, auth_service::Claims, trash_service};
 use crate::types::EntityType;
 use actix_governor::Governor;
 use actix_web::middleware::Condition;
-use actix_web::{HttpResponse, web};
+use actix_web::{HttpRequest, HttpResponse, web};
 
 pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory + use<> {
     let limiter = rate_limit::build_governor(&rl.api, &rl.trusted_proxies);
@@ -82,6 +82,7 @@ pub async fn list_trash(
 pub async fn restore(
     state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
+    req: HttpRequest,
     path: web::Path<TrashItemPath>,
 ) -> Result<HttpResponse> {
     match path.entity_type {
@@ -90,6 +91,23 @@ pub async fn restore(
             trash_service::restore_folder(&state, path.id, claims.user_id).await?
         }
     }
+    let ctx = audit_service::AuditContext::from_request(&req, &claims);
+    audit_service::log(
+        &state,
+        &ctx,
+        match path.entity_type {
+            EntityType::File => audit_service::AuditAction::FileRestore,
+            EntityType::Folder => audit_service::AuditAction::FolderRestore,
+        },
+        Some(match path.entity_type {
+            EntityType::File => "file",
+            EntityType::Folder => "folder",
+        }),
+        Some(path.id),
+        None,
+        None,
+    )
+    .await;
     Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
 }
 
@@ -112,12 +130,30 @@ pub async fn restore(
 pub async fn purge_one(
     state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
+    req: HttpRequest,
     path: web::Path<TrashItemPath>,
 ) -> Result<HttpResponse> {
     match path.entity_type {
         EntityType::File => trash_service::purge_file(&state, path.id, claims.user_id).await?,
         EntityType::Folder => trash_service::purge_folder(&state, path.id, claims.user_id).await?,
     }
+    let ctx = audit_service::AuditContext::from_request(&req, &claims);
+    audit_service::log(
+        &state,
+        &ctx,
+        match path.entity_type {
+            EntityType::File => audit_service::AuditAction::FilePurge,
+            EntityType::Folder => audit_service::AuditAction::FolderPurge,
+        },
+        Some(match path.entity_type {
+            EntityType::File => "file",
+            EntityType::Folder => "folder",
+        }),
+        Some(path.id),
+        None,
+        None,
+    )
+    .await;
     Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
 }
 
@@ -135,8 +171,20 @@ pub async fn purge_one(
 pub async fn purge_all(
     state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
+    req: HttpRequest,
 ) -> Result<HttpResponse> {
     let count = trash_service::purge_all(&state, claims.user_id).await?;
+    let ctx = audit_service::AuditContext::from_request(&req, &claims);
+    audit_service::log(
+        &state,
+        &ctx,
+        audit_service::AuditAction::TrashPurgeAll,
+        Some("trash"),
+        None,
+        None,
+        audit_service::details(audit_service::TrashPurgeAllAuditDetails { purged: count }),
+    )
+    .await;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(PurgedCountResponse { purged: count })))
 }
 
@@ -197,6 +245,7 @@ pub(crate) async fn team_list_trash(
 pub(crate) async fn team_restore(
     state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
+    req: HttpRequest,
     path: web::Path<(i64, EntityType, i64)>,
 ) -> Result<HttpResponse> {
     let (team_id, entity_type, id) = path.into_inner();
@@ -208,6 +257,23 @@ pub(crate) async fn team_restore(
             trash_service::restore_team_folder(&state, team_id, id, claims.user_id).await?
         }
     }
+    let ctx = audit_service::AuditContext::from_request(&req, &claims);
+    audit_service::log(
+        &state,
+        &ctx,
+        match entity_type {
+            EntityType::File => audit_service::AuditAction::FileRestore,
+            EntityType::Folder => audit_service::AuditAction::FolderRestore,
+        },
+        Some(match entity_type {
+            EntityType::File => "file",
+            EntityType::Folder => "folder",
+        }),
+        Some(id),
+        None,
+        None,
+    )
+    .await;
     Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
 }
 
@@ -232,6 +298,7 @@ pub(crate) async fn team_restore(
 pub(crate) async fn team_purge_one(
     state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
+    req: HttpRequest,
     path: web::Path<(i64, EntityType, i64)>,
 ) -> Result<HttpResponse> {
     let (team_id, entity_type, id) = path.into_inner();
@@ -243,6 +310,23 @@ pub(crate) async fn team_purge_one(
             trash_service::purge_team_folder(&state, team_id, id, claims.user_id).await?
         }
     }
+    let ctx = audit_service::AuditContext::from_request(&req, &claims);
+    audit_service::log(
+        &state,
+        &ctx,
+        match entity_type {
+            EntityType::File => audit_service::AuditAction::FilePurge,
+            EntityType::Folder => audit_service::AuditAction::FolderPurge,
+        },
+        Some(match entity_type {
+            EntityType::File => "file",
+            EntityType::Folder => "folder",
+        }),
+        Some(id),
+        None,
+        None,
+    )
+    .await;
     Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
 }
 
@@ -262,8 +346,20 @@ pub(crate) async fn team_purge_one(
 pub(crate) async fn team_purge_all(
     state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
+    req: HttpRequest,
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
     let purged = trash_service::purge_all_team(&state, *path, claims.user_id).await?;
+    let ctx = audit_service::AuditContext::from_request(&req, &claims);
+    audit_service::log(
+        &state,
+        &ctx,
+        audit_service::AuditAction::TrashPurgeAll,
+        Some("trash"),
+        Some(*path),
+        None,
+        audit_service::details(audit_service::TrashPurgeAllAuditDetails { purged }),
+    )
+    .await;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(PurgedCountResponse { purged })))
 }
