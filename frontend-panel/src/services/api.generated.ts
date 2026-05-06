@@ -2912,6 +2912,7 @@ export interface components {
             recent_background_tasks: components["schemas"]["AdminBackgroundTaskEvent"][];
             recent_events: components["schemas"]["AuditLogEntry"][];
             stats: components["schemas"]["AdminOverviewStats"];
+            system_health: components["schemas"]["AdminSystemHealthSummary"];
             timezone: string;
         };
         AdminOverviewDailyReport: {
@@ -2961,6 +2962,22 @@ export interface components {
             name?: string | null;
             /** Format: int64 */
             policy_group_id?: number | null;
+        };
+        AdminSystemHealthComponent: {
+            message: string;
+            name: string;
+            status: components["schemas"]["AdminSystemHealthStatus"];
+        };
+        /** @enum {string} */
+        AdminSystemHealthStatus: "unknown" | "healthy" | "degraded" | "unhealthy";
+        AdminSystemHealthSummary: {
+            checked_at?: string | null;
+            components: components["schemas"]["AdminSystemHealthComponent"][];
+            details?: string | null;
+            status: components["schemas"]["AdminSystemHealthStatus"];
+            summary?: string | null;
+            /** Format: int64 */
+            task_id?: number | null;
         };
         /** @description Cleanup completed background tasks by admin-specified conditions. */
         AdminTaskCleanupReq: {
@@ -4322,6 +4339,17 @@ export interface components {
             /** @enum {string} */
             kind: "text";
         });
+        RuntimeSystemHealthComponent: {
+            message: string;
+            name: string;
+            status: components["schemas"]["RuntimeSystemHealthStatus"];
+        };
+        RuntimeSystemHealthResult: {
+            components: components["schemas"]["RuntimeSystemHealthComponent"][];
+            status: components["schemas"]["RuntimeSystemHealthStatus"];
+        };
+        /** @enum {string} */
+        RuntimeSystemHealthStatus: "healthy" | "degraded" | "unhealthy";
         RuntimeTaskPayload: {
             task_name: string;
         };
@@ -4329,6 +4357,7 @@ export interface components {
             /** Format: int64 */
             duration_ms: number;
             summary?: string | null;
+            system_health?: null | components["schemas"]["RuntimeSystemHealthResult"];
         };
         /**
          * @description S3 下载传输策略（存储策略 options JSON）
@@ -5673,6 +5702,7 @@ export interface operations {
                             recent_background_tasks: components["schemas"]["AdminBackgroundTaskEvent"][];
                             recent_events: components["schemas"]["AuditLogEntry"][];
                             stats: components["schemas"]["AdminOverviewStats"];
+                            system_health: components["schemas"]["AdminSystemHealthSummary"];
                             timezone: string;
                         };
                         error?: null | components["schemas"]["ApiErrorInfo"];

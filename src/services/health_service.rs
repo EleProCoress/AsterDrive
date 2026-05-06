@@ -4,6 +4,9 @@ use crate::cache::CacheBackend;
 use crate::config::CacheConfig;
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::{FollowerRuntimeState, PrimaryRuntimeState};
+use crate::services::task_service::{
+    RuntimeSystemHealthComponent, RuntimeSystemHealthResult, RuntimeSystemHealthStatus,
+};
 use crate::services::{managed_follower_service, task_service};
 use sea_orm::DatabaseConnection;
 
@@ -25,6 +28,14 @@ impl HealthStatus {
 
     fn is_issue(self) -> bool {
         !matches!(self, Self::Healthy)
+    }
+
+    fn into_runtime_status(self) -> RuntimeSystemHealthStatus {
+        match self {
+            Self::Healthy => RuntimeSystemHealthStatus::Healthy,
+            Self::Degraded => RuntimeSystemHealthStatus::Degraded,
+            Self::Unhealthy => RuntimeSystemHealthStatus::Unhealthy,
+        }
     }
 }
 
@@ -101,11 +112,94 @@ impl SystemHealthReport {
     }
 
     pub fn into_runtime_outcome(self) -> task_service::RuntimeTaskRunOutcome {
-        let summary = Some(self.summary());
-        if self.has_issues() {
-            task_service::RuntimeTaskRunOutcome::failed(summary, self.details())
+        let summary = if self.has_issues() {
+            self.issue_summary()
         } else {
-            task_service::RuntimeTaskRunOutcome::succeeded(summary)
+            "system healthy".to_string()
+        };
+        let system_health = self.to_runtime_result();
+
+        if self.has_issues() {
+            task_service::RuntimeTaskRunOutcome::failed_with_system_health(
+                Some(summary),
+                self.issue_details(),
+                system_health,
+            )
+        } else {
+            task_service::RuntimeTaskRunOutcome::succeeded_with_system_health(
+                Some(summary),
+                system_health,
+            )
+        }
+    }
+
+    fn to_runtime_result(&self) -> RuntimeSystemHealthResult {
+        let status = if self
+            .components
+            .iter()
+            .any(|component| matches!(component.status, HealthStatus::Unhealthy))
+        {
+            RuntimeSystemHealthStatus::Unhealthy
+        } else if self
+            .components
+            .iter()
+            .any(|component| matches!(component.status, HealthStatus::Degraded))
+        {
+            RuntimeSystemHealthStatus::Degraded
+        } else {
+            RuntimeSystemHealthStatus::Healthy
+        };
+
+        RuntimeSystemHealthResult {
+            status,
+            components: self
+                .components
+                .iter()
+                .map(|component| RuntimeSystemHealthComponent {
+                    name: component.name.to_string(),
+                    status: component.status.into_runtime_status(),
+                    message: component.message.clone(),
+                })
+                .collect(),
+        }
+    }
+
+    fn issue_summary(&self) -> String {
+        let summary = self
+            .components
+            .iter()
+            .filter(|component| component.status.is_issue())
+            .map(|component| format!("{} {}", component.name, component.status.as_str()))
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        if summary.is_empty() {
+            self.summary()
+        } else {
+            summary
+        }
+    }
+
+    fn issue_details(&self) -> String {
+        let details = self
+            .components
+            .iter()
+            .filter(|component| component.status.is_issue())
+            .map(|component| {
+                format!(
+                    "{}={}: {}",
+                    component.name,
+                    component.status.as_str(),
+                    component.message
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("; ");
+
+        if details.is_empty() {
+            self.details()
+        } else {
+            details
         }
     }
 }
@@ -216,6 +310,7 @@ mod tests {
     use crate::cache::CacheBackend;
     use crate::config::CacheConfig;
     use crate::errors::{AsterError, Result};
+    use crate::services::task_service::{RuntimeSystemHealthStatus, RuntimeTaskRunOutcome};
     use async_trait::async_trait;
 
     struct FakeCache {
@@ -300,6 +395,78 @@ mod tests {
 
         assert!(!report.has_issues());
         assert_eq!(report.summary(), "database healthy");
+    }
+
+    #[test]
+    fn runtime_outcome_uses_compact_summary_when_system_is_healthy() {
+        let report = SystemHealthReport {
+            components: vec![
+                HealthComponentReport {
+                    name: "database",
+                    status: HealthStatus::Healthy,
+                    message: "database ping succeeded".to_string(),
+                },
+                HealthComponentReport {
+                    name: "cache",
+                    status: HealthStatus::Healthy,
+                    message: "cache probe succeeded".to_string(),
+                },
+            ],
+        };
+
+        let outcome = report.into_runtime_outcome();
+
+        match outcome {
+            RuntimeTaskRunOutcome::Succeeded {
+                summary,
+                system_health,
+            } => {
+                assert_eq!(summary, Some("system healthy".to_string()));
+                let system_health = system_health.expect("system health metadata should exist");
+                assert_eq!(system_health.status, RuntimeSystemHealthStatus::Healthy);
+                assert_eq!(system_health.components.len(), 2);
+            }
+            other => panic!("expected succeeded system health outcome, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn runtime_outcome_reports_only_problem_components() {
+        let report = SystemHealthReport {
+            components: vec![
+                HealthComponentReport {
+                    name: "database",
+                    status: HealthStatus::Healthy,
+                    message: "database ping succeeded".to_string(),
+                },
+                HealthComponentReport {
+                    name: "cache",
+                    status: HealthStatus::Degraded,
+                    message: "fallback active".to_string(),
+                },
+            ],
+        };
+
+        let outcome = report.into_runtime_outcome();
+
+        match outcome {
+            RuntimeTaskRunOutcome::Failed {
+                summary,
+                error,
+                system_health,
+            } => {
+                assert_eq!(summary, Some("cache degraded".to_string()));
+                assert_eq!(error, "cache=degraded: fallback active");
+                let system_health = system_health.expect("system health metadata should exist");
+                assert_eq!(system_health.status, RuntimeSystemHealthStatus::Degraded);
+                assert_eq!(system_health.components[1].name, "cache");
+                assert_eq!(
+                    system_health.components[1].status,
+                    RuntimeSystemHealthStatus::Degraded
+                );
+            }
+            other => panic!("expected failed system health outcome, got {other:?}"),
+        }
     }
 
     #[tokio::test]

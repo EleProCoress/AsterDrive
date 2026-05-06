@@ -77,6 +77,10 @@ export type AdminOverview = components["schemas"]["AdminOverview"];
 export type AdminOverviewDailyReport =
 	components["schemas"]["AdminOverviewDailyReport"];
 export type AdminOverviewStats = components["schemas"]["AdminOverviewStats"];
+export type AdminSystemHealthStatus =
+	components["schemas"]["AdminSystemHealthStatus"];
+export type AdminSystemHealthSummary =
+	components["schemas"]["AdminSystemHealthSummary"];
 export type AdminCreateTeamRequest =
 	components["schemas"]["AdminCreateTeamReq"];
 export type AdminTeamInfo = components["schemas"]["AdminTeamInfo"];

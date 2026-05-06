@@ -12,12 +12,13 @@ use crate::db::repository::{
 };
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::PrimaryAppState;
-use crate::services::audit_service;
+use crate::services::{audit_service, task_service::RuntimeSystemHealthStatus};
 use crate::types::{BackgroundTaskKind, BackgroundTaskStatus, UserStatus};
 use crate::utils::numbers::u32_to_usize;
 
 type DateTimeUtc = DateTime<Utc>;
 
+const SYSTEM_HEALTH_TASK_NAME: &str = "system-health-check";
 const DEFAULT_DAYS: u32 = 7;
 const MAX_DAYS: u32 = 90;
 const DEFAULT_EVENT_LIMIT: u64 = 8;
@@ -104,6 +105,36 @@ pub struct AdminBackgroundTaskEvent {
     pub duration_ms: Option<i64>,
 }
 
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum AdminSystemHealthStatus {
+    Unknown,
+    Healthy,
+    Degraded,
+    Unhealthy,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+pub struct AdminSystemHealthComponent {
+    pub name: String,
+    pub status: AdminSystemHealthStatus,
+    pub message: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+pub struct AdminSystemHealthSummary {
+    pub status: AdminSystemHealthStatus,
+    pub summary: Option<String>,
+    pub details: Option<String>,
+    pub components: Vec<AdminSystemHealthComponent>,
+    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = Option<String>))]
+    pub checked_at: Option<DateTimeUtc>,
+    pub task_id: Option<i64>,
+}
+
 #[derive(Clone, Debug, Serialize)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct AdminOverview {
@@ -112,6 +143,7 @@ pub struct AdminOverview {
     pub timezone: String,
     pub days: u32,
     pub stats: AdminOverviewStats,
+    pub system_health: AdminSystemHealthSummary,
     pub daily_reports: Vec<AdminOverviewDailyReport>,
     pub recent_events: Vec<audit_service::AuditLogEntry>,
     pub recent_background_tasks: Vec<AdminBackgroundTaskEvent>,
@@ -139,6 +171,7 @@ pub async fn get_overview(
         daily_reports,
         recent_events,
         recent_background_tasks,
+        latest_health_task,
     ) = tokio::try_join!(
         user_repo::count_all(&state.db),
         user_repo::count_by_status(&state.db, UserStatus::Active),
@@ -163,6 +196,10 @@ pub async fn get_overview(
             0,
         ),
         background_task_repo::list_recent(&state.db, event_limit),
+        background_task_repo::find_latest_system_runtime_by_task_name(
+            &state.db,
+            SYSTEM_HEALTH_TASK_NAME
+        ),
     )?;
     let today_report = daily_reports
         .first()
@@ -181,6 +218,7 @@ pub async fn get_overview(
         .into_iter()
         .map(build_background_task_event)
         .collect();
+    let system_health = build_system_health_summary(latest_health_task);
 
     Ok(AdminOverview {
         generated_at,
@@ -200,6 +238,7 @@ pub async fn get_overview(
             uploads_today: today_report.uploads,
             shares_today: today_report.share_creations,
         },
+        system_health,
         daily_reports,
         recent_events,
         recent_background_tasks,
@@ -231,6 +270,82 @@ fn build_background_task_event(
         finished_at: task.finished_at,
         updated_at: task.updated_at,
         duration_ms,
+    }
+}
+
+fn build_system_health_summary(
+    task: Option<crate::entities::background_task::Model>,
+) -> AdminSystemHealthSummary {
+    let Some(task) = task else {
+        return AdminSystemHealthSummary {
+            status: AdminSystemHealthStatus::Unknown,
+            summary: None,
+            details: None,
+            components: Vec::new(),
+            checked_at: None,
+            task_id: None,
+        };
+    };
+
+    let summary = task.status_text.clone();
+    let details = task.last_error.clone();
+    let parsed_result = parse_runtime_task_result(&task);
+    let (status, components) = parsed_result
+        .and_then(|result| result.system_health)
+        .map(|health| {
+            (
+                admin_health_status_from_runtime(health.status),
+                health
+                    .components
+                    .into_iter()
+                    .map(|component| AdminSystemHealthComponent {
+                        name: component.name,
+                        status: admin_health_status_from_runtime(component.status),
+                        message: component.message,
+                    })
+                    .collect(),
+            )
+        })
+        .unwrap_or_else(|| {
+            let status = match task.status {
+                BackgroundTaskStatus::Succeeded => AdminSystemHealthStatus::Healthy,
+                BackgroundTaskStatus::Failed => AdminSystemHealthStatus::Unhealthy,
+                _ => AdminSystemHealthStatus::Unknown,
+            };
+            (status, Vec::new())
+        });
+
+    AdminSystemHealthSummary {
+        status,
+        summary,
+        details,
+        components,
+        checked_at: Some(task.finished_at.unwrap_or(task.updated_at)),
+        task_id: Some(task.id),
+    }
+}
+
+fn parse_runtime_task_result(
+    task: &crate::entities::background_task::Model,
+) -> Option<crate::services::task_service::RuntimeTaskResult> {
+    let raw = task.result_json.as_ref()?;
+    match serde_json::from_str(raw.as_ref()) {
+        Ok(result) => Some(result),
+        Err(error) => {
+            tracing::warn!(
+                task_id = task.id,
+                "failed to parse system health runtime result: {error}"
+            );
+            None
+        }
+    }
+}
+
+fn admin_health_status_from_runtime(status: RuntimeSystemHealthStatus) -> AdminSystemHealthStatus {
+    match status {
+        RuntimeSystemHealthStatus::Healthy => AdminSystemHealthStatus::Healthy,
+        RuntimeSystemHealthStatus::Degraded => AdminSystemHealthStatus::Degraded,
+        RuntimeSystemHealthStatus::Unhealthy => AdminSystemHealthStatus::Unhealthy,
     }
 }
 

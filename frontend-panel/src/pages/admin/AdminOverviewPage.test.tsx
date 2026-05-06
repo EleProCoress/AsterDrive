@@ -14,6 +14,7 @@ const mockState = vi.hoisted(() => ({
 	},
 	get: vi.fn(),
 	handleApiError: vi.fn(),
+	navigate: vi.fn(),
 }));
 
 vi.mock("react-i18next", () => ({
@@ -58,6 +59,10 @@ vi.mock("react-i18next", () => ({
 			return key;
 		},
 	}),
+}));
+
+vi.mock("react-router-dom", () => ({
+	useNavigate: () => mockState.navigate,
 }));
 
 vi.mock("@/components/common/EmptyState", () => ({
@@ -348,6 +353,32 @@ function createOverview() {
 			shares_today: 3,
 			uploads_today: 5,
 		},
+		system_health: {
+			checked_at: "2026-03-29T09:22:00Z",
+			components: [
+				{
+					message: "database ping succeeded",
+					name: "database",
+					status: "healthy",
+				},
+				{
+					message:
+						"configured cache backend 'redis' is using active backend 'memory'",
+					name: "cache",
+					status: "degraded",
+				},
+				{
+					message: "checked 1 remote node: 1 healthy, 0 failed, 0 skipped",
+					name: "remote_nodes",
+					status: "healthy",
+				},
+			],
+			details:
+				"cache=degraded: configured cache backend 'redis' is using active backend 'memory'",
+			status: "degraded",
+			summary: "cache degraded",
+			task_id: 18,
+		},
 		timezone: "UTC",
 	};
 }
@@ -357,6 +388,7 @@ describe("AdminOverviewPage", () => {
 		mockState.displayTimeZoneStore.preference = "America/Los_Angeles";
 		mockState.get.mockReset();
 		mockState.handleApiError.mockReset();
+		mockState.navigate.mockReset();
 		mockState.get.mockResolvedValue(createOverview());
 	});
 
@@ -404,6 +436,16 @@ describe("AdminOverviewPage", () => {
 		expect(screen.getByText("uploads:5")).toBeInTheDocument();
 		expect(screen.getByText("shares:3")).toBeInTheDocument();
 		expect(
+			screen.getByText("overview_system_health_degraded"),
+		).toBeInTheDocument();
+		expect(screen.getByText("cache degraded")).toBeInTheDocument();
+		expect(screen.getByText("cache: degraded")).toBeInTheDocument();
+		expect(screen.queryByText("database: healthy")).not.toBeInTheDocument();
+		expect(screen.queryByText(/database healthy/)).not.toBeInTheDocument();
+		expect(
+			screen.getByText("overview_system_health_view_history"),
+		).toBeInTheDocument();
+		expect(
 			screen.getByText("generated:date:2026-03-29T10:00:00Z"),
 		).toBeInTheDocument();
 		expect(
@@ -442,6 +484,61 @@ describe("AdminOverviewPage", () => {
 		await waitFor(() => {
 			expect(mockState.get).toHaveBeenCalledTimes(2);
 		});
+	});
+
+	it("links the system health banner to runtime task history", async () => {
+		render(<AdminOverviewPage />);
+
+		const historyButton = await screen.findByRole("button", {
+			name: /overview_system_health_view_history/i,
+		});
+
+		fireEvent.click(historyButton);
+
+		expect(mockState.navigate).toHaveBeenCalledWith(
+			"/admin/tasks?kind=system_runtime",
+		);
+	});
+
+	it("hides noisy component summaries when system health is healthy", async () => {
+		const overview = createOverview();
+		overview.system_health = {
+			checked_at: "2026-03-29T09:22:00Z",
+			components: [
+				{
+					message: "database ping succeeded",
+					name: "database",
+					status: "healthy",
+				},
+				{
+					message: "cache backend succeeded",
+					name: "cache",
+					status: "healthy",
+				},
+				{
+					message: "checked 2 remote nodes",
+					name: "remote_nodes",
+					status: "healthy",
+				},
+			],
+			details:
+				"database=healthy: database ping succeeded; cache=healthy: cache backend succeeded; remote_nodes=healthy: checked 2 remote nodes",
+			status: "healthy",
+			summary: "database healthy, cache healthy, remote_nodes healthy",
+			task_id: 18,
+		};
+		mockState.get.mockResolvedValueOnce(overview);
+
+		render(<AdminOverviewPage />);
+
+		expect(
+			await screen.findByText("overview_system_health_healthy"),
+		).toBeInTheDocument();
+		expect(
+			screen.getByText("overview_system_health_healthy_desc"),
+		).toBeInTheDocument();
+		expect(screen.queryByText(/database healthy/)).not.toBeInTheDocument();
+		expect(screen.queryByText(/database=healthy/)).not.toBeInTheDocument();
 	});
 
 	it("keeps the daily reports block naturally expanded", async () => {

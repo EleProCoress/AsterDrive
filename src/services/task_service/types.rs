@@ -103,6 +103,30 @@ pub struct RuntimeTaskPayload {
     pub task_name: String,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum RuntimeSystemHealthStatus {
+    Healthy,
+    Degraded,
+    Unhealthy,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+pub struct RuntimeSystemHealthComponent {
+    pub name: String,
+    pub status: RuntimeSystemHealthStatus,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+pub struct RuntimeSystemHealthResult {
+    pub status: RuntimeSystemHealthStatus,
+    pub components: Vec<RuntimeSystemHealthComponent>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct ThumbnailGenerateTaskPayload {
@@ -119,6 +143,8 @@ pub struct ThumbnailGenerateTaskPayload {
 pub struct RuntimeTaskResult {
     pub duration_ms: i64,
     pub summary: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub system_health: Option<RuntimeSystemHealthResult>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

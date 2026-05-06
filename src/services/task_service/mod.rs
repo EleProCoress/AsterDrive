@@ -42,7 +42,8 @@ pub(crate) use thumbnail::ensure_thumbnail_task;
 pub use types::{
     ArchiveCompressTaskPayload, ArchiveCompressTaskResult, ArchiveExtractTaskPayload,
     ArchiveExtractTaskResult, CreateArchiveCompressTaskParams, CreateArchiveExtractTaskParams,
-    CreateArchiveTaskParams, RuntimeTaskPayload, RuntimeTaskResult, TaskInfo, TaskPayload,
+    CreateArchiveTaskParams, RuntimeSystemHealthComponent, RuntimeSystemHealthResult,
+    RuntimeSystemHealthStatus, RuntimeTaskPayload, RuntimeTaskResult, TaskInfo, TaskPayload,
     TaskResult, TaskStepInfo, TaskStepStatus, ThumbnailGenerateTaskPayload,
     ThumbnailGenerateTaskResult,
 };

@@ -13,7 +13,9 @@ use std::os::unix::fs::PermissionsExt;
 
 use aster_drive::db::repository::background_task_repo;
 use aster_drive::entities::background_task;
-use aster_drive::types::{BackgroundTaskKind, BackgroundTaskStatus, StoredTaskPayload};
+use aster_drive::types::{
+    BackgroundTaskKind, BackgroundTaskStatus, StoredTaskPayload, StoredTaskResult,
+};
 
 fn avatar_upload_payload() -> (String, Vec<u8>) {
     let boundary = "----AsterAvatarBoundary".to_string();
@@ -815,6 +817,69 @@ async fn test_admin_overview() {
     .await
     .expect("background task event should be inserted");
 
+    background_task_repo::create(
+        &state.db,
+        background_task::ActiveModel {
+            kind: Set(BackgroundTaskKind::SystemRuntime),
+            status: Set(BackgroundTaskStatus::Failed),
+            creator_user_id: Set(None),
+            team_id: Set(None),
+            share_id: Set(None),
+            display_name: Set("System health check".to_string()),
+            payload_json: Set(StoredTaskPayload(
+                r#"{"task_name":"system-health-check"}"#.to_string(),
+            )),
+            result_json: Set(Some(StoredTaskResult(
+                serde_json::json!({
+                    "duration_ms": 1_000,
+                    "summary": "cache degraded",
+                    "system_health": {
+                        "status": "degraded",
+                        "components": [
+                            {
+                                "name": "database",
+                                "status": "healthy",
+                                "message": "database ping succeeded",
+                            },
+                            {
+                                "name": "cache",
+                                "status": "degraded",
+                                "message": "configured cache backend 'redis' is using active backend 'memory'",
+                            },
+                            {
+                                "name": "remote_nodes",
+                                "status": "healthy",
+                                "message": "checked 1 remote node: 1 healthy, 0 failed, 0 skipped",
+                            },
+                        ],
+                    },
+                })
+                .to_string(),
+            ))),
+            steps_json: Set(None),
+            progress_current: Set(0),
+            progress_total: Set(1),
+            status_text: Set(Some("cache degraded".to_string())),
+            attempt_count: Set(0),
+            max_attempts: Set(1),
+            next_run_at: Set(now - Duration::seconds(10)),
+            processing_started_at: Set(None),
+            last_heartbeat_at: Set(None),
+            started_at: Set(Some(now - Duration::seconds(11))),
+            finished_at: Set(Some(now - Duration::seconds(10))),
+            last_error: Set(Some(
+                "cache=degraded: configured cache backend 'redis' is using active backend 'memory'"
+                    .to_string(),
+            )),
+            expires_at: Set(now + Duration::hours(24)),
+            created_at: Set(now - Duration::seconds(11)),
+            updated_at: Set(now - Duration::seconds(10)),
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("system health event should be inserted");
+
     let file_id = upload_test_file!(app, token);
 
     let req = test::TestRequest::post()
@@ -856,6 +921,24 @@ async fn test_admin_overview() {
     assert_eq!(data["stats"]["new_users_today"], 2);
     assert_eq!(data["stats"]["uploads_today"], 1);
     assert_eq!(data["stats"]["shares_today"], 1);
+    assert_eq!(data["system_health"]["status"], "degraded");
+    assert_eq!(data["system_health"]["summary"], "cache degraded");
+    assert_eq!(
+        data["system_health"]["details"],
+        "cache=degraded: configured cache backend 'redis' is using active backend 'memory'"
+    );
+    let health_components = data["system_health"]["components"].as_array().unwrap();
+    assert_eq!(health_components.len(), 3);
+    assert_eq!(health_components[0]["name"], "database");
+    assert_eq!(health_components[0]["status"], "healthy");
+    assert_eq!(health_components[1]["name"], "cache");
+    assert_eq!(health_components[1]["status"], "degraded");
+    assert_eq!(
+        health_components[1]["message"],
+        "configured cache backend 'redis' is using active backend 'memory'"
+    );
+    assert!(!data["system_health"]["task_id"].is_null());
+    assert!(!data["system_health"]["checked_at"].is_null());
 
     let reports = data["daily_reports"].as_array().unwrap();
     assert_eq!(reports.len(), 3);

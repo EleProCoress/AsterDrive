@@ -10,7 +10,8 @@ use crate::runtime::PrimaryAppState;
 use crate::types::{BackgroundTaskKind, BackgroundTaskStatus};
 
 use super::types::{
-    RuntimeTaskPayload, RuntimeTaskResult, serialize_task_payload, serialize_task_result,
+    RuntimeSystemHealthResult, RuntimeTaskPayload, RuntimeTaskResult, serialize_task_payload,
+    serialize_task_result,
 };
 use super::{task_expiration_from, truncate_error, truncate_status_text};
 
@@ -19,10 +20,12 @@ pub enum RuntimeTaskRunOutcome {
     Quiet,
     Succeeded {
         summary: Option<String>,
+        system_health: Option<RuntimeSystemHealthResult>,
     },
     Failed {
         summary: Option<String>,
         error: String,
+        system_health: Option<RuntimeSystemHealthResult>,
     },
 }
 
@@ -32,13 +35,39 @@ impl RuntimeTaskRunOutcome {
     }
 
     pub fn succeeded(summary: Option<String>) -> Self {
-        Self::Succeeded { summary }
+        Self::Succeeded {
+            summary,
+            system_health: None,
+        }
+    }
+
+    pub fn succeeded_with_system_health(
+        summary: Option<String>,
+        system_health: RuntimeSystemHealthResult,
+    ) -> Self {
+        Self::Succeeded {
+            summary,
+            system_health: Some(system_health),
+        }
     }
 
     pub fn failed(summary: Option<String>, error: impl Into<String>) -> Self {
         Self::Failed {
             summary,
             error: error.into(),
+            system_health: None,
+        }
+    }
+
+    pub fn failed_with_system_health(
+        summary: Option<String>,
+        error: impl Into<String>,
+        system_health: RuntimeSystemHealthResult,
+    ) -> Self {
+        Self::Failed {
+            summary,
+            error: error.into(),
+            system_health: Some(system_health),
         }
     }
 
@@ -56,7 +85,7 @@ impl RuntimeTaskRunOutcome {
     fn summary(&self) -> Option<&str> {
         match self {
             Self::Quiet => None,
-            Self::Succeeded { summary } | Self::Failed { summary, .. } => summary.as_deref(),
+            Self::Succeeded { summary, .. } | Self::Failed { summary, .. } => summary.as_deref(),
         }
     }
 
@@ -64,6 +93,15 @@ impl RuntimeTaskRunOutcome {
         match self {
             Self::Failed { error, .. } => Some(error.as_str()),
             Self::Quiet | Self::Succeeded { .. } => None,
+        }
+    }
+
+    fn system_health(&self) -> Option<RuntimeSystemHealthResult> {
+        match self {
+            Self::Succeeded { system_health, .. } | Self::Failed { system_health, .. } => {
+                system_health.clone()
+            }
+            Self::Quiet => None,
         }
     }
 }
@@ -89,6 +127,7 @@ pub async fn record_runtime_task_run(
     let result_json = serialize_task_result(&RuntimeTaskResult {
         duration_ms: (finished_at - started_at).num_milliseconds().max(0),
         summary: summary.clone(),
+        system_health: outcome.system_health(),
     })?;
 
     // 系统周期任务和用户后台任务共用 background_task 表。
