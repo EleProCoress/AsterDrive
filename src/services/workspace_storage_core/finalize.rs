@@ -12,7 +12,7 @@ use crate::services::workspace_scope_service::WorkspaceStorageScope;
 use super::file_record::{
     create_new_file_from_blob, create_new_file_from_blob_with_actor_username,
 };
-use super::quota::{check_quota, update_storage_used};
+use super::quota::update_storage_used;
 
 pub(crate) async fn finalize_upload_session_blob_with_actor_username<C: ConnectionTrait>(
     db: &C,
@@ -92,7 +92,6 @@ pub(crate) async fn finalize_upload_session_file(
     } = params;
     let scope = scope_from_session(session);
     let txn = crate::db::transaction::begin(&state.db).await?;
-    check_quota(&txn, scope, size).await?;
 
     let blob =
         file_repo::find_or_create_blob(&txn, file_hash, size, policy_id, storage_path).await?;
