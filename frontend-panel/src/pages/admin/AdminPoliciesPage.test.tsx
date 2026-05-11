@@ -1202,6 +1202,9 @@ describe("AdminPoliciesPage", () => {
 				secret_key: undefined,
 			});
 		});
+		await waitFor(() => {
+			expect(mockState.toastSuccess).toHaveBeenCalledWith("connection_success");
+		});
 		expect(mockState.testConnection).not.toHaveBeenCalled();
 
 		fireEvent.click(screen.getByRole("button", { name: /save_changes/i }));
