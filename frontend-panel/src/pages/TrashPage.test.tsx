@@ -21,6 +21,59 @@ const mockState = vi.hoisted(() => ({
 	toastSuccess: vi.fn(),
 }));
 
+class MockIntersectionObserver {
+	static instances: MockIntersectionObserver[] = [];
+
+	disconnect = vi.fn();
+	observe = vi.fn();
+	root = null;
+	rootMargin = "";
+	thresholds: number[] = [];
+	unobserve = vi.fn();
+
+	private readonly callback: IntersectionObserverCallback;
+
+	constructor(
+		callback: IntersectionObserverCallback,
+		options: IntersectionObserverInit = {},
+	) {
+		this.callback = callback;
+		this.root = (options.root as Element | Document | null | undefined) ?? null;
+		this.rootMargin = options.rootMargin ?? "";
+		this.thresholds = Array.isArray(options.threshold)
+			? options.threshold
+			: options.threshold !== undefined
+				? [options.threshold]
+				: [];
+		MockIntersectionObserver.instances.push(this);
+	}
+
+	takeRecords() {
+		return [];
+	}
+
+	trigger(target: Element, isIntersecting = true) {
+		this.callback(
+			[
+				{
+					boundingClientRect: DOMRect.fromRect(),
+					intersectionRatio: isIntersecting ? 1 : 0,
+					intersectionRect: DOMRect.fromRect(),
+					isIntersecting,
+					rootBounds: null,
+					target,
+					time: 0,
+				} as IntersectionObserverEntry,
+			],
+			this as unknown as IntersectionObserver,
+		);
+	}
+
+	static reset() {
+		MockIntersectionObserver.instances = [];
+	}
+}
+
 vi.mock("react-i18next", () => ({
 	useTranslation: () => ({
 		t: (key: string, opts?: Record<string, unknown>) => {
@@ -339,6 +392,7 @@ describe("TrashPage", () => {
 		mockState.selectionShortcuts.mockReset();
 		mockState.toastError.mockReset();
 		mockState.toastSuccess.mockReset();
+		MockIntersectionObserver.reset();
 
 		mockState.list.mockResolvedValue(emptyTrashContents());
 		mockState.purgeAll.mockResolvedValue(undefined);
@@ -428,5 +482,96 @@ describe("TrashPage", () => {
 		await waitFor(() => {
 			expect(mockState.refreshUser).toHaveBeenCalledTimes(1);
 		});
+	});
+
+	it("shows the server total even when only the first trash page is loaded", async () => {
+		mockState.list.mockResolvedValueOnce({
+			files: [fileItem],
+			files_total: 150,
+			folders: [],
+			folders_total: 2,
+			next_file_cursor: {
+				expires_at: "2026-04-08T00:00:00Z",
+				id: 1,
+			},
+		} as never);
+
+		render(<TrashPage />);
+
+		expect(await screen.findByText("items:152")).toBeInTheDocument();
+		expect(screen.queryByText("items:1")).not.toBeInTheDocument();
+	});
+
+	it("loads additional folders when the first trash page has more folders but no more files", async () => {
+		const originalIntersectionObserver = window.IntersectionObserver;
+		Object.defineProperty(window, "IntersectionObserver", {
+			writable: true,
+			value: MockIntersectionObserver,
+		});
+
+		try {
+			mockState.list
+				.mockResolvedValueOnce({
+					files: [],
+					files_total: 0,
+					folders: [
+						{
+							entity_type: "folder",
+							expires_at: "2026-04-08T00:00:00Z",
+							id: 11,
+							name: "folder-a",
+							original_path: "/",
+						},
+					],
+					folders_total: 2,
+					next_file_cursor: null,
+				} as never)
+				.mockResolvedValueOnce({
+					files: [],
+					files_total: 0,
+					folders: [
+						{
+							entity_type: "folder",
+							expires_at: "2026-04-07T00:00:00Z",
+							id: 12,
+							name: "folder-b",
+							original_path: "/",
+						},
+					],
+					folders_total: 2,
+					next_file_cursor: null,
+				} as never);
+
+			render(<TrashPage />);
+
+			await screen.findByText("select:folder-a");
+			await waitFor(() => {
+				expect(MockIntersectionObserver.instances).toHaveLength(1);
+			});
+
+			const observer = MockIntersectionObserver.instances[0];
+			const target = observer?.observe.mock.calls[0]?.[0] as
+				| Element
+				| undefined;
+			expect(target).toBeInstanceOf(HTMLElement);
+
+			if (observer && target) {
+				observer.trigger(target);
+			}
+
+			await screen.findByText("select:folder-b");
+			expect(mockState.list).toHaveBeenLastCalledWith({
+				file_after_expires_at: undefined,
+				file_after_id: undefined,
+				file_limit: 0,
+				folder_limit: 1000,
+				folder_offset: 1,
+			});
+		} finally {
+			Object.defineProperty(window, "IntersectionObserver", {
+				writable: true,
+				value: originalIntersectionObserver,
+			});
+		}
 	});
 });

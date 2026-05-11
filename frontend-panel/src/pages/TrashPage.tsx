@@ -78,6 +78,7 @@ export default function TrashPage() {
 	const sentinelRef = useRef<HTMLDivElement | null>(null);
 
 	const items = toTrashItems(contents);
+	const totalItems = contents.files_total + contents.folders_total;
 	const hasMoreFiles = contents.next_file_cursor != null;
 	const hasMoreFolders = contents.folders.length < contents.folders_total;
 	const hasMore = hasMoreFiles || hasMoreFolders;
@@ -86,7 +87,7 @@ export default function TrashPage() {
 	);
 	const selectionCount = selectedItems.length;
 	const allSelected = items.length > 0 && selectionCount === items.length;
-	const isEmpty = !loading && items.length === 0;
+	const isEmpty = !loading && totalItems === 0;
 
 	const TRASH_PAGE_SIZE = 100;
 
@@ -107,18 +108,22 @@ export default function TrashPage() {
 	}, []);
 
 	const loadMore = useCallback(async () => {
-		if (loadingMore || !contents.next_file_cursor) return;
+		if (loadingMore || (!hasMoreFiles && !hasMoreFolders)) return;
 		setLoadingMore(true);
 		try {
 			const data = await trashService.list({
-				folder_limit: 0,
-				file_limit: TRASH_PAGE_SIZE,
-				file_after_expires_at: contents.next_file_cursor.expires_at,
-				file_after_id: contents.next_file_cursor.id,
+				folder_limit: hasMoreFolders ? FOLDER_LIMIT : 0,
+				folder_offset: hasMoreFolders ? contents.folders.length : 0,
+				file_limit: hasMoreFiles ? TRASH_PAGE_SIZE : 0,
+				file_after_expires_at: contents.next_file_cursor?.expires_at,
+				file_after_id: contents.next_file_cursor?.id,
 			});
 			setContents((prev) => ({
 				...prev,
+				folders: [...prev.folders, ...data.folders],
 				files: [...prev.files, ...data.files],
+				folders_total: data.folders_total,
+				files_total: data.files_total,
 				next_file_cursor: data.next_file_cursor,
 			}));
 		} catch (err) {
@@ -126,7 +131,13 @@ export default function TrashPage() {
 		} finally {
 			setLoadingMore(false);
 		}
-	}, [contents.next_file_cursor, loadingMore]);
+	}, [
+		contents.folders.length,
+		contents.next_file_cursor,
+		hasMoreFiles,
+		hasMoreFolders,
+		loadingMore,
+	]);
 
 	useEffect(() => {
 		void load();
@@ -315,7 +326,7 @@ export default function TrashPage() {
 							<span className="text-sm font-medium">
 								{selectionCount > 0
 									? t("selected_count", { count: selectionCount })
-									: t("items_count", { count: items.length })}
+									: t("items_count", { count: totalItems })}
 							</span>
 						</div>
 						<span className="hidden text-sm text-muted-foreground md:inline">

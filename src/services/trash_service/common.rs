@@ -155,7 +155,7 @@ pub(super) async fn recursive_purge_folder_in_scope(
     scope: WorkspaceStorageScope,
     folder_id: i64,
 ) -> Result<()> {
-    recursive_purge_folder_in_resource_scope(state, scope.into(), folder_id).await
+    recursive_purge_folder_forest_in_scope(state, scope, &[folder_id]).await
 }
 
 pub(super) async fn recursive_purge_folder_in_resource_scope(
@@ -163,8 +163,28 @@ pub(super) async fn recursive_purge_folder_in_resource_scope(
     scope: WorkspaceResourceScope,
     folder_id: i64,
 ) -> Result<()> {
+    recursive_purge_folder_forest_in_resource_scope(state, scope, &[folder_id]).await
+}
+
+pub(super) async fn recursive_purge_folder_forest_in_scope(
+    state: &PrimaryAppState,
+    scope: WorkspaceStorageScope,
+    folder_ids: &[i64],
+) -> Result<()> {
+    recursive_purge_folder_forest_in_resource_scope(state, scope.into(), folder_ids).await
+}
+
+pub(super) async fn recursive_purge_folder_forest_in_resource_scope(
+    state: &PrimaryAppState,
+    scope: WorkspaceResourceScope,
+    folder_ids: &[i64],
+) -> Result<()> {
+    if folder_ids.is_empty() {
+        return Ok(());
+    }
+
     let (all_files, all_folder_ids) =
-        folder_service::collect_folder_tree_in_resource_scope(&state.db, scope, folder_id, true)
+        folder_service::collect_folder_forest_in_resource_scope(&state.db, scope, folder_ids, true)
             .await?;
     file_service::batch_purge_in_resource_scope(state, scope, all_files).await?;
     property_repo::delete_all_for_entities(&state.db, EntityType::Folder, &all_folder_ids).await?;

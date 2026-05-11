@@ -7,10 +7,12 @@ use crate::services::{
     file_service,
     workspace_storage_service::{self, WorkspaceStorageScope},
 };
+use crate::utils::numbers::usize_to_u32;
 
 use super::PURGE_ALL_BATCH_SIZE;
 use super::common::{
-    recursive_purge_folder_in_scope, verify_file_in_trash_in_scope, verify_folder_in_trash_in_scope,
+    recursive_purge_folder_forest_in_scope, recursive_purge_folder_in_scope,
+    verify_file_in_trash_in_scope, verify_folder_in_trash_in_scope,
 };
 
 /// 永久删除单个文件
@@ -101,10 +103,21 @@ async fn purge_all_in_scope(state: &PrimaryAppState, scope: WorkspaceStorageScop
         folder_cursor = top_folders
             .last()
             .and_then(|folder| folder.deleted_at.map(|deleted_at| (deleted_at, folder.id)));
-        for folder in top_folders {
-            match recursive_purge_folder_in_scope(state, scope, folder.id).await {
-                Ok(()) => count += 1,
-                Err(error) => tracing::warn!("purge folder {} failed: {error}", folder.id),
+        let folder_count = usize_to_u32(top_folders.len(), "purged folder count")?;
+        let folder_ids: Vec<i64> = top_folders.into_iter().map(|folder| folder.id).collect();
+        match recursive_purge_folder_forest_in_scope(state, scope, &folder_ids).await {
+            Ok(()) => count += folder_count,
+            Err(error) => {
+                tracing::warn!(
+                    folder_ids = ?folder_ids,
+                    "batch purge top-level folders failed, falling back to per-folder purge: {error}"
+                );
+                for folder_id in folder_ids {
+                    match recursive_purge_folder_in_scope(state, scope, folder_id).await {
+                        Ok(()) => count += 1,
+                        Err(error) => tracing::warn!("purge folder {folder_id} failed: {error}"),
+                    }
+                }
             }
         }
     }
