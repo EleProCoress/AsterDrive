@@ -547,7 +547,18 @@ async fn create_folders(manager: &SchemaManager<'_>) -> Result<(), DbErr> {
         .col(ColumnDef::new(Folders::Name).string_len(255).not_null())
         .col(ColumnDef::new(Folders::ParentId).big_integer().null())
         .col(ColumnDef::new(Folders::TeamId).big_integer().null())
-        .col(ColumnDef::new(Folders::UserId).big_integer().not_null())
+        .col(ColumnDef::new(Folders::OwnerUserId).big_integer().null())
+        .col(
+            ColumnDef::new(Folders::CreatedByUserId)
+                .big_integer()
+                .null(),
+        )
+        .col(
+            ColumnDef::new(Folders::CreatedByUsername)
+                .string_len(255)
+                .not_null()
+                .default(""),
+        )
         .col(ColumnDef::new(Folders::PolicyId).big_integer().null())
         .col(crate::time::utc_date_time_column(manager, Folders::CreatedAt).not_null())
         .col(crate::time::utc_date_time_column(manager, Folders::UpdatedAt).not_null())
@@ -560,9 +571,17 @@ async fn create_folders(manager: &SchemaManager<'_>) -> Result<(), DbErr> {
         )
         .foreign_key(
             ForeignKey::create()
-                .from(Folders::Table, Folders::UserId)
+                .name("fk_folders_owner_user_id")
+                .from(Folders::Table, Folders::OwnerUserId)
                 .to(Users::Table, Users::Id)
-                .on_delete(ForeignKeyAction::Cascade),
+                .on_delete(ForeignKeyAction::SetNull),
+        )
+        .foreign_key(
+            ForeignKey::create()
+                .name("fk_folders_created_by_user_id")
+                .from(Folders::Table, Folders::CreatedByUserId)
+                .to(Users::Table, Users::Id)
+                .on_delete(ForeignKeyAction::SetNull),
         )
         .foreign_key(
             ForeignKey::create()
@@ -655,7 +674,14 @@ async fn create_files(manager: &SchemaManager<'_>) -> Result<(), DbErr> {
                 .not_null()
                 .default(0),
         )
-        .col(ColumnDef::new(Files::UserId).big_integer().not_null())
+        .col(ColumnDef::new(Files::OwnerUserId).big_integer().null())
+        .col(ColumnDef::new(Files::CreatedByUserId).big_integer().null())
+        .col(
+            ColumnDef::new(Files::CreatedByUsername)
+                .string_len(255)
+                .not_null()
+                .default(""),
+        )
         .col(ColumnDef::new(Files::MimeType).string_len(128).not_null())
         .col(crate::time::utc_date_time_column(manager, Files::CreatedAt).not_null())
         .col(crate::time::utc_date_time_column(manager, Files::UpdatedAt).not_null())
@@ -680,9 +706,17 @@ async fn create_files(manager: &SchemaManager<'_>) -> Result<(), DbErr> {
         )
         .foreign_key(
             ForeignKey::create()
-                .from(Files::Table, Files::UserId)
+                .name("fk_files_owner_user_id")
+                .from(Files::Table, Files::OwnerUserId)
                 .to(Users::Table, Users::Id)
-                .on_delete(ForeignKeyAction::Cascade),
+                .on_delete(ForeignKeyAction::SetNull),
+        )
+        .foreign_key(
+            ForeignKey::create()
+                .name("fk_files_created_by_user_id")
+                .from(Files::Table, Files::CreatedByUserId)
+                .to(Users::Table, Users::Id)
+                .on_delete(ForeignKeyAction::SetNull),
         );
 
     if backend != DbBackend::Sqlite {
@@ -1392,6 +1426,11 @@ async fn create_background_tasks(manager: &SchemaManager<'_>) -> Result<(), DbEr
                 .col(crate::time::utc_date_time_column(manager, BackgroundTasks::FinishedAt).null())
                 .col(ColumnDef::new(BackgroundTasks::LastError).text().null())
                 .col(
+                    ColumnDef::new(BackgroundTasks::FailureCanRetry)
+                        .boolean()
+                        .null(),
+                )
+                .col(
                     crate::time::utc_date_time_column(manager, BackgroundTasks::ExpiresAt)
                         .not_null(),
                 )
@@ -1873,34 +1912,44 @@ async fn create_simple_indexes(manager: &SchemaManager<'_>) -> Result<(), DbErr>
             .col(TeamMembers::Role)
             .to_owned(),
         Index::create()
-            .name("idx_folders_user_deleted_parent_name")
+            .name("idx_folders_owner_deleted_parent_name")
             .table(Folders::Table)
-            .col(Folders::UserId)
+            .col(Folders::OwnerUserId)
             .col(Folders::DeletedAt)
             .col(Folders::ParentId)
             .col(Folders::Name)
             .to_owned(),
         Index::create()
-            .name("idx_files_user_deleted_folder_name")
+            .name("idx_files_owner_deleted_folder_name")
             .table(Files::Table)
-            .col(Files::UserId)
+            .col(Files::OwnerUserId)
             .col(Files::DeletedAt)
             .col(Files::FolderId)
             .col(Files::Name)
             .to_owned(),
         Index::create()
-            .name("idx_folders_user_deleted_at_id")
+            .name("idx_folders_owner_deleted_at_id")
             .table(Folders::Table)
-            .col(Folders::UserId)
+            .col(Folders::OwnerUserId)
             .col((Folders::DeletedAt, IndexOrder::Desc))
             .col((Folders::Id, IndexOrder::Asc))
             .to_owned(),
         Index::create()
-            .name("idx_files_user_deleted_at_id")
+            .name("idx_files_owner_deleted_at_id")
             .table(Files::Table)
-            .col(Files::UserId)
+            .col(Files::OwnerUserId)
             .col((Files::DeletedAt, IndexOrder::Desc))
             .col((Files::Id, IndexOrder::Asc))
+            .to_owned(),
+        Index::create()
+            .name("idx_folders_created_by_user_id")
+            .table(Folders::Table)
+            .col(Folders::CreatedByUserId)
+            .to_owned(),
+        Index::create()
+            .name("idx_files_created_by_user_id")
+            .table(Files::Table)
+            .col(Files::CreatedByUserId)
             .to_owned(),
         Index::create()
             .name("idx_files_team_id")
@@ -2226,7 +2275,7 @@ async fn create_live_name_unique_indexes(manager: &SchemaManager<'_>) -> Result<
             "CREATE UNIQUE INDEX idx_files_unique_live_name \
              ON files ( \
                 (CASE WHEN team_id IS NULL THEN 0 ELSE 1 END), \
-                (CASE WHEN team_id IS NULL THEN user_id ELSE team_id END), \
+                (CASE WHEN team_id IS NULL THEN owner_user_id ELSE team_id END), \
                 (COALESCE(folder_id, 0)), \
                 name, \
                 (CASE WHEN deleted_at IS NULL THEN 1 ELSE NULL END) \
@@ -2234,7 +2283,7 @@ async fn create_live_name_unique_indexes(manager: &SchemaManager<'_>) -> Result<
             "CREATE UNIQUE INDEX idx_folders_unique_live_name \
              ON folders ( \
                 (CASE WHEN team_id IS NULL THEN 0 ELSE 1 END), \
-                (CASE WHEN team_id IS NULL THEN user_id ELSE team_id END), \
+                (CASE WHEN team_id IS NULL THEN owner_user_id ELSE team_id END), \
                 (COALESCE(parent_id, 0)), \
                 name, \
                 (CASE WHEN deleted_at IS NULL THEN 1 ELSE NULL END) \
@@ -2244,7 +2293,7 @@ async fn create_live_name_unique_indexes(manager: &SchemaManager<'_>) -> Result<
             "CREATE UNIQUE INDEX idx_files_unique_live_name \
              ON files ( \
                 ((CASE WHEN team_id IS NULL THEN 0 ELSE 1 END)), \
-                ((CASE WHEN team_id IS NULL THEN user_id ELSE team_id END)), \
+                ((CASE WHEN team_id IS NULL THEN owner_user_id ELSE team_id END)), \
                 ((COALESCE(folder_id, 0))), \
                 name, \
                 ((CASE WHEN deleted_at IS NULL THEN 1 ELSE NULL END)) \
@@ -2252,7 +2301,7 @@ async fn create_live_name_unique_indexes(manager: &SchemaManager<'_>) -> Result<
             "CREATE UNIQUE INDEX idx_folders_unique_live_name \
              ON folders ( \
                 ((CASE WHEN team_id IS NULL THEN 0 ELSE 1 END)), \
-                ((CASE WHEN team_id IS NULL THEN user_id ELSE team_id END)), \
+                ((CASE WHEN team_id IS NULL THEN owner_user_id ELSE team_id END)), \
                 ((COALESCE(parent_id, 0))), \
                 name, \
                 ((CASE WHEN deleted_at IS NULL THEN 1 ELSE NULL END)) \
@@ -2533,7 +2582,9 @@ enum Folders {
     Name,
     ParentId,
     TeamId,
-    UserId,
+    OwnerUserId,
+    CreatedByUserId,
+    CreatedByUsername,
     PolicyId,
     CreatedAt,
     UpdatedAt,
@@ -2566,7 +2617,9 @@ enum Files {
     TeamId,
     BlobId,
     Size,
-    UserId,
+    OwnerUserId,
+    CreatedByUserId,
+    CreatedByUsername,
     MimeType,
     CreatedAt,
     UpdatedAt,
@@ -2817,6 +2870,7 @@ enum BackgroundTasks {
     StartedAt,
     FinishedAt,
     LastError,
+    FailureCanRetry,
     ExpiresAt,
     CreatedAt,
     UpdatedAt,

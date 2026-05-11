@@ -10,15 +10,19 @@ use sea_orm_migration::sea_orm::{
 };
 
 mod legacy;
-mod m20260502_000001_baseline_schema;
-mod m20260508_000001_split_file_folder_owner_provenance;
-mod m20260511_000001_add_background_task_failure_can_retry;
+mod m20260512_000001_baseline_schema;
 mod search_acceleration;
 mod time;
 
-pub const BASELINE_MIGRATION_NAME: &str = "m20260502_000001_baseline_schema";
+pub const BASELINE_MIGRATION_NAME: &str = "m20260512_000001_baseline_schema";
 pub const MYSQL_UTC_DATETIME_FIX_MIGRATION_NAME: &str =
     legacy::MYSQL_UTC_DATETIME_FIX_MIGRATION_NAME;
+const OLD_BASELINE_MIGRATION_NAME: &str = "m20260502_000001_baseline_schema";
+const PRE_RC1_MIGRATION_NAMES: &[&str] = &[
+    OLD_BASELINE_MIGRATION_NAME,
+    "m20260508_000001_split_file_folder_owner_provenance",
+    "m20260511_000001_add_background_task_failure_can_retry",
+];
 
 const MIGRATION_TABLE: &str = "seaql_migrations";
 const APPLICATION_SCHEMA_SENTINELS: &[&str] = &[
@@ -36,8 +40,8 @@ pub struct CurrentMigrator;
 pub enum MigrationTrack {
     Empty,
     Baseline,
-    Alpha25Complete,
-    Alpha25Incomplete,
+    PreRc1Complete,
+    PreRc1Incomplete,
     Mixed,
 }
 
@@ -46,8 +50,8 @@ impl MigrationTrack {
         match self {
             Self::Empty => "empty",
             Self::Baseline => "baseline",
-            Self::Alpha25Complete => "alpha25_complete",
-            Self::Alpha25Incomplete => "alpha25_incomplete",
+            Self::PreRc1Complete => "pre_rc1_complete",
+            Self::PreRc1Incomplete => "pre_rc1_incomplete",
             Self::Mixed => "mixed",
         }
     }
@@ -58,17 +62,17 @@ pub struct MigrationHistory {
     pub track: MigrationTrack,
     pub applied: Vec<String>,
     pub pending_current: Vec<String>,
-    pub pending_alpha25: Vec<String>,
+    pub pending_pre_rc1: Vec<String>,
     pub unknown_applied: Vec<String>,
 }
 
 impl MigrationHistory {
     pub fn effective_pending(&self) -> &[String] {
         match self.track {
-            MigrationTrack::Alpha25Incomplete => &self.pending_alpha25,
+            MigrationTrack::PreRc1Incomplete => &self.pending_pre_rc1,
             MigrationTrack::Empty
             | MigrationTrack::Baseline
-            | MigrationTrack::Alpha25Complete
+            | MigrationTrack::PreRc1Complete
             | MigrationTrack::Mixed => &self.pending_current,
         }
     }
@@ -81,8 +85,8 @@ impl MigrationHistory {
         self.track == MigrationTrack::Mixed
     }
 
-    pub fn is_alpha25_incomplete(&self) -> bool {
-        self.track == MigrationTrack::Alpha25Incomplete
+    pub fn is_pre_rc1_incomplete(&self) -> bool {
+        self.track == MigrationTrack::PreRc1Incomplete
     }
 }
 
@@ -107,11 +111,7 @@ impl MigratorTrait for Migrator {
 #[async_trait::async_trait]
 impl MigratorTrait for CurrentMigrator {
     fn migrations() -> Vec<Box<dyn MigrationTrait>> {
-        vec![
-            Box::new(m20260502_000001_baseline_schema::Migration),
-            Box::new(m20260508_000001_split_file_folder_owner_provenance::Migration),
-            Box::new(m20260511_000001_add_background_task_failure_can_retry::Migration),
-        ]
+        vec![Box::new(m20260512_000001_baseline_schema::Migration)]
     }
 }
 
@@ -122,15 +122,15 @@ pub fn current_migration_names() -> Vec<String> {
         .collect()
 }
 
-pub fn alpha25_migration_names() -> Vec<String> {
-    legacy::ALPHA25_MIGRATION_NAMES
+pub fn pre_rc1_migration_names() -> Vec<String> {
+    PRE_RC1_MIGRATION_NAMES
         .iter()
         .map(|name| (*name).to_string())
         .collect()
 }
 
 pub fn recognized_migration_names() -> Vec<String> {
-    let mut names = alpha25_migration_names();
+    let mut names = pre_rc1_migration_names();
     for current in current_migration_names() {
         if !names.iter().any(|name| name == &current) {
             names.push(current);
@@ -145,7 +145,7 @@ where
 {
     let applied = applied_migrations(db, db.get_database_backend()).await?;
     let current_names = current_migration_names();
-    let alpha25_names = alpha25_migration_names();
+    let pre_rc1_names = pre_rc1_migration_names();
 
     let applied_lookup = applied
         .iter()
@@ -155,7 +155,7 @@ where
         .iter()
         .map(String::as_str)
         .collect::<std::collections::HashSet<_>>();
-    let alpha25_lookup = alpha25_names
+    let pre_rc1_lookup = pre_rc1_names
         .iter()
         .map(String::as_str)
         .collect::<std::collections::HashSet<_>>();
@@ -163,7 +163,7 @@ where
     let unknown_applied = applied
         .iter()
         .filter(|name| {
-            !current_lookup.contains(name.as_str()) && !alpha25_lookup.contains(name.as_str())
+            !current_lookup.contains(name.as_str()) && !pre_rc1_lookup.contains(name.as_str())
         })
         .cloned()
         .collect::<Vec<_>>();
@@ -173,29 +173,29 @@ where
         .filter(|name| !applied_lookup.contains(name.as_str()))
         .cloned()
         .collect::<Vec<_>>();
-    let pending_alpha25 = alpha25_names
+    let pending_pre_rc1 = pre_rc1_names
         .iter()
         .filter(|name| !applied_lookup.contains(name.as_str()))
         .cloned()
         .collect::<Vec<_>>();
 
     let baseline_applied = applied_lookup.contains(BASELINE_MIGRATION_NAME);
-    let has_alpha25_rows = applied
+    let has_pre_rc1_rows = applied
         .iter()
-        .any(|name| alpha25_lookup.contains(name.as_str()));
+        .any(|name| pre_rc1_lookup.contains(name.as_str()));
 
     let track = if applied.is_empty() {
         MigrationTrack::Empty
     } else if baseline_applied {
-        if has_alpha25_rows {
+        if has_pre_rc1_rows {
             MigrationTrack::Mixed
         } else {
             MigrationTrack::Baseline
         }
-    } else if has_alpha25_rows && pending_alpha25.is_empty() {
-        MigrationTrack::Alpha25Complete
-    } else if has_alpha25_rows {
-        MigrationTrack::Alpha25Incomplete
+    } else if has_pre_rc1_rows && pending_pre_rc1.is_empty() {
+        MigrationTrack::PreRc1Complete
+    } else if has_pre_rc1_rows {
+        MigrationTrack::PreRc1Incomplete
     } else {
         MigrationTrack::Mixed
     };
@@ -204,7 +204,7 @@ where
         track,
         applied,
         pending_current,
-        pending_alpha25,
+        pending_pre_rc1,
         unknown_applied,
     })
 }
@@ -225,8 +225,8 @@ pub async fn apply_database_migrations(database: &DatabaseConnection) -> Result<
             {
                 return Err(migration_state_error(
                     "database contains migration metadata or application tables but migration \
-                     history is empty; first upgrade to v0.0.1-alpha.25 and apply all migrations, \
-                     then upgrade to this version"
+                     history is empty; first upgrade to the last pre-rc.1 build and apply all \
+                     migrations, then upgrade to this version"
                         .to_string(),
                 ));
             }
@@ -237,26 +237,26 @@ pub async fn apply_database_migrations(database: &DatabaseConnection) -> Result<
             <CurrentMigrator as MigratorTrait>::up(database, None).await?;
             Ok(())
         }
-        MigrationTrack::Alpha25Complete => {
-            validate_alpha25_rebase_schema(database).await?;
+        MigrationTrack::PreRc1Complete => {
+            validate_pre_rc1_rebase_schema(database).await?;
             rewrite_migration_history_to_baseline(database).await?;
             <CurrentMigrator as MigratorTrait>::up(database, None).await
         }
-        MigrationTrack::Alpha25Incomplete => Err(migration_state_error(format!(
-            "database migration history is not fully upgraded to v0.0.1-alpha.25; \
-             first run v0.0.1-alpha.25 and apply all migrations, then upgrade to this version. \
+        MigrationTrack::PreRc1Incomplete => Err(migration_state_error(format!(
+            "database migration history is not fully upgraded to the last pre-rc.1 migration set; \
+             first run the last pre-rc.1 build and apply all migrations, then upgrade to this version. \
              missing migrations: {}",
-            history.pending_alpha25.join(", ")
+            history.pending_pre_rc1.join(", ")
         ))),
         MigrationTrack::Mixed => Err(migration_state_error(
-            "database migration history mixes rebased baseline and pre-rebase alpha migrations; \
+            "database migration history mixes rebased baseline and pre-rc.1 migrations; \
              restore a backup or contact maintainers before continuing"
                 .to_string(),
         )),
     }
 }
 
-async fn validate_alpha25_rebase_schema(database: &DatabaseConnection) -> Result<(), DbErr> {
+async fn validate_pre_rc1_rebase_schema(database: &DatabaseConnection) -> Result<(), DbErr> {
     let backend = database.get_database_backend();
     for table_name in [
         "auth_sessions",
@@ -274,6 +274,30 @@ async fn validate_alpha25_rebase_schema(database: &DatabaseConnection) -> Result
         return Err(rebase_required_error(
             "master_bindings.ingress_policy_id still exists".to_string(),
         ));
+    }
+
+    for (table_name, column_name) in [
+        ("folders", "owner_user_id"),
+        ("folders", "created_by_user_id"),
+        ("folders", "created_by_username"),
+        ("files", "owner_user_id"),
+        ("files", "created_by_user_id"),
+        ("files", "created_by_username"),
+        ("background_tasks", "failure_can_retry"),
+    ] {
+        if !column_exists(database, backend, table_name, column_name).await? {
+            return Err(rebase_required_error(format!(
+                "expected column '{table_name}.{column_name}' is missing"
+            )));
+        }
+    }
+
+    for (table_name, column_name) in [("folders", "user_id"), ("files", "user_id")] {
+        if column_exists(database, backend, table_name, column_name).await? {
+            return Err(rebase_required_error(format!(
+                "{table_name}.{column_name} still exists"
+            )));
+        }
     }
 
     if backend == DbBackend::MySql {
@@ -512,6 +536,6 @@ fn migration_state_error(message: String) -> DbErr {
 fn rebase_required_error(detail: String) -> DbErr {
     migration_state_error(format!(
         "database schema is not ready for migration rebase ({detail}); first upgrade to \
-         v0.0.1-alpha.25 and apply all migrations, then upgrade to this version"
+         the last pre-rc.1 build and apply all migrations, then upgrade to this version"
     ))
 }

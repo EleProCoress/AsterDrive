@@ -45,9 +45,9 @@ where
         )));
     }
     if history.has_inconsistent_baseline_stamp() {
-        return Err(AsterError::validation_error("database migration history mixes the rebased baseline with pre-rebase alpha migrations; restore a backup or contact maintainers before continuing".to_string()));
+        return Err(AsterError::validation_error("database migration history mixes the rebased baseline with pre-rc.1 migrations; restore a backup or contact maintainers before continuing".to_string()));
     }
-    if history.track == migration::MigrationTrack::Alpha25Complete {
+    if history.track == migration::MigrationTrack::PreRc1Complete {
         return Ok(Vec::new());
     }
 

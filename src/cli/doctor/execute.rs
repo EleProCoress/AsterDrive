@@ -173,7 +173,7 @@ async fn inspect_doctor_migrations(
             "database_migrations",
             "Database migrations",
             DoctorStatus::Fail,
-            "database migration history mixes rebased and pre-rebase migrations",
+            "database migration history mixes rebased and pre-rc.1 migrations",
             Vec::new(),
             Some(
                 "Restore a backup or contact maintainers before running maintenance-oriented CLI commands."
@@ -183,20 +183,20 @@ async fn inspect_doctor_migrations(
         return None;
     }
 
-    if history.is_alpha25_incomplete() {
+    if history.is_pre_rc1_incomplete() {
         checks.push(doctor_check(
             "database_migrations",
             "Database migrations",
             DoctorStatus::Fail,
-            "database is not fully upgraded to v0.0.1-alpha.25",
-            history.pending_alpha25.clone(),
+            "database is not fully upgraded to the pre-rc.1 migration set",
+            history.pending_pre_rc1.clone(),
             Some(
-                "Run v0.0.1-alpha.25 and apply all migrations before upgrading to this rebased migration baseline."
+                "Run the last pre-rc.1 build and apply all migrations before upgrading to this rebased migration baseline."
                     .to_string(),
             ),
         ));
         return Some(DoctorMigrationInspection {
-            pending: history.pending_alpha25,
+            pending: history.pending_pre_rc1,
         });
     }
 

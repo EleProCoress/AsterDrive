@@ -2,12 +2,15 @@
 
 ## Baseline rebase policy
 
-The current migration set is rebased into `m20260502_000001_baseline_schema`.
+The current migration set is rebased into `m20260512_000001_baseline_schema`.
 
 - Fresh installs run the new baseline directly.
-- Existing alpha deployments must first run all migrations from `v0.0.1-alpha.25`.
-- When a complete alpha.25 migration history is detected, AsterDrive validates key schema sentinels and rewrites only `seaql_migrations` to the new baseline stamp.
-- Incomplete pre-rebase histories are rejected with an instruction to upgrade to `v0.0.1-alpha.25` first.
+- Existing deployments must first run the full pre-rc.1 migration set:
+  `m20260502_000001_baseline_schema`,
+  `m20260508_000001_split_file_folder_owner_provenance`,
+  and `m20260511_000001_add_background_task_failure_can_retry`.
+- When a complete pre-rc.1 migration history is detected, AsterDrive validates key schema sentinels and rewrites only `seaql_migrations` to the new baseline stamp.
+- Incomplete pre-rebase histories are rejected with an instruction to upgrade to the last pre-rc.1 build first.
 
 Do not truncate application tables for this rebase. Only migration metadata is rewritten.
 

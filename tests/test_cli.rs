@@ -33,6 +33,8 @@ const MIGRATION_REMOTE_NODE_NAME: &str = "MigratedRemoteNode";
 const MIGRATION_REMOTE_POLICY_NAME: &str = "MigratedRemotePolicy";
 const MIGRATION_MASTER_BINDING_NAME: &str = "MigratedMasterBinding";
 const MIGRATION_MASTER_STORAGE_NAMESPACE: &str = "mb_migrate_remote_space";
+const PRE_RC1_SQLITE_OBJECTS: &str = include_str!("fixtures/migration/pre_rc1_sqlite_objects.txt");
+const PRE_RC1_SQLITE_COLUMNS: &str = include_str!("fixtures/migration/pre_rc1_sqlite_columns.txt");
 
 async fn setup_database_url() -> String {
     let db_path =
@@ -73,8 +75,8 @@ async fn setup_ready_database_url() -> String {
     url
 }
 
-async fn setup_alpha25_database_url() -> String {
-    let database_url = setup_empty_database_url("asterdrive-cli-alpha25-test").await;
+async fn setup_pre_rc1_database_url() -> String {
+    let database_url = setup_empty_database_url("asterdrive-cli-pre-rc1-test").await;
     let db = db::connect(&DatabaseConfig {
         url: database_url.clone(),
         pool_size: 1,
@@ -83,7 +85,7 @@ async fn setup_alpha25_database_url() -> String {
     .await
     .unwrap();
     Migrator::up(&db, None).await.unwrap();
-    rewrite_migration_history(&db, &migration::alpha25_migration_names()).await;
+    rewrite_migration_history(&db, &migration::pre_rc1_migration_names()).await;
     db.close().await.unwrap();
     database_url
 }
@@ -978,8 +980,8 @@ async fn test_rebased_migrations_use_baseline_for_fresh_install() {
 }
 
 #[tokio::test]
-async fn test_rebased_migrations_rewrite_complete_alpha25_history() {
-    let database_url = setup_alpha25_database_url().await;
+async fn test_rebased_migrations_rewrite_complete_pre_rc1_history() {
+    let database_url = setup_pre_rc1_database_url().await;
     let db = db::connect(&DatabaseConfig {
         url: database_url.clone(),
         pool_size: 1,
@@ -987,10 +989,10 @@ async fn test_rebased_migrations_rewrite_complete_alpha25_history() {
     })
     .await
     .unwrap();
-    let alpha25_versions = applied_migration_versions(&db, DbBackend::Sqlite).await;
+    let pre_rc1_versions = applied_migration_versions(&db, DbBackend::Sqlite).await;
     assert!(
-        alpha25_versions.len() > 1,
-        "alpha.25 fixture should start with historical migration rows"
+        pre_rc1_versions.len() > 1,
+        "pre-rc.1 fixture should start with historical migration rows"
     );
     db.close().await.unwrap();
 
@@ -1006,13 +1008,13 @@ async fn test_rebased_migrations_rewrite_complete_alpha25_history() {
     assert_eq!(
         versions,
         migration::current_migration_names(),
-        "complete alpha.25 history should be replaced by current migration stamps"
+        "complete pre-rc.1 history should be replaced by current migration stamps"
     );
 }
 
 #[tokio::test]
-async fn test_rebased_migrations_reject_incomplete_alpha25_history() {
-    let database_url = setup_alpha25_database_url().await;
+async fn test_rebased_migrations_reject_incomplete_pre_rc1_history() {
+    let database_url = setup_pre_rc1_database_url().await;
     let db = db::connect(&DatabaseConfig {
         url: database_url.clone(),
         pool_size: 1,
@@ -1021,7 +1023,7 @@ async fn test_rebased_migrations_reject_incomplete_alpha25_history() {
     .await
     .unwrap();
     db.execute_unprepared(
-        "DELETE FROM seaql_migrations WHERE version = 'm20260429_000001_prepare_multi_primary_ingress'",
+        "DELETE FROM seaql_migrations WHERE version = 'm20260511_000001_add_background_task_failure_can_retry'",
     )
     .await
     .unwrap();
@@ -1036,33 +1038,21 @@ async fn test_rebased_migrations_reject_incomplete_alpha25_history() {
     .unwrap();
     let error = Migrator::up(&db, None)
         .await
-        .expect_err("incomplete alpha25 history should be rejected");
+        .expect_err("incomplete pre-rc.1 history should be rejected");
     let stderr = error.to_string();
     assert!(
-        stderr.contains("v0.0.1-alpha.25"),
-        "error should tell operators to upgrade to alpha.25 first: {stderr}"
+        stderr.contains("pre-rc.1"),
+        "error should tell operators to upgrade to pre-rc.1 first: {stderr}"
     );
     assert!(
-        stderr.contains("m20260429_000001_prepare_multi_primary_ingress"),
+        stderr.contains("m20260511_000001_add_background_task_failure_can_retry"),
         "error should include the missing migration name: {stderr}"
     );
 }
 
 #[tokio::test]
-async fn test_rebased_baseline_matches_alpha25_sqlite_schema_shape() {
-    let alpha25_url = setup_alpha25_database_url().await;
+async fn test_rebased_baseline_matches_pre_rc1_sqlite_schema_shape() {
     let baseline_url = setup_empty_database_url("asterdrive-cli-baseline-schema-test").await;
-
-    let alpha25_db = db::connect(&DatabaseConfig {
-        url: alpha25_url,
-        pool_size: 1,
-        retry_count: 0,
-    })
-    .await
-    .unwrap();
-    let alpha25_objects = sqlite_schema_object_keys(&alpha25_db).await;
-    let alpha25_columns = sqlite_schema_columns(&alpha25_db).await;
-
     let baseline_db = db::connect(&DatabaseConfig {
         url: baseline_url,
         pool_size: 1,
@@ -1073,14 +1063,22 @@ async fn test_rebased_baseline_matches_alpha25_sqlite_schema_shape() {
     Migrator::up(&baseline_db, None).await.unwrap();
     let baseline_objects = sqlite_schema_object_keys(&baseline_db).await;
     let baseline_columns = sqlite_schema_columns(&baseline_db).await;
+    let pre_rc1_objects = PRE_RC1_SQLITE_OBJECTS
+        .lines()
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+    let pre_rc1_columns = PRE_RC1_SQLITE_COLUMNS
+        .lines()
+        .map(str::to_string)
+        .collect::<Vec<_>>();
 
     assert_eq!(
-        baseline_objects, alpha25_objects,
-        "rebased baseline schema must keep the same SQLite object set as fully-applied alpha.25"
+        baseline_objects, pre_rc1_objects,
+        "rebased baseline schema must keep the same SQLite object set as fully-applied pre-rc.1"
     );
     assert_eq!(
-        baseline_columns, alpha25_columns,
-        "rebased baseline schema must keep the same SQLite table columns as fully-applied alpha.25"
+        baseline_columns, pre_rc1_columns,
+        "rebased baseline schema must keep the same SQLite table columns as fully-applied pre-rc.1"
     );
 }
 
