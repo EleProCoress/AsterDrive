@@ -26,7 +26,6 @@ pub(crate) async fn finalize_upload_session_blob_with_actor_username<C: Connecti
     // 这样调用方只要看到 completed，就能推定文件记录已经可见且额度已落账。
     let scope = scope_from_session(session);
     let started_at = Instant::now();
-    let create_started_at = Instant::now();
     let created = match actor_username {
         Some(username) => {
             create_new_file_from_blob_with_actor_username(
@@ -45,7 +44,7 @@ pub(crate) async fn finalize_upload_session_blob_with_actor_username<C: Connecti
                 .await?
         }
     };
-    let create_elapsed_ms = create_started_at.elapsed().as_millis();
+    let create_elapsed_ms = started_at.elapsed().as_millis();
 
     let quota_started_at = Instant::now();
     update_storage_used(db, scope, blob.size).await?;
@@ -53,6 +52,7 @@ pub(crate) async fn finalize_upload_session_blob_with_actor_username<C: Connecti
 
     let complete_started_at = Instant::now();
     mark_upload_session_completed(db, &session.id, created.id).await?;
+    let complete_elapsed_ms = complete_started_at.elapsed().as_millis();
     tracing::debug!(
         upload_id = %session.id,
         file_id = created.id,
@@ -60,7 +60,7 @@ pub(crate) async fn finalize_upload_session_blob_with_actor_username<C: Connecti
         size = blob.size,
         create_elapsed_ms,
         quota_elapsed_ms,
-        complete_elapsed_ms = complete_started_at.elapsed().as_millis(),
+        complete_elapsed_ms,
         total_elapsed_ms = started_at.elapsed().as_millis(),
         "finalized upload session blob"
     );

@@ -308,6 +308,8 @@ async fn complete_upload_impl_with_audit(
     audit_ctx: &AuditContext,
     hints: CompleteUploadHints<'_>,
 ) -> Result<FileInfo> {
+    // TODO: split the "needs actor attribution" and "needs audit log" decisions if retry/failure
+    // completion paths ever get audited separately.
     let should_log = should_log_upload_completion(&session);
     let upload_id = session.id.clone();
     let complete_started_at = Instant::now();

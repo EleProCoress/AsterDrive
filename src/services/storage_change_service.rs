@@ -48,6 +48,19 @@ pub enum StorageChangeKind {
     SyncRequired,
 }
 
+impl StorageChangeKind {
+    fn invalidates_folder_path_cache(self) -> bool {
+        match self {
+            Self::FileCreated | Self::FileUpdated | Self::FileDeleted | Self::FileRestored => false,
+            Self::FolderCreated
+            | Self::FolderUpdated
+            | Self::FolderDeleted
+            | Self::FolderRestored
+            | Self::SyncRequired => true,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum StorageChangeWorkspace {
@@ -155,14 +168,7 @@ fn cache_invalidation_prefixes(kind: StorageChangeKind) -> Vec<&'static str> {
         crate::webdav::path_resolver::WEBDAV_PATH_CACHE_PREFIX,
         crate::webdav::path_resolver::WEBDAV_PARENT_CACHE_PREFIX,
     ];
-    if matches!(
-        kind,
-        StorageChangeKind::FolderCreated
-            | StorageChangeKind::FolderUpdated
-            | StorageChangeKind::FolderDeleted
-            | StorageChangeKind::FolderRestored
-            | StorageChangeKind::SyncRequired
-    ) {
+    if kind.invalidates_folder_path_cache() {
         prefixes.push(crate::services::folder_service::FOLDER_PATH_CACHE_PREFIX);
     }
     prefixes

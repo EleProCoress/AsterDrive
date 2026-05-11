@@ -410,6 +410,46 @@ async fn persist_temp_blob<C: ConnectionTrait>(
     }
 }
 
+async fn create_new_file_record_from_blob<C: ConnectionTrait>(
+    txn: &C,
+    scope: WorkspaceStorageScope,
+    folder_id: Option<i64>,
+    filename: &str,
+    blob: &file_blob::Model,
+    now: chrono::DateTime<Utc>,
+    actor_username: Option<&str>,
+) -> Result<file::Model> {
+    match actor_username {
+        Some(username) => {
+            create_new_file_from_blob_with_actor_username(
+                txn, scope, folder_id, filename, blob, now, username,
+            )
+            .await
+        }
+        None => create_new_file_from_blob(txn, scope, folder_id, filename, blob, now).await,
+    }
+}
+
+async fn create_exact_file_record_from_blob<C: ConnectionTrait>(
+    txn: &C,
+    scope: WorkspaceStorageScope,
+    folder_id: Option<i64>,
+    filename: &str,
+    blob: &file_blob::Model,
+    now: chrono::DateTime<Utc>,
+    actor_username: Option<&str>,
+) -> Result<file::Model> {
+    match actor_username {
+        Some(username) => {
+            create_exact_file_from_blob_with_actor_username(
+                txn, scope, folder_id, filename, blob, now, username,
+            )
+            .await
+        }
+        None => create_exact_file_from_blob(txn, scope, folder_id, filename, blob, now).await,
+    }
+}
+
 async fn write_file_record_from_temp<C: ConnectionTrait>(
     txn: &C,
     params: WriteFileRecordFromTempParams<'_>,
@@ -461,28 +501,30 @@ async fn write_file_record_from_temp<C: ConnectionTrait>(
         updated
     } else {
         match new_file_mode {
-            NewFileMode::ResolveUnique => match actor_username {
-                Some(username) => {
-                    create_new_file_from_blob_with_actor_username(
-                        txn, scope, folder_id, filename, blob, now, username,
-                    )
-                    .await?
-                }
-                None => {
-                    create_new_file_from_blob(txn, scope, folder_id, filename, blob, now).await?
-                }
-            },
-            NewFileMode::Exact => match actor_username {
-                Some(username) => {
-                    create_exact_file_from_blob_with_actor_username(
-                        txn, scope, folder_id, filename, blob, now, username,
-                    )
-                    .await?
-                }
-                None => {
-                    create_exact_file_from_blob(txn, scope, folder_id, filename, blob, now).await?
-                }
-            },
+            NewFileMode::ResolveUnique => {
+                create_new_file_record_from_blob(
+                    txn,
+                    scope,
+                    folder_id,
+                    filename,
+                    blob,
+                    now,
+                    actor_username,
+                )
+                .await?
+            }
+            NewFileMode::Exact => {
+                create_exact_file_record_from_blob(
+                    txn,
+                    scope,
+                    folder_id,
+                    filename,
+                    blob,
+                    now,
+                    actor_username,
+                )
+                .await?
+            }
         }
     };
 

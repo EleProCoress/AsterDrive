@@ -30,6 +30,12 @@ pub(crate) fn local_content_dedup_enabled(policy: &crate::entities::storage_poli
             .unwrap_or(false)
 }
 
+/// Policy hint captured from a folder after the caller has already verified that the folder is
+/// accessible within the target workspace scope.
+///
+/// This is not an access token and does not perform validation by itself. Only construct it from
+/// folders returned by `verify_folder_access` or from child folders created/loaded while walking an
+/// already verified upload path.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct VerifiedFolderPolicyHint {
     policy_id: Option<i64>,

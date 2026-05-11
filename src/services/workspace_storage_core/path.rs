@@ -6,7 +6,7 @@ use crate::entities::folder;
 use crate::errors::{AsterError, Result};
 use crate::runtime::PrimaryAppState;
 use crate::services::workspace_scope_service::{
-    WorkspaceStorageScope, load_scope_actor_username, verify_folder_access,
+    WorkspaceStorageScope, load_scope_actor_username_cached, verify_folder_access,
 };
 
 use super::policy::VerifiedFolderPolicyHint;
@@ -79,7 +79,8 @@ pub(crate) async fn ensure_upload_parent_path(
     // 整条父路径在一个事务里补齐，避免目录上传时只创建出半截层级。
     for segment in &parsed.parent_segments {
         let folder =
-            ensure_folder_in_parent(&txn, scope, current_parent, segment, actor_username).await?;
+            ensure_folder_in_parent(state, &txn, scope, current_parent, segment, actor_username)
+                .await?;
         current_parent = Some(folder.id);
         current_folder = Some(match current_folder {
             Some(parent_hint) => parent_hint.merge_child(&folder),
@@ -95,6 +96,7 @@ pub(crate) async fn ensure_upload_parent_path(
 }
 
 async fn ensure_folder_in_parent<C: sea_orm::ConnectionTrait>(
+    state: &PrimaryAppState,
     db: &C,
     scope: WorkspaceStorageScope,
     parent_id: Option<i64>,
@@ -115,7 +117,7 @@ async fn ensure_folder_in_parent<C: sea_orm::ConnectionTrait>(
 
             let created_by_username = match actor_username {
                 Some(username) => username.to_string(),
-                None => load_scope_actor_username(db, scope).await?,
+                None => load_scope_actor_username_cached(state, scope).await?,
             };
             let now = Utc::now();
             let model = folder::ActiveModel {
@@ -123,7 +125,7 @@ async fn ensure_folder_in_parent<C: sea_orm::ConnectionTrait>(
                 parent_id: Set(parent_id),
                 owner_user_id: Set(Some(user_id)),
                 created_by_user_id: Set(Some(user_id)),
-                created_by_username: Set(created_by_username.clone()),
+                created_by_username: Set(created_by_username),
                 policy_id: Set(None),
                 created_at: Set(now),
                 updated_at: Set(now),
@@ -152,10 +154,9 @@ async fn ensure_folder_in_parent<C: sea_orm::ConnectionTrait>(
             {
                 return Ok(existing);
             }
-
             let created_by_username = match actor_username {
                 Some(username) => username.to_string(),
-                None => load_scope_actor_username(db, scope).await?,
+                None => load_scope_actor_username_cached(state, scope).await?,
             };
             let now = Utc::now();
             let model = folder::ActiveModel {

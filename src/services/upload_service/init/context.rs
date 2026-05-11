@@ -6,7 +6,12 @@ use crate::entities::{storage_policy, upload_session};
 use crate::errors::{AsterError, Result};
 use crate::runtime::PrimaryAppState;
 use crate::services::upload_service::responses::InitUploadResponse;
+use crate::services::upload_service::shared::{
+    UPLOAD_SESSION_ID_MAX_ATTEMPTS, abort_created_multipart_upload_after_init_error, new_upload_id,
+    upload_id_collision_exhausted_error,
+};
 use crate::services::workspace_storage_service::{self, WorkspaceStorageScope};
+use crate::storage::multipart::MultipartStorageDriver;
 use crate::types::{UploadMode, UploadSessionStatus};
 
 #[derive(Debug)]
@@ -36,6 +41,18 @@ pub(super) struct UploadSessionRecordParams {
     pub(super) s3_temp_key: Option<String>,
     pub(super) s3_multipart_id: Option<String>,
     pub(super) expires_at: DateTime<Utc>,
+}
+
+pub(super) struct MultipartSessionInitParams {
+    pub(super) mode: UploadMode,
+    pub(super) status: UploadSessionStatus,
+    pub(super) chunk_size: i64,
+    pub(super) total_chunks: i32,
+    pub(super) expires_in: chrono::Duration,
+    pub(super) log_label: &'static str,
+    pub(super) abort_db_error_context: &'static str,
+    pub(super) abort_db_error_message: &'static str,
+    pub(super) abort_collision_context: &'static str,
 }
 
 pub(super) async fn resolve_init_upload_context(
@@ -167,6 +184,102 @@ pub(super) async fn try_persist_upload_session(
 ) -> Result<bool> {
     let session = upload_session_active_model(params);
     upload_session_repo::try_create(db, session).await
+}
+
+pub(super) async fn init_multipart_session_with_retry(
+    state: &PrimaryAppState,
+    ctx: &InitUploadContext,
+    multipart: &dyn MultipartStorageDriver,
+    params: MultipartSessionInitParams,
+) -> Result<InitUploadResponse> {
+    let MultipartSessionInitParams {
+        mode,
+        status,
+        chunk_size,
+        total_chunks,
+        expires_in,
+        log_label,
+        abort_db_error_context,
+        abort_db_error_message,
+        abort_collision_context,
+    } = params;
+
+    for attempt in 1..=UPLOAD_SESSION_ID_MAX_ATTEMPTS {
+        let upload_id = new_upload_id();
+        let temp_key = format!("files/{upload_id}");
+        let multipart_id = multipart.create_multipart_upload(&temp_key).await?;
+        let inserted_result = try_persist_upload_session(
+            &state.db,
+            UploadSessionRecordParams {
+                upload_id: upload_id.clone(),
+                scope: ctx.scope,
+                filename: ctx.target.filename.clone(),
+                total_size: ctx.total_size,
+                chunk_size,
+                total_chunks,
+                folder_id: ctx.target.folder_id,
+                policy_id: ctx.policy.id,
+                status,
+                s3_temp_key: Some(temp_key.clone()),
+                s3_multipart_id: Some(multipart_id.clone()),
+                expires_at: Utc::now() + expires_in,
+            },
+        )
+        .await;
+
+        let inserted = match inserted_result {
+            Ok(inserted) => inserted,
+            Err(error) => {
+                let abort_result = abort_created_multipart_upload_after_init_error(
+                    multipart,
+                    &temp_key,
+                    &multipart_id,
+                    &upload_id,
+                    abort_db_error_context,
+                )
+                .await;
+                if let Err(abort_error) = abort_result {
+                    return Err(AsterError::storage_driver_error(format!(
+                        "{abort_db_error_message}; init error={error}, abort error={abort_error}"
+                    )));
+                }
+                return Err(error);
+            }
+        };
+
+        if !inserted {
+            abort_created_multipart_upload_after_init_error(
+                multipart,
+                &temp_key,
+                &multipart_id,
+                &upload_id,
+                abort_collision_context,
+            )
+            .await?;
+            tracing::warn!(upload_id, attempt, "upload_id collision, retrying");
+            continue;
+        }
+
+        tracing::debug!(
+            scope = ?ctx.scope,
+            upload_id = %upload_id,
+            policy_id = ctx.policy.id,
+            mode = ?mode,
+            chunk_size,
+            total_chunks,
+            folder_id = ctx.target.folder_id,
+            "initialized {log_label} upload session"
+        );
+
+        return Ok(chunked_upload_response(
+            mode,
+            upload_id,
+            chunk_size,
+            total_chunks,
+        ));
+    }
+
+    Err(upload_id_collision_exhausted_error())
 }
 
 fn upload_session_active_model(params: UploadSessionRecordParams) -> upload_session::ActiveModel {
