@@ -46,6 +46,7 @@ pub struct Model {
     #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = Option<String>))]
     pub finished_at: Option<DateTimeUtc>,
     pub last_error: Option<String>,
+    pub failure_can_retry: Option<bool>,
     #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
     pub expires_at: DateTimeUtc,
     #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]

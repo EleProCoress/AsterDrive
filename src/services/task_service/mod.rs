@@ -6,6 +6,7 @@
 
 mod archive;
 mod dispatch;
+mod retry;
 mod runtime;
 mod steps;
 mod thumbnail;
@@ -260,6 +261,11 @@ pub(crate) async fn retry_task_in_scope(
             "only failed tasks can be retried",
         ));
     }
+    if !task_can_retry(&task) {
+        return Err(AsterError::validation_error(
+            "this task failure cannot be retried",
+        ));
+    }
 
     cleanup_task_temp_dir_for_task(state, task.id).await?;
     // 手动重试会复用同一条任务记录，而不是新建“子任务”。
@@ -332,6 +338,7 @@ async fn build_task_info(
     let payload = parse_task_payload_info(&task)?;
     let result = parse_task_result_info(&task)?;
     let steps = parse_task_steps_json(task.steps_json.as_ref().map(|raw| raw.as_ref()), kind)?;
+    let can_retry = task_can_retry(&task);
 
     Ok(TaskInfo {
         id: task.id,
@@ -351,7 +358,7 @@ async fn build_task_info(
         payload,
         result,
         steps,
-        can_retry: task.status == BackgroundTaskStatus::Failed,
+        can_retry,
         lease_expires_at: task.lease_expires_at,
         started_at: task.started_at,
         finished_at: task.finished_at,
@@ -359,6 +366,10 @@ async fn build_task_info(
         created_at: task.created_at,
         updated_at: task.updated_at,
     })
+}
+
+fn task_can_retry(task: &background_task::Model) -> bool {
+    task.status == BackgroundTaskStatus::Failed && task.failure_can_retry.unwrap_or(true)
 }
 
 pub(super) async fn create_task_record<T: Serialize>(
@@ -725,6 +736,7 @@ mod tests {
             started_at: None,
             finished_at: None,
             last_error: None,
+            failure_can_retry: None,
             expires_at: now + Duration::hours(1),
             created_at: now,
             updated_at: now,
@@ -764,6 +776,7 @@ mod tests {
             started_at: None,
             finished_at: None,
             last_error: None,
+            failure_can_retry: None,
             expires_at: now + Duration::hours(1),
             created_at: now,
             updated_at: now,

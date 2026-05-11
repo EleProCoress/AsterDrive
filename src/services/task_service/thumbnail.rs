@@ -8,8 +8,10 @@ use crate::entities::{background_task, file_blob};
 use crate::errors::{AsterError, Result};
 use crate::runtime::PrimaryAppState;
 use crate::services::media_processing_service;
+use crate::storage::StorageErrorKind;
 use crate::types::{BackgroundTaskKind, BackgroundTaskStatus};
 
+use super::retry::{TaskRetryClass, TaskRetryPolicy};
 use super::steps::{
     TASK_STEP_INSPECT_SOURCE, TASK_STEP_PERSIST_THUMBNAIL, TASK_STEP_RENDER_THUMBNAIL,
     TASK_STEP_WAITING, initial_task_steps, parse_task_steps_json, serialize_task_steps,
@@ -23,6 +25,25 @@ use super::{
     TaskLeaseGuard, configured_task_max_attempts, mark_task_progress, mark_task_succeeded,
     task_expiration_from,
 };
+
+pub(super) struct ThumbnailRetryPolicy;
+
+impl TaskRetryPolicy for ThumbnailRetryPolicy {
+    fn retry_class(error: &AsterError) -> TaskRetryClass {
+        match error {
+            AsterError::DatabaseConnection(_) | AsterError::DatabaseOperation(_) => {
+                TaskRetryClass::Auto
+            }
+            AsterError::StorageDriverError(_) => match error.storage_error_kind() {
+                Some(StorageErrorKind::Transient | StorageErrorKind::RateLimited) => {
+                    TaskRetryClass::Auto
+                }
+                _ => TaskRetryClass::Never,
+            },
+            _ => TaskRetryClass::Never,
+        }
+    }
+}
 
 pub(crate) async fn ensure_thumbnail_task(
     state: &PrimaryAppState,

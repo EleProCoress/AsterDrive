@@ -5,15 +5,24 @@ use sea_orm::Set;
 
 use crate::db::repository::background_task_repo;
 use crate::entities::background_task;
-use crate::errors::Result;
+use crate::errors::{AsterError, Result};
 use crate::runtime::PrimaryAppState;
 use crate::types::{BackgroundTaskKind, BackgroundTaskStatus};
 
+use super::retry::{TaskRetryClass, TaskRetryPolicy};
 use super::types::{
     RuntimeSystemHealthResult, RuntimeTaskPayload, RuntimeTaskResult, serialize_task_payload,
     serialize_task_result,
 };
 use super::{task_expiration_from, truncate_error, truncate_status_text};
+
+pub(super) struct RuntimeRetryPolicy;
+
+impl TaskRetryPolicy for RuntimeRetryPolicy {
+    fn retry_class(_error: &AsterError) -> TaskRetryClass {
+        TaskRetryClass::Never
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RuntimeTaskRunOutcome {
@@ -162,6 +171,11 @@ pub async fn record_runtime_task_run(
             started_at: Set(Some(started_at)),
             finished_at: Set(Some(finished_at)),
             last_error: Set(last_error),
+            failure_can_retry: Set(if matches!(outcome, RuntimeTaskRunOutcome::Failed { .. }) {
+                Some(false)
+            } else {
+                None
+            }),
             expires_at: Set(task_expiration_from(state, finished_at)),
             created_at: Set(started_at),
             updated_at: Set(finished_at),

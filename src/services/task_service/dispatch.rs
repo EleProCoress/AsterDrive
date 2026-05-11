@@ -18,10 +18,11 @@ use crate::db::{
 use crate::entities::background_task;
 use crate::errors::{AsterError, Result};
 use crate::runtime::PrimaryAppState;
-use crate::storage::StorageErrorKind;
 use crate::types::{BackgroundTaskKind, BackgroundTaskStatus};
 
 use super::archive;
+use super::retry::{TaskRetryClass, TaskRetryPolicy};
+use super::runtime;
 use super::steps::{mark_active_step_failed, parse_task_steps_json, serialize_task_steps};
 use super::thumbnail;
 use super::{
@@ -401,8 +402,10 @@ async fn process_claimed_task(
             let error_message = truncate_error(&error.to_string());
             let failed_steps_json =
                 build_failed_task_steps_json(state, task.id, task.kind, &error_message).await;
-            let should_retry = should_retry_task_error(task.kind, &error);
-            if attempt_count >= task.max_attempts || !should_retry {
+            let retry_class = task_retry_class(task.kind, &error);
+            let should_auto_retry =
+                retry_class.should_auto_retry() && attempt_count < task.max_attempts;
+            if !should_auto_retry {
                 let finished_at = Utc::now();
                 let failed = background_task_repo::mark_failed(
                     &state.db,
@@ -414,6 +417,7 @@ async fn process_claimed_task(
                         finished_at,
                         expires_at: task_expiration_from(state, finished_at),
                         steps_json: failed_steps_json.as_deref(),
+                        failure_can_retry: retry_class.can_manual_retry(),
                     },
                 )
                 .await?;
@@ -733,19 +737,18 @@ fn retry_delay_secs(attempt_count: i32) -> i64 {
     }
 }
 
-fn should_retry_task_error(kind: BackgroundTaskKind, error: &AsterError) -> bool {
+fn task_retry_class(kind: BackgroundTaskKind, error: &AsterError) -> TaskRetryClass {
     match kind {
-        BackgroundTaskKind::ThumbnailGenerate => match error {
-            AsterError::DatabaseConnection(_) | AsterError::DatabaseOperation(_) => true,
-            AsterError::StorageDriverError(_) => matches!(
-                error.storage_error_kind(),
-                Some(StorageErrorKind::Transient | StorageErrorKind::RateLimited)
-            ),
-            _ => false,
-        },
-        BackgroundTaskKind::ArchiveCompress
-        | BackgroundTaskKind::ArchiveExtract
-        | BackgroundTaskKind::SystemRuntime => true,
+        BackgroundTaskKind::ArchiveCompress => {
+            archive::ArchiveCompressRetryPolicy::retry_class(error)
+        }
+        BackgroundTaskKind::ArchiveExtract => {
+            archive::ArchiveExtractRetryPolicy::retry_class(error)
+        }
+        BackgroundTaskKind::ThumbnailGenerate => {
+            thumbnail::ThumbnailRetryPolicy::retry_class(error)
+        }
+        BackgroundTaskKind::SystemRuntime => runtime::RuntimeRetryPolicy::retry_class(error),
     }
 }
 
@@ -781,9 +784,9 @@ mod tests {
 
     use super::{
         TaskClaimCandidate, TaskLane, TaskLaneConfig, available_lane_capacity,
-        claim_candidates_for_lane, task_lane,
+        claim_candidates_for_lane, task_lane, task_retry_class,
     };
-    use super::{evaluate_heartbeat_result, run_with_concurrency_limit, should_retry_task_error};
+    use super::{evaluate_heartbeat_result, run_with_concurrency_limit};
     use crate::services::task_service::{
         TaskLease, TaskLeaseGuard, is_task_lease_lost, is_task_lease_renewal_timed_out,
     };
@@ -846,6 +849,7 @@ mod tests {
             }),
             finished_at: Set(None),
             last_error: Set(None),
+            failure_can_retry: Set(None),
             expires_at: Set(now + chrono::Duration::hours(1)),
             created_at: Set(now + chrono::Duration::seconds(created_offset_secs)),
             updated_at: Set(now),
@@ -1124,13 +1128,30 @@ mod tests {
         let transient = storage_driver_error(StorageErrorKind::Transient, "remote timeout");
         let misconfigured = storage_driver_error(StorageErrorKind::Misconfigured, "missing bucket");
 
-        assert!(should_retry_task_error(
-            BackgroundTaskKind::ThumbnailGenerate,
-            &transient
-        ));
-        assert!(!should_retry_task_error(
-            BackgroundTaskKind::ThumbnailGenerate,
-            &misconfigured
-        ));
+        assert!(
+            task_retry_class(BackgroundTaskKind::ThumbnailGenerate, &transient).should_auto_retry()
+        );
+        assert!(
+            !task_retry_class(BackgroundTaskKind::ThumbnailGenerate, &misconfigured)
+                .can_manual_retry()
+        );
+    }
+
+    #[test]
+    fn archive_validation_errors_are_not_retryable() {
+        let error = AsterError::validation_error("archive entry compression ratio exceeds limit");
+        let retry_class = task_retry_class(BackgroundTaskKind::ArchiveExtract, &error);
+
+        assert!(!retry_class.should_auto_retry());
+        assert!(!retry_class.can_manual_retry());
+    }
+
+    #[test]
+    fn archive_transient_storage_errors_are_auto_retryable() {
+        let error = storage_driver_error(StorageErrorKind::Transient, "remote timeout");
+        let retry_class = task_retry_class(BackgroundTaskKind::ArchiveCompress, &error);
+
+        assert!(retry_class.should_auto_retry());
+        assert!(retry_class.can_manual_retry());
     }
 }

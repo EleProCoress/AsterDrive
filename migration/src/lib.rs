@@ -12,6 +12,7 @@ use sea_orm_migration::sea_orm::{
 mod legacy;
 mod m20260502_000001_baseline_schema;
 mod m20260508_000001_split_file_folder_owner_provenance;
+mod m20260511_000001_add_background_task_failure_can_retry;
 mod search_acceleration;
 mod time;
 
@@ -109,6 +110,7 @@ impl MigratorTrait for CurrentMigrator {
         vec![
             Box::new(m20260502_000001_baseline_schema::Migration),
             Box::new(m20260508_000001_split_file_folder_owner_provenance::Migration),
+            Box::new(m20260511_000001_add_background_task_failure_can_retry::Migration),
         ]
     }
 }

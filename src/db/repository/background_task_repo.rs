@@ -433,6 +433,7 @@ pub struct TaskFailureUpdate<'a> {
     pub finished_at: DateTime<Utc>,
     pub expires_at: DateTime<Utc>,
     pub steps_json: Option<&'a str>,
+    pub failure_can_retry: bool,
 }
 
 pub async fn mark_failed<C: ConnectionTrait>(
@@ -467,6 +468,10 @@ pub async fn mark_failed<C: ConnectionTrait>(
         .col_expr(
             background_task::Column::LastError,
             Expr::value(Some(update.last_error.to_string())),
+        )
+        .col_expr(
+            background_task::Column::FailureCanRetry,
+            Expr::value(Some(update.failure_can_retry)),
         )
         .col_expr(
             background_task::Column::FinishedAt,
@@ -543,6 +548,10 @@ pub async fn reset_for_manual_retry<C: ConnectionTrait>(
         .col_expr(
             background_task::Column::ResultJson,
             Expr::value(Option::<String>::None),
+        )
+        .col_expr(
+            background_task::Column::FailureCanRetry,
+            Expr::value(Option::<bool>::None),
         )
         .col_expr(background_task::Column::UpdatedAt, Expr::value(now))
         .filter(background_task::Column::Id.eq(id))
@@ -801,6 +810,7 @@ mod tests {
             started_at: Set(None),
             finished_at: Set(finished_at),
             last_error: Set(None),
+            failure_can_retry: Set(None),
             expires_at: Set(updated_at + Duration::hours(24)),
             created_at: Set(created_at),
             updated_at: Set(updated_at),

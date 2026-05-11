@@ -264,7 +264,7 @@ pub(super) fn stage_zip_archive_for_extract(
             .map_aster_err_with(|| AsterError::validation_error("invalid zip archive entry"))?;
         ensure_archive_entry_matches_preflight(&entry, manifest_entry)?;
         let relative_path = &manifest_entry.relative_path;
-        let target_path = Path::new(stage_root).join(&relative_path);
+        let target_path = Path::new(stage_root).join(relative_path);
         if manifest_entry.is_dir {
             std::fs::create_dir_all(&target_path).map_aster_err_ctx(
                 "create extracted directory",

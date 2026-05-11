@@ -361,12 +361,27 @@ async fn run_failing_personal_archive_extract(
     archive_bytes: Vec<u8>,
     config_overrides: Vec<(&str, String)>,
 ) -> Value {
+    run_failing_personal_archive_extract_with_options(archive_bytes, config_overrides, "1", false)
+        .await
+}
+
+async fn run_failing_personal_archive_extract_with_options(
+    archive_bytes: Vec<u8>,
+    config_overrides: Vec<(&str, String)>,
+    max_attempts: &str,
+    assert_retry_rejected: bool,
+) -> Value {
     let state = common::setup().await;
     let app = create_test_app!(state.clone());
 
-    aster_drive::services::config_service::set(&state, "background_task_max_attempts", "1", 1)
-        .await
-        .expect("background task max attempts config should update");
+    aster_drive::services::config_service::set(
+        &state,
+        "background_task_max_attempts",
+        max_attempts,
+        1,
+    )
+    .await
+    .expect("background task max attempts config should update");
     for (key, value) in config_overrides {
         aster_drive::services::config_service::set(&state, key, value.as_str(), 1)
             .await
@@ -410,6 +425,7 @@ async fn run_failing_personal_archive_extract(
         .await
         .expect("task drain should succeed");
     assert_eq!(stats.failed, 1);
+    assert_eq!(stats.retried, 0);
     assert_eq!(stats.succeeded, 0);
 
     let req = test::TestRequest::get()
@@ -421,6 +437,17 @@ async fn run_failing_personal_archive_extract(
     assert_eq!(resp.status(), 200);
     let body: Value = test::read_body_json(resp).await;
     assert_eq!(body["data"]["status"], "failed");
+    assert_eq!(body["data"]["attempt_count"], 1);
+    assert_eq!(body["data"]["can_retry"], false);
+    if assert_retry_rejected {
+        let req = test::TestRequest::post()
+            .uri(&format!("/api/v1/tasks/{task_id}/retry"))
+            .insert_header(("Cookie", common::access_cookie_header(&token)))
+            .insert_header(common::csrf_header_for(&token))
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), 400);
+    }
 
     let task_temp_dir =
         aster_drive::utils::paths::task_temp_dir(&state.config.server.temp_dir, task_id);
@@ -484,6 +511,7 @@ async fn insert_processing_task(
             started_at: Set(Some(processing_started_at)),
             finished_at: Set(None),
             last_error: Set(None),
+            failure_can_retry: Set(None),
             expires_at: Set(now + Duration::hours(1)),
             created_at: Set(now),
             updated_at: Set(now),
@@ -497,21 +525,42 @@ async fn insert_processing_task(
 
 async fn insert_pending_dispatch_task(
     state: &aster_drive::runtime::PrimaryAppState,
+    kind: BackgroundTaskKind,
     max_attempts: i32,
 ) -> background_task::Model {
     let now = Utc::now();
+    let (display_name, payload_json) = match kind {
+        BackgroundTaskKind::ArchiveCompress => (
+            "dispatch-archive.zip",
+            serde_json::to_string(
+                &aster_drive::services::task_service::ArchiveCompressTaskPayload {
+                    file_ids: Vec::new(),
+                    folder_ids: Vec::new(),
+                    archive_name: "dispatch-archive.zip".to_string(),
+                    target_folder_id: None,
+                },
+            )
+            .expect("archive dispatch payload should serialize"),
+        ),
+        BackgroundTaskKind::SystemRuntime => (
+            "dispatch-test",
+            r#"{"task_name":"dispatch-test"}"#.to_string(),
+        ),
+        _ => panic!("unsupported dispatch test task kind"),
+    };
     background_task_repo::create(
         &state.db,
         background_task::ActiveModel {
-            kind: Set(BackgroundTaskKind::SystemRuntime),
+            kind: Set(kind),
             status: Set(BackgroundTaskStatus::Pending),
-            creator_user_id: Set(None),
+            creator_user_id: Set(match kind {
+                BackgroundTaskKind::ArchiveCompress => Some(1),
+                _ => None,
+            }),
             team_id: Set(None),
             share_id: Set(None),
-            display_name: Set("dispatch-test".to_string()),
-            payload_json: Set(StoredTaskPayload(
-                r#"{"task_name":"dispatch-test"}"#.to_string(),
-            )),
+            display_name: Set(display_name.to_string()),
+            payload_json: Set(StoredTaskPayload(payload_json)),
             result_json: Set(None),
             steps_json: Set(None),
             progress_current: Set(0),
@@ -526,6 +575,7 @@ async fn insert_pending_dispatch_task(
             started_at: Set(None),
             finished_at: Set(None),
             last_error: Set(None),
+            failure_can_retry: Set(None),
             expires_at: Set(now + Duration::hours(1)),
             created_at: Set(now),
             updated_at: Set(now),
@@ -568,6 +618,7 @@ async fn insert_pending_lane_task(
             started_at: Set(None),
             finished_at: Set(None),
             last_error: Set(None),
+            failure_can_retry: Set(None),
             expires_at: Set(now + Duration::hours(1)),
             created_at: Set(now),
             updated_at: Set(now),
@@ -889,16 +940,17 @@ async fn test_dispatch_due_reclaims_stale_processing_task_with_new_token() {
         .expect("dispatch should reclaim stale processing task");
 
     assert_eq!(stats.claimed, 1);
-    assert_eq!(stats.retried, 1);
-    assert_eq!(stats.failed, 0);
+    assert_eq!(stats.retried, 0);
+    assert_eq!(stats.failed, 1);
     assert_eq!(stats.succeeded, 0);
 
     let stored = background_task_repo::find_by_id(&state.db, task.id)
         .await
         .expect("reclaimed task should still exist");
-    assert_eq!(stored.status, BackgroundTaskStatus::Retry);
+    assert_eq!(stored.status, BackgroundTaskStatus::Failed);
     assert_eq!(stored.processing_token, 5);
     assert_eq!(stored.attempt_count, 1);
+    assert_eq!(stored.failure_can_retry, Some(false));
     assert!(stored.processing_started_at.is_none());
     assert!(stored.last_heartbeat_at.is_none());
     assert!(stored.lease_expires_at.is_none());
@@ -1089,41 +1141,9 @@ async fn test_record_runtime_task_run_skips_quiet_outcome() {
 }
 
 #[actix_web::test]
-async fn test_dispatch_due_retries_failed_claimed_task_when_attempts_remain() {
+async fn test_dispatch_due_marks_manual_retryable_task_failed_without_auto_retry() {
     let state = common::setup().await;
-    let task = insert_pending_dispatch_task(&state, 3).await;
-
-    let stats = task_service::dispatch_due(&state)
-        .await
-        .expect("dispatch should succeed");
-
-    assert_eq!(stats.claimed, 1);
-    assert_eq!(stats.retried, 1);
-    assert_eq!(stats.failed, 0);
-    assert_eq!(stats.succeeded, 0);
-
-    let stored = background_task_repo::find_by_id(&state.db, task.id)
-        .await
-        .expect("retried task should still exist");
-    assert_eq!(stored.status, BackgroundTaskStatus::Retry);
-    assert_eq!(stored.attempt_count, 1);
-    assert!(stored.finished_at.is_none());
-    assert!(stored.processing_started_at.is_none());
-    assert!(stored.last_heartbeat_at.is_none());
-    assert!(stored.next_run_at > Utc::now());
-    assert!(
-        stored
-            .last_error
-            .as_deref()
-            .expect("retry task should record last error")
-            .contains("should not be dispatched")
-    );
-}
-
-#[actix_web::test]
-async fn test_dispatch_due_marks_task_failed_after_max_attempts() {
-    let state = common::setup().await;
-    let task = insert_pending_dispatch_task(&state, 1).await;
+    let task = insert_pending_dispatch_task(&state, BackgroundTaskKind::ArchiveCompress, 3).await;
 
     let stats = task_service::dispatch_due(&state)
         .await
@@ -1139,6 +1159,33 @@ async fn test_dispatch_due_marks_task_failed_after_max_attempts() {
         .expect("failed task should still exist");
     assert_eq!(stored.status, BackgroundTaskStatus::Failed);
     assert_eq!(stored.attempt_count, 1);
+    assert_eq!(stored.failure_can_retry, Some(true));
+    assert!(stored.finished_at.is_some());
+    assert!(stored.processing_started_at.is_none());
+    assert!(stored.last_heartbeat_at.is_none());
+    assert!(stored.last_error.is_some());
+}
+
+#[actix_web::test]
+async fn test_dispatch_due_marks_task_failed_after_max_attempts() {
+    let state = common::setup().await;
+    let task = insert_pending_dispatch_task(&state, BackgroundTaskKind::SystemRuntime, 1).await;
+
+    let stats = task_service::dispatch_due(&state)
+        .await
+        .expect("dispatch should succeed");
+
+    assert_eq!(stats.claimed, 1);
+    assert_eq!(stats.retried, 0);
+    assert_eq!(stats.failed, 1);
+    assert_eq!(stats.succeeded, 0);
+
+    let stored = background_task_repo::find_by_id(&state.db, task.id)
+        .await
+        .expect("failed task should still exist");
+    assert_eq!(stored.status, BackgroundTaskStatus::Failed);
+    assert_eq!(stored.attempt_count, 1);
+    assert_eq!(stored.failure_can_retry, Some(false));
     assert!(stored.finished_at.is_some());
     assert!(stored.processing_started_at.is_none());
     assert!(stored.last_heartbeat_at.is_none());
@@ -1640,6 +1687,7 @@ async fn test_archive_compress_task_rejects_quota_before_building_archive() {
     assert_eq!(resp.status(), 200);
     let body: Value = test::read_body_json(resp).await;
     assert_eq!(body["data"]["status"], "failed");
+    assert_eq!(body["data"]["can_retry"], true);
     assert_task_steps(
         &body,
         &[
@@ -1793,6 +1841,7 @@ async fn test_retry_task_reloads_max_attempts_from_runtime_config() {
             started_at: Set(Some(now - Duration::minutes(2))),
             finished_at: Set(Some(now - Duration::minutes(1))),
             last_error: Set(Some("transient failure".to_string())),
+            failure_can_retry: Set(Some(true)),
             expires_at: Set(now + Duration::hours(1)),
             created_at: Set(now - Duration::minutes(2)),
             updated_at: Set(now - Duration::minutes(1)),
@@ -2062,6 +2111,7 @@ async fn test_archive_extract_task_fails_before_staging_when_quota_is_insufficie
     assert_eq!(resp.status(), 200);
     let body: Value = test::read_body_json(resp).await;
     assert_eq!(body["data"]["status"], "failed");
+    assert_eq!(body["data"]["can_retry"], true);
     assert_task_steps(
         &body,
         &[
@@ -2453,6 +2503,26 @@ async fn test_archive_extract_task_rejects_high_entry_compression_ratio() {
             .contains("compression ratio"),
         "compression ratio error should be surfaced"
     );
+}
+
+#[actix_web::test]
+async fn test_archive_extract_security_validation_does_not_auto_or_manual_retry() {
+    let payload = vec![b'a'; 4096];
+    let archive_bytes = create_zip_bytes(&[("payload.txt", Some(&payload))]);
+    let body = run_failing_personal_archive_extract_with_options(
+        archive_bytes,
+        vec![(
+            "archive_extract_max_entry_compression_ratio",
+            "2".to_string(),
+        )],
+        "3",
+        true,
+    )
+    .await;
+
+    assert_eq!(body["data"]["max_attempts"], 3);
+    assert_eq!(body["data"]["attempt_count"], 1);
+    assert_eq!(body["data"]["can_retry"], false);
 }
 
 #[actix_web::test]
