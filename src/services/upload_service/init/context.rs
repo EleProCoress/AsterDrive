@@ -268,7 +268,8 @@ pub(super) async fn init_multipart_session_with_retry(
             chunk_size,
             total_chunks,
             folder_id = ctx.target.folder_id,
-            "initialized {log_label} upload session"
+            log_label = %log_label,
+            "initialized upload session"
         );
 
         return Ok(chunked_upload_response(
