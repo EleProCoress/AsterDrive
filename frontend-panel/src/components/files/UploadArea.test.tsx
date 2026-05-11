@@ -166,11 +166,15 @@ async function uploadOneFile() {
 
 async function renderUploadAreaWithFiles(files: File[]) {
 	const { UploadArea } = await import("@/components/files/UploadArea");
+	const { UploadAreaHost } = await import("@/components/files/UploadAreaHost");
 
 	const view = render(
-		<UploadArea>
-			<div>content</div>
-		</UploadArea>,
+		<>
+			<UploadAreaHost workspace={{ kind: "personal" }} />
+			<UploadArea>
+				<div>content</div>
+			</UploadArea>
+		</>,
 	);
 
 	const fileInput = view.container.querySelectorAll('input[type="file"]')[0] as
@@ -186,6 +190,20 @@ async function renderUploadAreaWithFiles(files: File[]) {
 	});
 
 	return view;
+}
+
+async function renderUploadArea() {
+	const { UploadArea } = await import("@/components/files/UploadArea");
+	const { UploadAreaHost } = await import("@/components/files/UploadAreaHost");
+
+	return render(
+		<>
+			<UploadAreaHost workspace={{ kind: "personal" }} />
+			<UploadArea>
+				<div>content</div>
+			</UploadArea>
+		</>,
+	);
 }
 
 async function uploadFiles(files: File[]) {
@@ -222,13 +240,7 @@ describe("UploadArea", () => {
 	});
 
 	it("hides the upload panel before any upload activity", async () => {
-		const { UploadArea } = await import("@/components/files/UploadArea");
-
-		render(
-			<UploadArea>
-				<div>content</div>
-			</UploadArea>,
-		);
+		await renderUploadArea();
 
 		expect(screen.queryByTestId("upload-panel")).not.toBeInTheDocument();
 		await waitFor(() => {
@@ -286,6 +298,53 @@ describe("UploadArea", () => {
 		secondUpload.reject(new Error("upload failed"));
 		await screen.findByText("second.txt:Direct:files:upload_failed");
 
+		await waitFor(() => {
+			expect(refresh).toHaveBeenCalledTimes(1);
+			expect(refreshUser).toHaveBeenCalledTimes(1);
+		});
+	});
+
+	it("keeps active uploads when the file browser route unmounts", async () => {
+		const { UploadArea } = await import("@/components/files/UploadArea");
+		const { UploadAreaHost } = await import(
+			"@/components/files/UploadAreaHost"
+		);
+		const upload = createDeferred<unknown>();
+		const file = new File(["route"], "route-switch.txt", {
+			type: "text/plain",
+		});
+
+		initUpload.mockResolvedValue({ mode: "direct" });
+		apiClientPost.mockReturnValue(upload.promise);
+
+		const view = render(
+			<>
+				<UploadAreaHost workspace={{ kind: "personal" }} />
+				<UploadArea>
+					<div>file route</div>
+				</UploadArea>
+			</>,
+		);
+
+		fireEvent.change(screen.getByTestId("upload-file-input"), {
+			target: { files: [file] },
+		});
+
+		await waitFor(() => {
+			expect(apiClientPost).toHaveBeenCalledTimes(1);
+		});
+
+		view.rerender(
+			<>
+				<UploadAreaHost workspace={{ kind: "personal" }} />
+				<div>tasks route</div>
+			</>,
+		);
+
+		expect(screen.getByText("tasks route")).toBeInTheDocument();
+		upload.resolve({});
+
+		await screen.findByText("route-switch.txt:Direct:files:upload_success");
 		await waitFor(() => {
 			expect(refresh).toHaveBeenCalledTimes(1);
 			expect(refreshUser).toHaveBeenCalledTimes(1);
@@ -407,12 +466,7 @@ describe("UploadArea", () => {
 			},
 		]);
 
-		const { UploadArea } = await import("@/components/files/UploadArea");
-		render(
-			<UploadArea>
-				<div>content</div>
-			</UploadArea>,
-		);
+		await renderUploadArea();
 
 		await screen.findByText("server.bin:Chunked:files:upload_pending_file");
 		expect(listRecoverableSessions).toHaveBeenCalledTimes(1);
@@ -636,16 +690,11 @@ describe("UploadArea", () => {
 		uploadChunk.mockResolvedValue({});
 		completeUpload.mockResolvedValue({ id: 9004 });
 
-		const { UploadArea } = await import("@/components/files/UploadArea");
 		const file = new File(["hello world"], "resume.txt", {
 			type: "text/plain",
 		});
 
-		render(
-			<UploadArea>
-				<div>content</div>
-			</UploadArea>,
-		);
+		await renderUploadArea();
 
 		await screen.findByText("resume.txt:Chunked:files:upload_pending_file");
 		fireEvent.click(screen.getByText("files:upload_resume_select"));
@@ -693,12 +742,7 @@ describe("UploadArea", () => {
 			filename: "failed.txt",
 		});
 
-		const { UploadArea } = await import("@/components/files/UploadArea");
-		render(
-			<UploadArea>
-				<div>content</div>
-			</UploadArea>,
-		);
+		await renderUploadArea();
 
 		await waitFor(() => {
 			expect(removeSession).toHaveBeenCalledWith("upload-failed");
@@ -725,12 +769,7 @@ describe("UploadArea", () => {
 			new MockApiError(4001, "temporary storage error"),
 		);
 
-		const { UploadArea } = await import("@/components/files/UploadArea");
-		render(
-			<UploadArea>
-				<div>content</div>
-			</UploadArea>,
-		);
+		await renderUploadArea();
 
 		await waitFor(() => {
 			expect(getProgress).toHaveBeenCalledWith("upload-transient");
@@ -768,12 +807,7 @@ describe("UploadArea", () => {
 			filename: "missing-status.txt",
 		});
 
-		const { UploadArea } = await import("@/components/files/UploadArea");
-		render(
-			<UploadArea>
-				<div>content</div>
-			</UploadArea>,
-		);
+		await renderUploadArea();
 
 		await waitFor(() => {
 			expect(getProgress).toHaveBeenCalledWith("upload-missing-status");
@@ -828,12 +862,7 @@ describe("UploadArea", () => {
 			return deferreds[sessionIndex].promise;
 		});
 
-		const { UploadArea } = await import("@/components/files/UploadArea");
-		render(
-			<UploadArea>
-				<div>content</div>
-			</UploadArea>,
-		);
+		await renderUploadArea();
 
 		await waitFor(() => {
 			expect(getProgress).toHaveBeenCalledTimes(4);
@@ -902,16 +931,11 @@ describe("UploadArea", () => {
 			})
 			.mockRejectedValueOnce(new Error("temporary progress failure"));
 
-		const { UploadArea } = await import("@/components/files/UploadArea");
 		const file = new File(["hello world"], "resume.txt", {
 			type: "text/plain",
 		});
 
-		render(
-			<UploadArea>
-				<div>content</div>
-			</UploadArea>,
-		);
+		await renderUploadArea();
 
 		await screen.findByText("resume.txt:Chunked:files:upload_pending_file");
 		fireEvent.click(screen.getByText("files:upload_resume_select"));
@@ -951,12 +975,7 @@ describe("UploadArea", () => {
 		});
 		completeUpload.mockResolvedValue({ id: 9006 });
 
-		const { UploadArea } = await import("@/components/files/UploadArea");
-		render(
-			<UploadArea>
-				<div>content</div>
-			</UploadArea>,
-		);
+		await renderUploadArea();
 
 		await screen.findByText("assembling.txt:Chunked:files:upload_success");
 		expect(completeUpload).toHaveBeenCalledWith("upload-assembling", undefined);
@@ -990,12 +1009,7 @@ describe("UploadArea", () => {
 			.mockRejectedValueOnce(new Error("complete failed"))
 			.mockResolvedValueOnce({ id: 9008 });
 
-		const { UploadArea } = await import("@/components/files/UploadArea");
-		render(
-			<UploadArea>
-				<div>content</div>
-			</UploadArea>,
-		);
+		await renderUploadArea();
 
 		await screen.findByText("assembling.txt:Chunked:files:upload_failed");
 		expect(removeSession).not.toHaveBeenCalled();
@@ -1032,12 +1046,7 @@ describe("UploadArea", () => {
 		});
 		completeUpload.mockResolvedValue({ id: 9008 });
 
-		const { UploadArea } = await import("@/components/files/UploadArea");
-		render(
-			<UploadArea>
-				<div>content</div>
-			</UploadArea>,
-		);
+		await renderUploadArea();
 
 		await screen.findByText("completed.txt:Chunked:files:upload_success");
 		expect(completeUpload).toHaveBeenCalledWith("upload-completed", undefined);
@@ -1074,12 +1083,7 @@ describe("UploadArea", () => {
 		});
 		completeUpload.mockResolvedValue({ id: 9009 });
 
-		const { UploadArea } = await import("@/components/files/UploadArea");
-		render(
-			<UploadArea>
-				<div>content</div>
-			</UploadArea>,
-		);
+		await renderUploadArea();
 
 		await screen.findByText(
 			"multipart.txt:Presigned Multipart:files:upload_success",
@@ -1133,16 +1137,11 @@ describe("UploadArea", () => {
 		uploadChunk.mockResolvedValue({});
 		completeUpload.mockResolvedValue({ id: 9007 });
 
-		const { UploadArea } = await import("@/components/files/UploadArea");
 		const file = new File(["hello world"], "resume.txt", {
 			type: "text/plain",
 		});
 
-		render(
-			<UploadArea>
-				<div>content</div>
-			</UploadArea>,
-		);
+		await renderUploadArea();
 
 		await screen.findByText("resume.txt:Chunked:files:upload_pending_file");
 		fireEvent.click(screen.getByText("files:upload_resume_select"));

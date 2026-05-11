@@ -6,6 +6,10 @@ vi.mock("@/components/layout/AdminSiteUrlMismatchPrompt", () => ({
 	AdminSiteUrlMismatchPrompt: () => null,
 }));
 
+vi.mock("@/components/files/UploadAreaHost", () => ({
+	UploadAreaHost: () => null,
+}));
+
 vi.mock("@/pages/ErrorPage", () => ({
 	default: () => null,
 }));

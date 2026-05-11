@@ -12,6 +12,7 @@ import type { Workspace } from "@/lib/workspace";
 import { fileService } from "@/services/fileService";
 import { useAuthStore } from "@/stores/authStore";
 import { useFileStore } from "@/stores/fileStore";
+import { useTeamStore } from "@/stores/teamStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 
 /** SSE 应用层重连：指数退避，避免服务端 5xx/401 时浏览器默认 ~3s 间隔的快速重连风暴。 */
@@ -98,6 +99,28 @@ function invalidatePreviewCaches(fileIds: number[]) {
 	}
 }
 
+function reloadTeamsForCurrentUser() {
+	const { user } = useAuthStore.getState();
+	void useTeamStore
+		.getState()
+		.reload(user?.id ?? null)
+		.catch(() => undefined);
+}
+
+function refreshStorageUsage(event: StorageChangeEventPayload) {
+	const { refreshUser } = useAuthStore.getState();
+	if (event.kind === "sync.required" || !event.workspace) {
+		void refreshUser();
+		reloadTeamsForCurrentUser();
+		return;
+	}
+	if (event.workspace.kind === "personal") {
+		void refreshUser();
+		return;
+	}
+	reloadTeamsForCurrentUser();
+}
+
 export function useStorageChangeEvents() {
 	const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
 	const storageEventStreamEnabled = useAuthStore(
@@ -164,6 +187,8 @@ export function useStorageChangeEvents() {
 					logger.warn("failed to parse storage change event", error);
 					return;
 				}
+
+				refreshStorageUsage(event);
 
 				const workspace = useWorkspaceStore.getState().workspace;
 				if (!eventMatchesWorkspace(event.workspace, workspace)) {

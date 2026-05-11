@@ -4,11 +4,16 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mockState = vi.hoisted(() => ({
 	auth: {
 		isAuthenticated: true,
+		refreshUser: vi.fn(),
 		user: {
+			id: 100,
 			preferences: {
 				storage_event_stream_enabled: true,
 			},
 		},
+	},
+	teamStore: {
+		reload: vi.fn(),
 	},
 	workspace: { kind: "personal" } as
 		| { kind: "personal" }
@@ -93,9 +98,22 @@ vi.mock("@/services/fileService", () => ({
 	},
 }));
 
-vi.mock("@/stores/authStore", () => ({
-	useAuthStore: <T,>(selector: (state: typeof mockState.auth) => T) =>
-		selector(mockState.auth),
+vi.mock("@/stores/authStore", () => {
+	const useAuthStore = Object.assign(
+		<T,>(selector: (state: typeof mockState.auth) => T) =>
+			selector(mockState.auth),
+		{
+			getState: () => mockState.auth,
+		},
+	);
+
+	return { useAuthStore };
+});
+
+vi.mock("@/stores/teamStore", () => ({
+	useTeamStore: {
+		getState: () => mockState.teamStore,
+	},
 }));
 
 vi.mock("@/stores/workspaceStore", () => {
@@ -132,7 +150,11 @@ describe("useStorageChangeEvents", () => {
 	beforeEach(() => {
 		MockEventSource.reset();
 		mockState.auth.isAuthenticated = true;
+		mockState.auth.refreshUser.mockReset();
+		mockState.auth.refreshUser.mockResolvedValue(undefined);
 		mockState.auth.user.preferences.storage_event_stream_enabled = true;
+		mockState.teamStore.reload.mockReset();
+		mockState.teamStore.reload.mockResolvedValue(undefined);
 		mockState.workspace = { kind: "personal" };
 		mockState.fileStore.currentFolderId = 7;
 		mockState.fileStore.breadcrumb = [
@@ -189,6 +211,10 @@ describe("useStorageChangeEvents", () => {
 		await waitFor(() => {
 			expect(mockState.fileStore.navigateTo).toHaveBeenCalledWith(7);
 		});
+		await waitFor(() => {
+			expect(mockState.auth.refreshUser).toHaveBeenCalledTimes(1);
+		});
+		expect(mockState.teamStore.reload).not.toHaveBeenCalled();
 
 		hook.unmount();
 		expect(MockEventSource.instances[0]?.close).toHaveBeenCalledTimes(1);
@@ -220,6 +246,8 @@ describe("useStorageChangeEvents", () => {
 			expect(mockState.invalidateBlobUrl).toHaveBeenCalledWith();
 		});
 		expect(mockState.invalidateTextContent).toHaveBeenCalledWith();
+		expect(mockState.auth.refreshUser).toHaveBeenCalledTimes(1);
+		expect(mockState.teamStore.reload).toHaveBeenCalledWith(100);
 		expect(mockState.fileStore.navigateTo).not.toHaveBeenCalled();
 	});
 
@@ -246,8 +274,9 @@ describe("useStorageChangeEvents", () => {
 		});
 
 		await waitFor(() => {
-			expect(mockState.invalidateBlobUrl).not.toHaveBeenCalled();
+			expect(mockState.teamStore.reload).toHaveBeenCalledWith(100);
 		});
+		expect(mockState.invalidateBlobUrl).not.toHaveBeenCalled();
 		expect(mockState.invalidateTextContent).not.toHaveBeenCalled();
 		expect(mockState.fileStore.navigateTo).not.toHaveBeenCalled();
 	});

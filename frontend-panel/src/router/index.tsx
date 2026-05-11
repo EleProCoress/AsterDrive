@@ -5,6 +5,7 @@ import {
 	Outlet,
 	useParams,
 } from "react-router-dom";
+import { UploadAreaHost } from "@/components/files/UploadAreaHost";
 import { AdminSiteUrlMismatchPrompt } from "@/components/layout/AdminSiteUrlMismatchPrompt";
 import {
 	PERSONAL_WORKSPACE,
@@ -110,7 +111,12 @@ function WorkspaceOutlet({ workspace }: { workspace: Workspace }) {
 		useFileStore.getState().resetWorkspaceState();
 	}, [workspace]);
 
-	return <Outlet />;
+	return (
+		<>
+			<UploadAreaHost workspace={workspace} />
+			<Outlet />
+		</>
+	);
 }
 
 function PersonalWorkspaceRoute() {

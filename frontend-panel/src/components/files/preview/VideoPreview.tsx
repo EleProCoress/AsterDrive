@@ -78,7 +78,7 @@ export function VideoPreview({ file, path }: VideoPreviewProps) {
 				pip: true,
 				setting: true,
 				playbackRate: true,
-				miniProgressBar: true,
+				miniProgressBar: false,
 				mutex: true,
 				hotkey: true,
 				playsInline: true,

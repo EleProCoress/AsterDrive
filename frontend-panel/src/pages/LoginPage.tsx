@@ -73,8 +73,10 @@ export default function LoginPage() {
 	// If identifier is email → extraField is username (and vice versa)
 	const identifierLabel = isEmail ? t("core:email") : t("core:username");
 	const extraLabel = isEmail ? t("core:username") : t("core:email");
-	const extraPlaceholder = isEmail ? t("choose_username") : "you@example.com";
 	const requiresExtraField = mode === "register" || mode === "setup";
+	const identifierPlaceholder =
+		requiresExtraField && !isEmail ? t("choose_username") : "you@example.com";
+	const extraPlaceholder = isEmail ? t("choose_username") : "you@example.com";
 	const passwordResetPrefill = isEmail
 		? identifier.trim()
 		: extraField.includes("@")
@@ -477,6 +479,7 @@ export default function LoginPage() {
 									extraPlaceholder={extraPlaceholder}
 									identifier={identifier}
 									identifierLabel={identifierLabel}
+									identifierPlaceholder={identifierPlaceholder}
 									isSubmitDisabled={isSubmitDisabled}
 									mode={mode}
 									modeActionText={modeActionText}

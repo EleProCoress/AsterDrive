@@ -77,6 +77,7 @@ export default function FileBrowserPage() {
 	useKeyboardShortcuts();
 
 	const uploadAreaRef = useRef<UploadAreaHandle | null>(null);
+	const [uploadReady, setUploadReady] = useState(false);
 	const sentinelRef = useRef<HTMLDivElement | null>(null);
 	const [scrollViewport, setScrollViewport] = useState<HTMLDivElement | null>(
 		null,
@@ -250,10 +251,10 @@ export default function FileBrowserPage() {
 
 	const isEmpty =
 		!loading && displayFolders.length === 0 && displayFiles.length === 0;
-	const uploadReady = uploadAreaRef.current !== null;
 	const handleUploadAreaReady = useCallback(
 		(instance: UploadAreaHandle | null) => {
 			uploadAreaRef.current = instance;
+			setUploadReady(instance !== null);
 		},
 		[],
 	);

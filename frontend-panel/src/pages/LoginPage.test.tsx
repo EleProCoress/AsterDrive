@@ -400,6 +400,19 @@ describe("LoginPage", () => {
 		});
 	});
 
+	it("uses a username placeholder for the first setup identifier field", async () => {
+		mockState.check.mockResolvedValueOnce({
+			has_users: false,
+			allow_user_registration: true,
+		});
+
+		render(<LoginPage />);
+
+		const usernameInput = await screen.findByLabelText("username");
+		expect(usernameInput).toHaveAttribute("placeholder", "choose_username");
+		expect(usernameInput).not.toHaveAttribute("placeholder", "you@example.com");
+	});
+
 	it("shows an activation waiting state after register instead of logging in", async () => {
 		mockState.check.mockResolvedValueOnce({
 			has_users: true,

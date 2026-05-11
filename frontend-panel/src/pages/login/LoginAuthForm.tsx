@@ -19,6 +19,7 @@ interface LoginAuthFormProps {
 	extraPlaceholder: string;
 	identifier: string;
 	identifierLabel: string;
+	identifierPlaceholder: string;
 	isSubmitDisabled: boolean;
 	mode: AuthMode;
 	modeActionText: string;
@@ -43,6 +44,7 @@ export function LoginAuthForm({
 	extraPlaceholder,
 	identifier,
 	identifierLabel,
+	identifierPlaceholder,
 	isSubmitDisabled,
 	mode,
 	modeActionText,
@@ -103,7 +105,7 @@ export function LoginAuthForm({
 				</div>
 				<Input
 					id="identifier"
-					placeholder="you@example.com"
+					placeholder={identifierPlaceholder}
 					value={identifier}
 					onChange={(event) => onIdentifierChange(event.target.value)}
 					required
