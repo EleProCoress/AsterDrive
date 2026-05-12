@@ -99,7 +99,12 @@ pub(super) async fn build_team_info(
     let creator = load_creator_summary(state, team).await?;
     let member_count = team_member_repo::count_by_team(&state.db, team.id).await?;
 
-    Ok(build_team_info_with_metadata(team, my_role, creator, member_count))
+    Ok(build_team_info_with_metadata(
+        team,
+        my_role,
+        creator,
+        member_count,
+    ))
 }
 
 pub(super) fn build_team_info_with_metadata(
@@ -131,7 +136,11 @@ pub(super) async fn build_admin_team_info(
     let creator = load_creator_summary(state, team).await?;
     let member_count = team_member_repo::count_by_team(&state.db, team.id).await?;
 
-    Ok(build_admin_team_info_with_metadata(team, creator, member_count))
+    Ok(build_admin_team_info_with_metadata(
+        team,
+        creator,
+        member_count,
+    ))
 }
 
 pub(super) fn build_admin_team_info_with_metadata(
@@ -159,12 +168,9 @@ pub(super) async fn build_team_member_info(
     membership: team_member::Model,
     user: user::Model,
 ) -> Result<TeamMemberInfo> {
-    let profile = profile_service::get_profile_info(
-        state,
-        &user,
-        profile_service::AvatarAudience::AdminUser,
-    )
-    .await?;
+    let profile =
+        profile_service::get_profile_info(state, &user, profile_service::AvatarAudience::AdminUser)
+            .await?;
     let user_summary = user_service::to_user_summary_with_profile(&user, profile);
 
     Ok(TeamMemberInfo {
@@ -365,10 +371,7 @@ pub(super) async fn ensure_not_last_manager<C: ConnectionTrait>(
 pub(super) async fn load_team_metadata<'a>(
     state: &PrimaryAppState,
     teams: impl IntoIterator<Item = &'a team::Model>,
-) -> Result<(
-    HashMap<i64, user_service::UserSummary>,
-    HashMap<i64, u64>,
-)> {
+) -> Result<(HashMap<i64, user_service::UserSummary>, HashMap<i64, u64>)> {
     let mut creator_ids = HashSet::new();
     let mut team_ids = HashSet::new();
     for team in teams {

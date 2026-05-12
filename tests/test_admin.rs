@@ -531,10 +531,7 @@ async fn test_admin_team_crud() {
     assert_eq!(resp.status(), 200);
     let body: Value = test::read_body_json(resp).await;
     assert_eq!(body["data"]["total"], 1);
-    assert_eq!(
-        body["data"]["items"][0]["user"]["username"],
-        "team-analyst"
-    );
+    assert_eq!(body["data"]["items"][0]["user"]["username"], "team-analyst");
 
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/admin/teams/{team_id}/members?keyword=ly"))
@@ -545,10 +542,7 @@ async fn test_admin_team_crud() {
     assert_eq!(resp.status(), 200);
     let body: Value = test::read_body_json(resp).await;
     assert_eq!(body["data"]["total"], 1);
-    assert_eq!(
-        body["data"]["items"][0]["user"]["username"],
-        "team-analyst"
-    );
+    assert_eq!(body["data"]["items"][0]["user"]["username"], "team-analyst");
 
     let req = test::TestRequest::get()
         .uri(&format!(
@@ -566,10 +560,7 @@ async fn test_admin_team_crud() {
     assert_eq!(body["data"]["owner_count"], 0);
     assert_eq!(body["data"]["manager_count"], 2);
     assert_eq!(body["data"]["items"].as_array().unwrap().len(), 1);
-    assert_eq!(
-        body["data"]["items"][0]["user"]["username"],
-        "team-analyst"
-    );
+    assert_eq!(body["data"]["items"][0]["user"]["username"], "team-analyst");
 
     let req = test::TestRequest::delete()
         .uri(&format!(

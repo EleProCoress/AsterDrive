@@ -219,8 +219,9 @@ pub(crate) async fn update_share_in_scope(
     active.max_downloads = Set(max_downloads);
     active.updated_at = Set(Utc::now());
 
-    let updated = share_info_from_model_with_user(state, share_repo::update(&state.db, active).await?)
-        .await?;
+    let updated =
+        share_info_from_model_with_user(state, share_repo::update(&state.db, active).await?)
+            .await?;
     invalidate_active_share_target_cache_for_scope(state, scope).await;
     invalidate_share_token_record_cache(state, &existing_token).await;
     tracing::debug!(

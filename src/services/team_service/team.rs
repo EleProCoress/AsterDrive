@@ -13,8 +13,8 @@ use crate::types::TeamMemberRole;
 
 use super::shared::{
     archive_team_record, build_team_info, build_team_info_with_metadata, create_team_record,
-    ensure_can_manage_team, load_team_metadata, require_team_membership, resolve_required_policy_group_id,
-    restore_team_record, update_team_record,
+    ensure_can_manage_team, load_team_metadata, require_team_membership,
+    resolve_required_policy_group_id, restore_team_record, update_team_record,
 };
 use super::{CreateTeamInput, TeamInfo, UpdateTeamInput};
 

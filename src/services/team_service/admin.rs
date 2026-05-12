@@ -8,8 +8,8 @@ use crate::types::TeamMemberRole;
 
 use super::shared::{
     archive_team_record, build_admin_team_info, build_admin_team_info_with_metadata,
-    create_team_record, load_team_metadata, resolve_required_policy_group_id,
-    resolve_target_user, restore_team_record, update_team_record,
+    create_team_record, load_team_metadata, resolve_required_policy_group_id, resolve_target_user,
+    restore_team_record, update_team_record,
 };
 use super::{
     AdminCreateTeamInput, AdminTeamInfo, AdminUpdateTeamInput, CreateTeamInput, UpdateTeamInput,

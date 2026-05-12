@@ -338,12 +338,14 @@ async fn build_task_info_with_lookup(
     task: background_task::Model,
 ) -> Result<TaskInfo> {
     let creator = match task.creator_user_id {
-        Some(user_id) => user_service::user_summary_by_id(
-            state,
-            user_id,
-            profile_service::AvatarAudience::AdminUser,
-        )
-        .await?,
+        Some(user_id) => {
+            user_service::user_summary_by_id(
+                state,
+                user_id,
+                profile_service::AvatarAudience::AdminUser,
+            )
+            .await?
+        }
         None => None,
     };
     build_task_info_with_creator(task, creator)

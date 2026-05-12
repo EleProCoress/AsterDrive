@@ -330,10 +330,7 @@ async fn test_preferences_color_preset_accepts_hex_color() {
         .insert_header(common::csrf_header_for(&token))
         .to_request();
     let body: Value = test::read_body_json(test::call_service(&app, req).await).await;
-    assert_eq!(
-        body["data"]["preferences"]["color_preset"],
-        "#0f766e"
-    );
+    assert_eq!(body["data"]["preferences"]["color_preset"], "#0f766e");
 }
 
 #[actix_web::test]
@@ -378,10 +375,7 @@ async fn test_preferences_color_preset_normalizes_legacy_names() {
         .insert_header(common::csrf_header_for(&token))
         .to_request();
     let body: Value = test::read_body_json(test::call_service(&app, req).await).await;
-    assert_eq!(
-        body["data"]["preferences"]["color_preset"],
-        "#16a34a"
-    );
+    assert_eq!(body["data"]["preferences"]["color_preset"], "#16a34a");
 }
 
 #[actix_web::test]
