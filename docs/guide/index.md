@@ -19,8 +19,10 @@
 
 - [用户手册](./user-guide)：文件、工作空间、回收站、分享、WebDAV 和个人设置
 - [常用流程](./core-workflows)：按真实场景串起常见操作
+- [团队与权限](./teams-and-permissions)：个人空间、团队空间、团队角色和管理员边界
 - [分享与公开访问](./sharing)：分享链接、密码、过期时间、下载次数
 - [文件编辑](./editing)：浏览器内编辑、历史版本、WOPI 打开方式
+- [在线预览与 WOPI](./preview-and-wopi)：OnlyOffice、Collabora 和 WOPI 打开方式接入
 - [上传与大文件](./upload-modes)：断点续传、对象存储直传和失败排查
 
 ## 管理员
@@ -31,6 +33,7 @@
 - [配置总览](/config/)：`config.toml`、系统设置、存储策略和外部代理分别管什么
 - [系统设置](/config/runtime)：站点、注册、Cookie、邮件、调度、回收站、WOPI、审计日志
 - [存储策略](/config/storage)：本地、S3 / MinIO、远程节点和策略组
+- [存储策略后端](/storage/)：按后端类型配置 S3 / MinIO / R2 等真实落点
 - [远程节点](./remote-nodes)：把另一台 AsterDrive 接成远程存储后端
 - [自定义前端](./custom-frontend)：替换前端资源、注入自定义配置和处理 CSP
 
@@ -39,6 +42,7 @@
 上线后，稳定运行比“能打开页面”更重要。建议提前把检查、备份、升级和排障路径准备好。
 
 - [运维 CLI](/deployment/ops-cli)：`doctor`、离线系统设置、跨数据库迁移、节点接入
+- [生产上线检查](/deployment/production-checklist)：上线前最后一轮 HTTPS、数据、备份、存储和真实功能验收
 - [升级与版本迁移](/deployment/upgrade)：升级前备份、升级后验证、失败回滚
 - [备份与恢复](/deployment/backup)：数据库、配置、本地上传目录和恢复顺序
 - [故障排查](/deployment/troubleshooting)：服务启动、上传、下载、分享、WebDAV、WOPI 和后台任务

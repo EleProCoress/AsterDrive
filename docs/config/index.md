@@ -46,6 +46,7 @@ AsterDrive 的配置分得很清楚。先把这些层分开，后续就能更容
 | 公开站点地址、品牌、注册、Cookie、Token、调度、回收站、版本、配额、WOPI、WebDAV、审计 | [系统设置](/config/runtime) |
 | 配 SMTP、发测试邮件、改邮件模版 | [邮件](/config/mail) |
 | 文件存哪里、上传/下载怎么走 | [存储策略](/config/storage) |
+| 按教程接 S3 / MinIO / R2 这类后端 | [存储策略后端](/storage/) |
 | 不同用户/团队走哪条存储路线 | [存储策略](/config/storage) |
 | 接远程 follower，配置默认接收落点 | [远程节点](/guide/remote-nodes) |
 | 改 WebDAV 路径或 WebDAV 上传硬上限 | [WebDAV](/config/webdav) |

@@ -44,8 +44,10 @@ export default defineConfig({
               { text: '使用指南总览', link: '/guide/' },
               { text: '用户手册', link: '/guide/user-guide' },
               { text: '常用流程', link: '/guide/core-workflows' },
+              { text: '团队与权限', link: '/guide/teams-and-permissions' },
               { text: '分享与公开访问', link: '/guide/sharing' },
               { text: '文件编辑', link: '/guide/editing' },
+              { text: '在线预览与 WOPI', link: '/guide/preview-and-wopi' },
               { text: '上传与大文件', link: '/guide/upload-modes' },
               { text: 'WebDAV', link: '/config/webdav' }
             ]
@@ -57,6 +59,7 @@ export default defineConfig({
               { text: '配置总览', link: '/config/' },
               { text: '系统设置', link: '/config/runtime' },
               { text: '存储策略', link: '/config/storage' },
+              { text: '存储策略后端', link: '/storage/' },
               { text: '邮件', link: '/config/mail' },
               { text: '远程节点', link: '/guide/remote-nodes' }
             ]
@@ -68,6 +71,7 @@ export default defineConfig({
               { text: 'Docker', link: '/deployment/docker' },
               { text: 'systemd', link: '/deployment/systemd' },
               { text: '反向代理', link: '/deployment/reverse-proxy' },
+              { text: '上线检查', link: '/deployment/production-checklist' },
               { text: '升级', link: '/deployment/upgrade' },
               { text: '备份恢复', link: '/deployment/backup' },
               { text: '故障排查', link: '/deployment/troubleshooting' },
@@ -139,8 +143,10 @@ export default defineConfig({
         items: [
           { text: '用户手册', link: '/guide/user-guide' },
           { text: '常用流程', link: '/guide/core-workflows' },
+          { text: '团队与权限', link: '/guide/teams-and-permissions' },
           { text: '分享与公开访问', link: '/guide/sharing' },
           { text: '文件编辑', link: '/guide/editing' },
+          { text: '在线预览与 WOPI', link: '/guide/preview-and-wopi' },
           { text: '上传与大文件', link: '/guide/upload-modes' }
         ]
       },
@@ -164,6 +170,15 @@ export default defineConfig({
         ]
       },
       {
+        text: '存储策略后端',
+        collapsed: true,
+        items: [
+          { text: '后端总览', link: '/storage/' },
+          { text: 'S3 / MinIO / R2', link: '/storage/s3-minio-r2' },
+          { text: '远程节点', link: '/storage/remote-follower' }
+        ]
+      },
+      {
         text: '部署运维',
         collapsed: true,
         items: [
@@ -173,6 +188,7 @@ export default defineConfig({
           { text: 'systemd', link: '/deployment/systemd' },
           { text: '反向代理', link: '/deployment/reverse-proxy' },
           { text: '首次启动检查', link: '/deployment/runtime-behavior' },
+          { text: '生产上线检查', link: '/deployment/production-checklist' },
           { text: '运维 CLI', link: '/deployment/ops-cli' },
           { text: '升级与版本迁移', link: '/deployment/upgrade' },
           { text: '备份与恢复', link: '/deployment/backup' },

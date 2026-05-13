@@ -48,6 +48,12 @@
 如果它们都在 Docker 网络里，主控也能解析容器名，那么也可以直接填容器内地址。
 不要默认填写 `http://localhost:3000`，那通常只对 follower 自己成立。
 
+::: tip 如果 follower 在 NAT 或 CGNAT 后方
+当前 Docker bootstrap 解决的是“从节点首次自动 enroll”，还不是“主控无法回连从节点时也能读写对象”。
+
+如果主控访问不到 follower 的 `base_url`，远程存储策略仍然不能稳定工作。只出站连接的反向通道正在 [issue #136](https://github.com/AptS-1547/AsterDrive/issues/136) 跟进。
+:::
+
 ### 4. token 是一次性的
 
 主控后台生成的 enrollment token：
