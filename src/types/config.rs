@@ -93,3 +93,50 @@ impl fmt::Display for SystemConfigSource {
         f.write_str(self.as_str())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{SystemConfigSource, SystemConfigValueType};
+
+    #[test]
+    fn system_config_value_type_round_trips_string_names() {
+        let cases = [
+            (SystemConfigValueType::String, "string"),
+            (SystemConfigValueType::Multiline, "multiline"),
+            (SystemConfigValueType::StringArray, "string_array"),
+            (SystemConfigValueType::Number, "number"),
+            (SystemConfigValueType::Boolean, "boolean"),
+        ];
+
+        for (value_type, name) in cases {
+            assert_eq!(value_type.as_str(), name);
+            assert_eq!(value_type.to_string(), name);
+            assert_eq!(SystemConfigValueType::from_str_name(name), Some(value_type));
+        }
+        assert_eq!(SystemConfigValueType::from_str_name("unknown"), None);
+    }
+
+    #[test]
+    fn system_config_value_type_classifies_multiline_and_arrays() {
+        assert!(SystemConfigValueType::Multiline.is_multiline());
+        assert!(!SystemConfigValueType::String.is_multiline());
+
+        assert!(SystemConfigValueType::StringArray.is_string_array());
+        assert!(!SystemConfigValueType::Boolean.is_string_array());
+    }
+
+    #[test]
+    fn system_config_source_round_trips_string_names() {
+        let cases = [
+            (SystemConfigSource::System, "system"),
+            (SystemConfigSource::Custom, "custom"),
+        ];
+
+        for (source, name) in cases {
+            assert_eq!(source.as_str(), name);
+            assert_eq!(source.to_string(), name);
+            assert_eq!(SystemConfigSource::from_str_name(name), Some(source));
+        }
+        assert_eq!(SystemConfigSource::from_str_name("tenant"), None);
+    }
+}

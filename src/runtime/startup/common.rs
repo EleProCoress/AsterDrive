@@ -168,6 +168,21 @@ async fn ensure_default_policy(db: &sea_orm::DatabaseConnection) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::types::{DriverType, SystemConfigSource};
+    use migration::Migrator;
+    use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, Set};
+
+    async fn setup_db() -> sea_orm::DatabaseConnection {
+        let db = crate::db::connect(&crate::config::DatabaseConfig {
+            url: "sqlite::memory:".to_string(),
+            pool_size: 1,
+            retry_count: 0,
+        })
+        .await
+        .unwrap();
+        Migrator::up(&db, None).await.unwrap();
+        db
+    }
 
     #[test]
     fn optional_follower_bootstrap_success_keeps_startup_flow() {
@@ -179,5 +194,136 @@ mod tests {
         handle_optional_follower_bootstrap::<()>(Err(AsterError::validation_error(
             "enrollment token has already been completed",
         )));
+    }
+
+    #[tokio::test]
+    async fn ensure_default_policy_creates_local_default_when_no_policies_exist() {
+        let db = setup_db().await;
+
+        ensure_default_policy(&db).await.unwrap();
+
+        let default = crate::db::repository::policy_repo::find_default(&db)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(default.name, "Local Default");
+        assert_eq!(default.driver_type, DriverType::Local);
+        assert!(default.is_default);
+        assert_eq!(default.base_path, "data/uploads");
+    }
+
+    #[tokio::test]
+    async fn ensure_default_policy_keeps_existing_non_default_policy() {
+        let db = setup_db().await;
+        let now = chrono::Utc::now();
+        crate::db::repository::policy_repo::create(
+            &db,
+            crate::entities::storage_policy::ActiveModel {
+                name: Set("Existing".to_string()),
+                driver_type: Set(DriverType::Local),
+                endpoint: Set(String::new()),
+                bucket: Set(String::new()),
+                access_key: Set(String::new()),
+                secret_key: Set(String::new()),
+                base_path: Set("existing".to_string()),
+                max_file_size: Set(0),
+                allowed_types: Set(crate::types::StoredStoragePolicyAllowedTypes::empty()),
+                options: Set(crate::types::StoredStoragePolicyOptions::empty()),
+                is_default: Set(false),
+                chunk_size: Set(5_242_880),
+                created_at: Set(now),
+                updated_at: Set(now),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        ensure_default_policy(&db).await.unwrap();
+
+        let policies = crate::db::repository::policy_repo::find_all(&db)
+            .await
+            .unwrap();
+        assert_eq!(policies.len(), 1);
+        assert_eq!(policies[0].name, "Existing");
+    }
+
+    #[tokio::test]
+    async fn purge_obsolete_config_key_deletes_matching_key_only() {
+        let db = setup_db().await;
+        crate::db::repository::config_repo::upsert(
+            &db,
+            OBSOLETE_NODE_RUNTIME_MODE_KEY,
+            "primary",
+            0,
+        )
+        .await
+        .unwrap();
+        crate::db::repository::config_repo::upsert(&db, "still_here", "value", 0)
+            .await
+            .unwrap();
+
+        purge_obsolete_node_runtime_mode(&db).await.unwrap();
+
+        assert!(
+            crate::db::repository::config_repo::find_by_key(&db, OBSOLETE_NODE_RUNTIME_MODE_KEY)
+                .await
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            crate::db::repository::config_repo::find_by_key(&db, "still_here")
+                .await
+                .unwrap()
+                .is_some()
+        );
+    }
+
+    #[tokio::test]
+    async fn initialize_database_state_seeds_primary_runtime_defaults() {
+        let db = crate::db::connect(&crate::config::DatabaseConfig {
+            url: "sqlite::memory:".to_string(),
+            pool_size: 1,
+            retry_count: 0,
+        })
+        .await
+        .unwrap();
+        let config = crate::config::Config {
+            auth: crate::config::AuthConfig {
+                bootstrap_insecure_cookies: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        initialize_database_state(&db, &config, NodeRuntimeMode::Primary)
+            .await
+            .unwrap();
+
+        assert!(
+            crate::db::repository::policy_repo::find_default(&db)
+                .await
+                .unwrap()
+                .is_some()
+        );
+        let auth_cookie_secure =
+            crate::db::repository::config_repo::find_by_key(&db, AUTH_COOKIE_SECURE_KEY)
+                .await
+                .unwrap()
+                .unwrap();
+        assert_eq!(auth_cookie_secure.value, "false");
+
+        let groups = crate::entities::storage_policy_group::Entity::find()
+            .all(&db)
+            .await
+            .unwrap();
+        assert!(!groups.is_empty());
+
+        let obsolete = crate::entities::system_config::Entity::find()
+            .filter(crate::entities::system_config::Column::Source.eq(SystemConfigSource::Custom))
+            .all(&db)
+            .await
+            .unwrap();
+        assert!(obsolete.is_empty());
     }
 }

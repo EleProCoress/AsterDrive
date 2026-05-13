@@ -122,3 +122,29 @@ pub fn init_logging(config: &LoggingConfig) -> LoggingInitResult {
 
     LoggingInitResult { guard, warning }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::init_logging;
+    use crate::config::LoggingConfig;
+
+    #[test]
+    fn init_logging_accepts_stdout_config_and_reports_invalid_level_warning() {
+        let result = init_logging(&LoggingConfig {
+            level: "aster_drive=not-a-level".to_string(),
+            format: "text".to_string(),
+            file: String::new(),
+            enable_rotation: false,
+            max_backups: 5,
+        });
+
+        let warning = result.warning.expect("invalid level should report warning");
+        assert!(
+            warning.contains("Invalid logging.level")
+                || warning.contains("RUST_LOG environment variable detected"),
+            "{warning}"
+        );
+        tracing::info!("logging test message");
+        drop(result.guard);
+    }
+}

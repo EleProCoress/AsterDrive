@@ -86,3 +86,48 @@ impl MailOutboxStatus {
         matches!(self, Self::Sent | Self::Failed)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{MailOutboxStatus, MailTemplateCode, StoredMailPayload};
+
+    #[test]
+    fn mail_template_code_exposes_stable_storage_names() {
+        assert_eq!(
+            MailTemplateCode::RegisterActivation.as_str(),
+            "register_activation"
+        );
+        assert_eq!(
+            MailTemplateCode::ContactChangeConfirmation.as_str(),
+            "contact_change_confirmation"
+        );
+        assert_eq!(MailTemplateCode::PasswordReset.as_str(), "password_reset");
+        assert_eq!(
+            MailTemplateCode::PasswordResetNotice.as_str(),
+            "password_reset_notice"
+        );
+        assert_eq!(
+            MailTemplateCode::ContactChangeNotice.as_str(),
+            "contact_change_notice"
+        );
+    }
+
+    #[test]
+    fn stored_mail_payload_helpers_preserve_raw_json() {
+        let payload = StoredMailPayload::from("{\"token\":\"abc\"}".to_string());
+        assert_eq!(payload.as_ref(), "{\"token\":\"abc\"}");
+
+        let raw: String = payload.into();
+        assert_eq!(raw, "{\"token\":\"abc\"}");
+        assert_eq!(StoredMailPayload::cleared().as_ref(), "{}");
+    }
+
+    #[test]
+    fn mail_outbox_status_terminal_states_are_explicit() {
+        assert!(!MailOutboxStatus::Pending.is_terminal());
+        assert!(!MailOutboxStatus::Processing.is_terminal());
+        assert!(!MailOutboxStatus::Retry.is_terminal());
+        assert!(MailOutboxStatus::Sent.is_terminal());
+        assert!(MailOutboxStatus::Failed.is_terminal());
+    }
+}

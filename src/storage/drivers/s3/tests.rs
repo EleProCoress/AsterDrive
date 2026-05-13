@@ -2,12 +2,13 @@ use super::S3Driver;
 use super::presigned::{MAX_PRESIGN_TTL, clamp_presign_ttl};
 use crate::entities::storage_policy;
 use crate::errors::AsterError;
-use crate::storage::driver::StorageDriver;
+use crate::storage::driver::{StorageDriver, StoragePathVisitor};
 use crate::storage::error::StorageErrorKind;
+use crate::storage::extensions::{ListStorageDriver, PresignedStorageDriver};
 use crate::storage::multipart::MultipartStorageDriver;
 use crate::types::{StoragePolicyOptions, serialize_storage_policy_options};
 use aws_sdk_s3::config::{BehaviorVersion, Credentials, Region};
-use aws_smithy_http_client::test_util::capture_request;
+use aws_smithy_http_client::test_util::{ReplayEvent, StaticReplayClient, capture_request};
 use aws_smithy_types::body::SdkBody;
 use std::time::Duration;
 
@@ -38,6 +39,45 @@ fn mocked_driver(
             base_path: String::new(),
         },
         request,
+    )
+}
+
+fn replay_driver(events: Vec<ReplayEvent>, base_path: &str) -> (S3Driver, StaticReplayClient) {
+    let http_client = StaticReplayClient::new(events);
+    let config = aws_sdk_s3::Config::builder()
+        .behavior_version(BehaviorVersion::latest())
+        .http_client(http_client.clone())
+        .credentials_provider(Credentials::new(
+            "test-access-key",
+            "test-secret-key",
+            None,
+            None,
+            "s3-unit-test",
+        ))
+        .region(Region::new("us-east-1"))
+        .build();
+
+    (
+        S3Driver {
+            client: aws_sdk_s3::Client::from_conf(config),
+            bucket: "test-bucket".to_string(),
+            base_path: base_path.to_string(),
+        },
+        http_client,
+    )
+}
+
+fn replay_event(body: &str) -> ReplayEvent {
+    ReplayEvent::new(
+        http::Request::builder()
+            .uri("https://example.invalid/")
+            .body(SdkBody::empty())
+            .expect("expected request"),
+        http::Response::builder()
+            .status(200)
+            .header("content-type", "application/xml")
+            .body(SdkBody::from(body.to_string()))
+            .expect("mocked response"),
     )
 }
 
@@ -325,4 +365,341 @@ fn clamp_presign_ttl_passes_through_when_in_range() {
 fn clamp_presign_ttl_replaces_zero_with_max() {
     let clamped = clamp_presign_ttl(std::time::Duration::ZERO, "t");
     assert_eq!(clamped, MAX_PRESIGN_TTL);
+}
+
+#[tokio::test]
+async fn list_paths_paginates_strips_base_path_and_sorts_results() {
+    let (driver, http_client) = replay_driver(
+        vec![
+            replay_event(
+                r#"<?xml version="1.0" encoding="UTF-8"?>
+                <ListBucketResult>
+                    <IsTruncated>true</IsTruncated>
+                    <Contents><Key>base/files/b.txt</Key></Contents>
+                    <Contents><Key>base/files/a.txt</Key></Contents>
+                    <Contents><Key>baseball/files/ignored.txt</Key></Contents>
+                    <Contents><Size>123</Size></Contents>
+                    <NextContinuationToken>token-1</NextContinuationToken>
+                </ListBucketResult>"#,
+            ),
+            replay_event(
+                r#"<?xml version="1.0" encoding="UTF-8"?>
+                <ListBucketResult>
+                    <IsTruncated>false</IsTruncated>
+                    <Contents><Key>base/files/c.txt</Key></Contents>
+                </ListBucketResult>"#,
+            ),
+        ],
+        "base",
+    );
+
+    let paths = driver
+        .list_paths(Some("files/"))
+        .await
+        .expect("list should succeed");
+
+    assert_eq!(
+        paths,
+        vec![
+            "files/a.txt".to_string(),
+            "files/b.txt".to_string(),
+            "files/c.txt".to_string()
+        ]
+    );
+
+    let requests = http_client
+        .actual_requests()
+        .map(|request| request.uri().to_string())
+        .collect::<Vec<_>>();
+    assert_eq!(requests.len(), 2);
+    assert!(
+        requests[0].contains("list-type=2"),
+        "expected list_objects_v2 query in '{}'",
+        requests[0]
+    );
+    assert!(
+        requests[0].contains("prefix=base%2Ffiles%2F"),
+        "expected scoped prefix in '{}'",
+        requests[0]
+    );
+    assert!(
+        requests[1].contains("continuation-token=token-1"),
+        "expected continuation token in '{}'",
+        requests[1]
+    );
+}
+
+struct CollectingVisitor {
+    paths: Vec<String>,
+}
+
+impl StoragePathVisitor for CollectingVisitor {
+    fn visit_path(&mut self, path: String) -> crate::errors::Result<()> {
+        self.paths.push(path);
+        Ok(())
+    }
+}
+
+#[tokio::test]
+async fn scan_paths_streams_matching_paths_without_sorting() {
+    let (driver, _http_client) = replay_driver(
+        vec![replay_event(
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <ListBucketResult>
+                <IsTruncated>false</IsTruncated>
+                <Contents><Key>base/z.txt</Key></Contents>
+                <Contents><Key>other/ignored.txt</Key></Contents>
+                <Contents><Key>base/a.txt</Key></Contents>
+            </ListBucketResult>"#,
+        )],
+        "base/",
+    );
+    let mut visitor = CollectingVisitor { paths: Vec::new() };
+
+    driver
+        .scan_paths(None, &mut visitor)
+        .await
+        .expect("scan should succeed");
+
+    assert_eq!(
+        visitor.paths,
+        vec!["z.txt".to_string(), "a.txt".to_string()]
+    );
+}
+
+#[tokio::test]
+async fn presigned_url_includes_download_response_overrides() {
+    let response = http::Response::builder()
+        .status(200)
+        .body(SdkBody::empty())
+        .expect("mocked response");
+    let (mut driver, _request) = mocked_driver(response);
+    driver.base_path = "base".to_string();
+
+    let url = driver
+        .presigned_url(
+            "folder/file name.txt",
+            Duration::from_secs(60),
+            crate::storage::driver::PresignedDownloadOptions {
+                response_cache_control: Some("private, max-age=60".to_string()),
+                response_content_disposition: Some(
+                    "attachment; filename=\"file name.txt\"".to_string(),
+                ),
+                response_content_type: Some("text/plain".to_string()),
+            },
+        )
+        .await
+        .expect("presigned URL should build")
+        .expect("S3 should return a URL");
+    let parsed = reqwest::Url::parse(&url).expect("presigned URL should parse");
+    let query = parsed
+        .query_pairs()
+        .into_owned()
+        .collect::<std::collections::HashMap<_, _>>();
+
+    assert!(
+        parsed.path().contains("/base/folder/file%20name.txt"),
+        "expected base path and encoded object key in '{}'",
+        parsed.path()
+    );
+    assert_eq!(
+        query.get("response-cache-control").map(String::as_str),
+        Some("private, max-age=60")
+    );
+    assert_eq!(
+        query
+            .get("response-content-disposition")
+            .map(String::as_str),
+        Some("attachment; filename=\"file name.txt\"")
+    );
+    assert_eq!(
+        query.get("response-content-type").map(String::as_str),
+        Some("text/plain")
+    );
+}
+
+#[tokio::test]
+async fn presigned_put_url_includes_base_path() {
+    let response = http::Response::builder()
+        .status(200)
+        .body(SdkBody::empty())
+        .expect("mocked response");
+    let (mut driver, _request) = mocked_driver(response);
+    driver.base_path = "base".to_string();
+
+    let url = driver
+        .presigned_put_url("upload.bin", Duration::from_secs(60))
+        .await
+        .expect("presigned PUT URL should build")
+        .expect("S3 should return a URL");
+    let parsed = reqwest::Url::parse(&url).expect("presigned URL should parse");
+
+    assert!(
+        parsed.path().contains("/base/upload.bin"),
+        "expected base path in '{}'",
+        parsed.path()
+    );
+    assert!(
+        parsed
+            .query_pairs()
+            .any(|(key, value)| key == "X-Amz-Algorithm" && value == "AWS4-HMAC-SHA256"),
+        "expected SigV4 query parameters in '{url}'"
+    );
+}
+
+#[tokio::test]
+async fn create_multipart_upload_returns_upload_id() {
+    let response = http::Response::builder()
+        .status(200)
+        .body(SdkBody::from(
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+                <InitiateMultipartUploadResult>
+                    <Bucket>test-bucket</Bucket>
+                    <Key>base/object.bin</Key>
+                    <UploadId>upload-123</UploadId>
+                </InitiateMultipartUploadResult>"#,
+        ))
+        .expect("mocked response");
+    let (mut driver, request) = mocked_driver(response);
+    driver.base_path = "base".to_string();
+
+    let upload_id = driver
+        .create_multipart_upload("object.bin")
+        .await
+        .expect("multipart upload should start");
+
+    assert_eq!(upload_id, "upload-123");
+    let captured = request.expect_request();
+    let uri = captured.uri().to_string();
+    assert!(
+        uri.contains("/base/object.bin"),
+        "expected base path in '{uri}'"
+    );
+    assert!(
+        uri.contains("uploads"),
+        "expected multipart uploads query in '{uri}'"
+    );
+}
+
+#[tokio::test]
+async fn create_multipart_upload_rejects_missing_upload_id() {
+    let response = http::Response::builder()
+        .status(200)
+        .body(SdkBody::from(
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+                <InitiateMultipartUploadResult>
+                    <Bucket>test-bucket</Bucket>
+                    <Key>object.bin</Key>
+                </InitiateMultipartUploadResult>"#,
+        ))
+        .expect("mocked response");
+    let (driver, request) = mocked_driver(response);
+
+    let err = driver
+        .create_multipart_upload("object.bin")
+        .await
+        .expect_err("missing upload_id should fail");
+    request.expect_request();
+
+    assert_eq!(err.storage_error_kind(), Some(StorageErrorKind::Unknown));
+    assert!(err.message().contains("missing upload_id"));
+}
+
+#[tokio::test]
+async fn presigned_upload_part_url_includes_upload_context() {
+    let response = http::Response::builder()
+        .status(200)
+        .body(SdkBody::empty())
+        .expect("mocked response");
+    let (mut driver, _request) = mocked_driver(response);
+    driver.base_path = "base".to_string();
+
+    let url = driver
+        .presigned_upload_part_url("object.bin", "upload-123", 7, Duration::from_secs(60))
+        .await
+        .expect("presigned part URL should build");
+    let parsed = reqwest::Url::parse(&url).expect("presigned URL should parse");
+    let query = parsed
+        .query_pairs()
+        .into_owned()
+        .collect::<std::collections::HashMap<_, _>>();
+
+    assert!(
+        parsed.path().contains("/base/object.bin"),
+        "expected base path in '{}'",
+        parsed.path()
+    );
+    assert_eq!(
+        query.get("uploadId").map(String::as_str),
+        Some("upload-123")
+    );
+    assert_eq!(query.get("partNumber").map(String::as_str), Some("7"));
+}
+
+#[tokio::test]
+async fn upload_multipart_part_rejects_missing_etag() {
+    let response = http::Response::builder()
+        .status(200)
+        .body(SdkBody::from(
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+                <UploadPartResult />"#,
+        ))
+        .expect("mocked response");
+    let (driver, request) = mocked_driver(response);
+
+    let err = driver
+        .upload_multipart_part("object.bin", "upload-123", 1, b"part")
+        .await
+        .expect_err("missing ETag should fail");
+    request.expect_request();
+
+    assert_eq!(err.storage_error_kind(), Some(StorageErrorKind::Unknown));
+    assert!(err.message().contains("missing ETag"));
+}
+
+#[tokio::test]
+async fn list_uploaded_parts_paginates_with_next_part_marker() {
+    let (driver, http_client) = replay_driver(
+        vec![
+            replay_event(
+                r#"<?xml version="1.0" encoding="UTF-8"?>
+                <ListPartsResult>
+                    <IsTruncated>true</IsTruncated>
+                    <NextPartNumberMarker>2</NextPartNumberMarker>
+                    <Part><PartNumber>1</PartNumber><ETag>"etag-1"</ETag></Part>
+                    <Part><PartNumber>2</PartNumber><ETag>"etag-2"</ETag></Part>
+                </ListPartsResult>"#,
+            ),
+            replay_event(
+                r#"<?xml version="1.0" encoding="UTF-8"?>
+                <ListPartsResult>
+                    <IsTruncated>false</IsTruncated>
+                    <Part><PartNumber>3</PartNumber><ETag>"etag-3"</ETag></Part>
+                </ListPartsResult>"#,
+            ),
+        ],
+        "base",
+    );
+
+    let parts = driver
+        .list_uploaded_parts("object.bin", "upload-123")
+        .await
+        .expect("parts should list");
+
+    assert_eq!(parts, vec![1, 2, 3]);
+    let requests = http_client
+        .actual_requests()
+        .map(|request| request.uri().to_string())
+        .collect::<Vec<_>>();
+    assert_eq!(requests.len(), 2);
+    assert!(
+        requests[0].contains("uploadId=upload-123"),
+        "expected upload id in '{}'",
+        requests[0]
+    );
+    assert!(
+        requests[1].contains("part-number-marker=2"),
+        "expected pagination marker in '{}'",
+        requests[1]
+    );
 }

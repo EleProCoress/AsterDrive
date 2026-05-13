@@ -643,8 +643,75 @@ fn system_health_check_interval(state: &PrimaryAppState) -> Duration {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::operations::{
+        BACKGROUND_TASK_DISPATCH_INTERVAL_SECS_KEY, BLOB_RECONCILE_INTERVAL_SECS_KEY,
+        MAIL_OUTBOX_DISPATCH_INTERVAL_SECS_KEY, MAINTENANCE_CLEANUP_INTERVAL_SECS_KEY,
+        REMOTE_NODE_HEALTH_TEST_INTERVAL_SECS_KEY,
+    };
     use crate::errors::AsterError;
     use crate::services::task_service::{DispatchStats, RuntimeTaskRunOutcome};
+    use chrono::Utc;
+    use migration::Migrator;
+    use sea_orm::EntityTrait;
+    use std::sync::Arc;
+
+    async fn setup_state() -> web::Data<PrimaryAppState> {
+        let db = crate::db::connect(&crate::config::DatabaseConfig {
+            url: "sqlite::memory:".to_string(),
+            pool_size: 1,
+            retry_count: 0,
+        })
+        .await
+        .unwrap();
+        Migrator::up(&db, None).await.unwrap();
+        crate::db::repository::config_repo::ensure_defaults(&db)
+            .await
+            .unwrap();
+
+        let cache = crate::cache::create_cache(&crate::config::CacheConfig {
+            enabled: false,
+            ..Default::default()
+        })
+        .await;
+        let runtime_config = Arc::new(crate::config::RuntimeConfig::new());
+        runtime_config.reload(&db).await.unwrap();
+        let (storage_change_tx, _) = tokio::sync::broadcast::channel(
+            crate::services::storage_change_service::STORAGE_CHANGE_CHANNEL_CAPACITY,
+        );
+        let (share_download_rollback, _worker) =
+            crate::services::share_service::build_share_download_rollback_queue(db.clone(), 1);
+
+        web::Data::new(PrimaryAppState {
+            db,
+            driver_registry: Arc::new(crate::storage::DriverRegistry::new()),
+            runtime_config,
+            policy_snapshot: Arc::new(crate::storage::PolicySnapshot::new()),
+            config: Arc::new(crate::config::Config::default()),
+            cache,
+            mail_sender: crate::services::mail_service::memory_sender(),
+            storage_change_tx,
+            share_download_rollback,
+        })
+    }
+
+    fn apply_runtime_value(state: &web::Data<PrimaryAppState>, key: &str, value: &str) {
+        state
+            .runtime_config
+            .apply(crate::entities::system_config::Model {
+                id: 0,
+                key: key.to_string(),
+                value: value.to_string(),
+                value_type: crate::types::SystemConfigValueType::String,
+                requires_restart: false,
+                is_sensitive: false,
+                source: crate::types::SystemConfigSource::System,
+                namespace: String::new(),
+                category: "test".to_string(),
+                description: "test".to_string(),
+                updated_at: Utc::now(),
+                updated_by: None,
+            });
+    }
 
     #[test]
     fn periodic_sleep_duration_is_unchanged_without_jitter() {
@@ -684,6 +751,41 @@ mod tests {
         tasks.shutdown().await;
     }
 
+    #[tokio::test]
+    async fn follower_background_tasks_can_shutdown_without_primary_workers() {
+        let tasks = spawn_follower_background_tasks();
+
+        tasks.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn runtime_interval_helpers_read_runtime_config_values() {
+        let state = setup_state().await;
+        apply_runtime_value(&state, MAIL_OUTBOX_DISPATCH_INTERVAL_SECS_KEY, "11");
+        apply_runtime_value(&state, BACKGROUND_TASK_DISPATCH_INTERVAL_SECS_KEY, "12");
+        apply_runtime_value(&state, MAINTENANCE_CLEANUP_INTERVAL_SECS_KEY, "13");
+        apply_runtime_value(&state, BLOB_RECONCILE_INTERVAL_SECS_KEY, "14");
+        apply_runtime_value(&state, REMOTE_NODE_HEALTH_TEST_INTERVAL_SECS_KEY, "15");
+
+        assert_eq!(
+            mail_outbox_dispatch_interval(&state),
+            Duration::from_secs(11)
+        );
+        assert_eq!(
+            background_task_dispatch_interval(&state),
+            Duration::from_secs(12)
+        );
+        assert_eq!(
+            maintenance_cleanup_interval(&state),
+            Duration::from_secs(13)
+        );
+        assert_eq!(blob_reconcile_interval(&state), Duration::from_secs(14));
+        assert_eq!(
+            system_health_check_interval(&state),
+            Duration::from_secs(15)
+        );
+    }
+
     #[test]
     fn background_task_dispatch_success_is_quiet_even_when_tasks_were_processed() {
         let outcome = background_task_dispatch_outcome(Ok(DispatchStats {
@@ -708,5 +810,55 @@ mod tests {
                 "Internal Server Error: dispatcher crashed",
             )
         );
+    }
+
+    #[tokio::test]
+    async fn run_periodic_iteration_records_successful_runtime_outcome() {
+        let state = setup_state().await;
+
+        run_periodic_iteration("unit-success", &state, &|_| async {
+            RuntimeTaskRunOutcome::succeeded(Some("ok".to_string()))
+        })
+        .await;
+
+        let tasks = crate::entities::background_task::Entity::find()
+            .all(&state.db)
+            .await
+            .unwrap();
+        assert_eq!(tasks.len(), 1);
+        assert_eq!(tasks[0].display_name, "unit success");
+        assert_eq!(
+            tasks[0].status,
+            crate::types::BackgroundTaskStatus::Succeeded
+        );
+        assert_eq!(tasks[0].status_text.as_deref(), Some("ok"));
+        let result: serde_json::Value =
+            serde_json::from_str(tasks[0].result_json.as_ref().unwrap().as_ref()).unwrap();
+        assert_eq!(result["summary"], "ok");
+        assert!(result["duration_ms"].as_i64().is_some());
+    }
+
+    #[tokio::test]
+    async fn run_periodic_iteration_catches_panics_and_records_failure() {
+        let state = setup_state().await;
+
+        run_periodic_iteration("unit-panic", &state, &|_| async {
+            panic!("runtime task exploded")
+        })
+        .await;
+
+        let tasks = crate::entities::background_task::Entity::find()
+            .all(&state.db)
+            .await
+            .unwrap();
+        assert_eq!(tasks.len(), 1);
+        assert_eq!(tasks[0].display_name, "unit panic");
+        assert_eq!(tasks[0].status, crate::types::BackgroundTaskStatus::Failed);
+        assert_eq!(tasks[0].status_text.as_deref(), Some("Task panicked"));
+        assert_eq!(
+            tasks[0].last_error.as_deref(),
+            Some("runtime task exploded")
+        );
+        assert_eq!(tasks[0].failure_can_retry, Some(false));
     }
 }

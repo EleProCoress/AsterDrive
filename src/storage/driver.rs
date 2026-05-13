@@ -138,3 +138,119 @@ pub trait StorageDriver: Send + Sync {
         None
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::DriverType;
+    use std::sync::Mutex;
+    use tokio::io::AsyncReadExt;
+
+    struct MemoryDriver {
+        data: Vec<u8>,
+        writes: Mutex<Vec<(String, Vec<u8>)>>,
+    }
+
+    impl MemoryDriver {
+        fn new(data: &[u8]) -> Self {
+            Self {
+                data: data.to_vec(),
+                writes: Mutex::new(Vec::new()),
+            }
+        }
+    }
+
+    #[async_trait]
+    impl StorageDriver for MemoryDriver {
+        async fn put(&self, path: &str, data: &[u8]) -> Result<String> {
+            self.writes
+                .lock()
+                .expect("writes lock should not be poisoned")
+                .push((path.to_string(), data.to_vec()));
+            Ok(path.to_string())
+        }
+
+        async fn get(&self, _path: &str) -> Result<Vec<u8>> {
+            Ok(self.data.clone())
+        }
+
+        async fn get_stream(&self, _path: &str) -> Result<Box<dyn AsyncRead + Unpin + Send>> {
+            Ok(Box::new(std::io::Cursor::new(self.data.clone())))
+        }
+
+        async fn delete(&self, _path: &str) -> Result<()> {
+            Ok(())
+        }
+
+        async fn exists(&self, _path: &str) -> Result<bool> {
+            Ok(true)
+        }
+
+        async fn metadata(&self, _path: &str) -> Result<BlobMetadata> {
+            Ok(BlobMetadata {
+                size: self.data.len() as u64,
+                content_type: Some("application/octet-stream".to_string()),
+            })
+        }
+    }
+
+    #[test]
+    fn no_driver_type_currently_supports_native_thumbnail_by_default() {
+        assert!(!driver_type_supports_native_thumbnail(DriverType::Local));
+        assert!(!driver_type_supports_native_thumbnail(DriverType::S3));
+        assert!(!driver_type_supports_native_thumbnail(DriverType::Remote));
+    }
+
+    #[tokio::test]
+    async fn default_get_range_skips_offset_and_limits_length() {
+        let driver = MemoryDriver::new(b"Hello, world!");
+
+        let mut reader = driver.get_range("sample.txt", 7, Some(5)).await.unwrap();
+        let mut bytes = Vec::new();
+        reader.read_to_end(&mut bytes).await.unwrap();
+
+        assert_eq!(bytes, b"world");
+    }
+
+    #[tokio::test]
+    async fn default_get_range_returns_tail_when_length_is_absent() {
+        let driver = MemoryDriver::new(b"Hello, world!");
+
+        let mut reader = driver.get_range("sample.txt", 7, None).await.unwrap();
+        let mut bytes = Vec::new();
+        reader.read_to_end(&mut bytes).await.unwrap();
+
+        assert_eq!(bytes, b"world!");
+    }
+
+    #[tokio::test]
+    async fn default_copy_object_reads_source_and_writes_destination() {
+        let driver = MemoryDriver::new(b"copy body");
+
+        let copied_path = driver
+            .copy_object("source.bin", "dest.bin")
+            .await
+            .expect("copy should succeed");
+
+        assert_eq!(copied_path, "dest.bin");
+        assert_eq!(
+            *driver
+                .writes
+                .lock()
+                .expect("writes lock should not be poisoned"),
+            vec![("dest.bin".to_string(), b"copy body".to_vec())]
+        );
+    }
+
+    #[test]
+    fn default_optional_capabilities_are_absent() {
+        let driver = MemoryDriver::new(b"data");
+
+        assert!(driver.as_presigned().is_none());
+        assert!(driver.as_list().is_none());
+        assert!(driver.as_stream_upload().is_none());
+        assert!(driver.as_local_path().is_none());
+        assert!(driver.as_native_thumbnail().is_none());
+        assert!(driver.as_multipart().is_none());
+    }
+}

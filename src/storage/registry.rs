@@ -206,3 +206,147 @@ impl Default for DriverRegistry {
         Self::new()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::{StoredStoragePolicyAllowedTypes, StoredStoragePolicyOptions};
+    use std::time::Duration;
+
+    fn remote_policy(remote_node_id: Option<i64>) -> storage_policy::Model {
+        let now = chrono::Utc::now();
+        storage_policy::Model {
+            id: 42,
+            name: "remote policy".to_string(),
+            driver_type: DriverType::Remote,
+            endpoint: String::new(),
+            bucket: String::new(),
+            access_key: String::new(),
+            secret_key: String::new(),
+            base_path: "base".to_string(),
+            remote_node_id,
+            max_file_size: 0,
+            allowed_types: StoredStoragePolicyAllowedTypes::empty(),
+            options: StoredStoragePolicyOptions::empty(),
+            is_default: false,
+            chunk_size: 5_242_880,
+            created_at: now,
+            updated_at: now,
+        }
+    }
+
+    fn managed_follower(is_enabled: bool) -> crate::entities::managed_follower::Model {
+        let now = chrono::Utc::now();
+        crate::entities::managed_follower::Model {
+            id: 7,
+            name: "follower".to_string(),
+            base_url: "http://storage.example.com/root/".to_string(),
+            access_key: "follower-ak".to_string(),
+            secret_key: "follower-sk".to_string(),
+            is_enabled,
+            last_capabilities: "{}".to_string(),
+            last_error: String::new(),
+            last_checked_at: None,
+            created_at: now,
+            updated_at: now,
+        }
+    }
+
+    fn registry_with_follower(
+        follower: crate::entities::managed_follower::Model,
+    ) -> DriverRegistry {
+        let registry = DriverRegistry::new();
+        registry
+            .managed_followers_by_id
+            .write()
+            .insert(follower.id, follower);
+        registry
+    }
+
+    #[test]
+    fn remote_policy_requires_remote_node_id() {
+        let registry = DriverRegistry::new();
+
+        let error = match registry.get_driver(&remote_policy(None)) {
+            Ok(_) => panic!("remote policy without node id should fail"),
+            Err(error) => error,
+        };
+
+        assert_eq!(error.code(), "E031");
+        assert_eq!(
+            error.storage_error_kind(),
+            Some(StorageErrorKind::Misconfigured)
+        );
+        assert!(error.message().contains("missing remote_node_id"));
+    }
+
+    #[test]
+    fn remote_policy_requires_loaded_follower() {
+        let registry = DriverRegistry::new();
+
+        let error = match registry.get_driver(&remote_policy(Some(7))) {
+            Ok(_) => panic!("remote policy without loaded follower should fail"),
+            Err(error) => error,
+        };
+
+        assert_eq!(error.code(), "E031");
+        assert_eq!(
+            error.storage_error_kind(),
+            Some(StorageErrorKind::Misconfigured)
+        );
+        assert!(error.message().contains("remote node #7 not loaded"));
+    }
+
+    #[test]
+    fn remote_policy_rejects_disabled_follower() {
+        let registry = registry_with_follower(managed_follower(false));
+
+        let error = match registry.get_driver(&remote_policy(Some(7))) {
+            Ok(_) => panic!("disabled follower should fail"),
+            Err(error) => error,
+        };
+
+        assert_eq!(error.code(), "E060");
+        assert_eq!(
+            error.storage_error_kind(),
+            Some(StorageErrorKind::Precondition)
+        );
+        assert_eq!(error.api_error_subcode(), Some("remote_node.disabled"));
+        assert!(error.message().contains("remote node #7 is disabled"));
+    }
+
+    #[tokio::test]
+    async fn remote_policy_resolves_enabled_follower_driver_capabilities() {
+        let registry = registry_with_follower(managed_follower(true));
+        let policy = remote_policy(Some(7));
+
+        let driver = registry
+            .get_driver(&policy)
+            .expect("enabled follower should create remote driver");
+
+        assert!(driver.as_list().is_some());
+        assert!(driver.as_stream_upload().is_some());
+        assert!(driver.as_presigned().is_some());
+        assert!(driver.as_multipart().is_some());
+
+        let presigned = driver
+            .as_presigned()
+            .expect("remote driver should support presigned URLs")
+            .presigned_put_url("files/object.bin", Duration::from_secs(60))
+            .await
+            .expect("presigned URL should build")
+            .expect("remote driver should return URL");
+        let parsed = reqwest::Url::parse(&presigned).expect("presigned URL should parse");
+
+        assert_eq!(
+            parsed.path(),
+            "/root/api/v1/internal/storage/objects/base/files/object.bin"
+        );
+        assert!(
+            parsed
+                .query_pairs()
+                .any(|(key, value)| key == "aster_access_key" && value == "follower-ak"),
+            "expected follower access key in '{presigned}'"
+        );
+    }
+}

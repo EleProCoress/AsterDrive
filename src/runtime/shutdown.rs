@@ -46,3 +46,24 @@ pub async fn perform_shutdown(background_tasks: BackgroundTasks, db: DatabaseCon
     }
     tracing::info!("shutdown complete");
 }
+
+#[cfg(test)]
+mod tests {
+    use super::perform_shutdown;
+    use crate::runtime::tasks::spawn_follower_background_tasks;
+    use migration::Migrator;
+
+    #[tokio::test]
+    async fn perform_shutdown_stops_empty_background_tasks_and_closes_database() {
+        let db = crate::db::connect(&crate::config::DatabaseConfig {
+            url: "sqlite::memory:".to_string(),
+            pool_size: 1,
+            retry_count: 0,
+        })
+        .await
+        .unwrap();
+        Migrator::up(&db, None).await.unwrap();
+
+        perform_shutdown(spawn_follower_background_tasks(), db).await;
+    }
+}

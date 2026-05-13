@@ -134,3 +134,62 @@ impl BackgroundTaskStatus {
         matches!(self, Self::Succeeded | Self::Failed | Self::Canceled)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        BackgroundTaskKind, BackgroundTaskStatus, StoredLockOwnerInfo, StoredTaskPayload,
+        StoredTaskResult, StoredTaskSteps,
+    };
+
+    #[test]
+    fn stored_task_payload_wrappers_preserve_raw_json() {
+        let payload = StoredTaskPayload::from("{\"kind\":\"archive\"}".to_string());
+        assert_eq!(payload.as_ref(), "{\"kind\":\"archive\"}");
+        let raw: String = payload.into();
+        assert_eq!(raw, "{\"kind\":\"archive\"}");
+
+        let result = StoredTaskResult::from("{\"ok\":true}".to_string());
+        assert_eq!(result.as_ref(), "{\"ok\":true}");
+        let raw: String = result.into();
+        assert_eq!(raw, "{\"ok\":true}");
+
+        let steps = StoredTaskSteps::from("[{\"key\":\"prepare\"}]".to_string());
+        assert_eq!(steps.as_ref(), "[{\"key\":\"prepare\"}]");
+        let raw: String = steps.into();
+        assert_eq!(raw, "[{\"key\":\"prepare\"}]");
+
+        let owner = StoredLockOwnerInfo::from("{\"user\":\"alice\"}".to_string());
+        assert_eq!(owner.as_ref(), "{\"user\":\"alice\"}");
+        let raw: String = owner.into();
+        assert_eq!(raw, "{\"user\":\"alice\"}");
+    }
+
+    #[test]
+    fn background_task_status_terminal_states_are_explicit() {
+        assert!(!BackgroundTaskStatus::Pending.is_terminal());
+        assert!(!BackgroundTaskStatus::Processing.is_terminal());
+        assert!(!BackgroundTaskStatus::Retry.is_terminal());
+        assert!(BackgroundTaskStatus::Succeeded.is_terminal());
+        assert!(BackgroundTaskStatus::Failed.is_terminal());
+        assert!(BackgroundTaskStatus::Canceled.is_terminal());
+    }
+
+    #[test]
+    fn background_task_kind_serializes_to_stable_snake_case_names() {
+        let cases = [
+            (BackgroundTaskKind::ArchiveExtract, "archive_extract"),
+            (BackgroundTaskKind::ArchiveCompress, "archive_compress"),
+            (BackgroundTaskKind::ThumbnailGenerate, "thumbnail_generate"),
+            (
+                BackgroundTaskKind::StoragePolicyTempCleanup,
+                "storage_policy_temp_cleanup",
+            ),
+            (BackgroundTaskKind::SystemRuntime, "system_runtime"),
+        ];
+
+        for (kind, expected) in cases {
+            assert_eq!(serde_json::to_value(kind).unwrap(), expected);
+        }
+    }
+}

@@ -1,5 +1,8 @@
 use super::paths::sanitize_relative_path;
+use crate::storage::driver::{StorageDriver, StoragePathVisitor};
+use crate::storage::extensions::{ListStorageDriver, LocalPathStorageDriver};
 use std::path::{Path, PathBuf};
+use tokio::io::AsyncReadExt;
 
 fn build_policy(base: &Path) -> crate::entities::storage_policy::Model {
     crate::entities::storage_policy::Model {
@@ -19,6 +22,25 @@ fn build_policy(base: &Path) -> crate::entities::storage_policy::Model {
         chunk_size: 0,
         created_at: chrono::Utc::now(),
         updated_at: chrono::Utc::now(),
+    }
+}
+
+fn unique_temp_dir(label: &str) -> PathBuf {
+    std::env::temp_dir().join(format!(
+        "aster-{label}-{}-{}",
+        std::process::id(),
+        rand::random::<u64>()
+    ))
+}
+
+struct CollectingVisitor {
+    paths: Vec<String>,
+}
+
+impl StoragePathVisitor for CollectingVisitor {
+    fn visit_path(&mut self, path: String) -> crate::errors::Result<()> {
+        self.paths.push(path);
+        Ok(())
     }
 }
 
@@ -55,14 +77,7 @@ fn sanitize_rejects_absolute_paths() {
 
 #[tokio::test]
 async fn get_range_returns_partial_bytes() {
-    use crate::storage::driver::StorageDriver;
-    use tokio::io::AsyncReadExt;
-
-    let base = std::env::temp_dir().join(format!(
-        "aster-range-test-{}-{}",
-        std::process::id(),
-        rand::random::<u64>()
-    ));
+    let base = unique_temp_dir("range-test");
     tokio::fs::create_dir_all(&base).await.unwrap();
 
     let policy = build_policy(&base);
@@ -92,11 +107,7 @@ async fn get_range_returns_partial_bytes() {
 
 #[tokio::test]
 async fn promote_local_file_if_absent_does_not_overwrite_existing_target() {
-    let base = std::env::temp_dir().join(format!(
-        "aster-local-promote-test-{}-{}",
-        std::process::id(),
-        rand::random::<u64>()
-    ));
+    let base = unique_temp_dir("local-promote-test");
     tokio::fs::create_dir_all(&base).await.unwrap();
 
     let policy = build_policy(&base);
@@ -122,11 +133,7 @@ async fn promote_local_file_if_absent_does_not_overwrite_existing_target() {
 
 #[tokio::test]
 async fn promote_local_file_if_absent_rejects_existing_size_mismatch() {
-    let base = std::env::temp_dir().join(format!(
-        "aster-local-promote-mismatch-test-{}-{}",
-        std::process::id(),
-        rand::random::<u64>()
-    ));
+    let base = unique_temp_dir("local-promote-mismatch-test");
     tokio::fs::create_dir_all(&base).await.unwrap();
 
     let policy = build_policy(&base);
@@ -153,11 +160,7 @@ async fn promote_local_file_if_absent_rejects_existing_size_mismatch() {
 
 #[tokio::test]
 async fn promote_local_file_if_absent_rolls_back_linked_size_mismatch() {
-    let base = std::env::temp_dir().join(format!(
-        "aster-local-promote-linked-mismatch-test-{}-{}",
-        std::process::id(),
-        rand::random::<u64>()
-    ));
+    let base = unique_temp_dir("local-promote-linked-mismatch-test");
     tokio::fs::create_dir_all(&base).await.unwrap();
 
     let policy = build_policy(&base);
@@ -181,13 +184,7 @@ async fn promote_local_file_if_absent_rolls_back_linked_size_mismatch() {
 #[cfg(unix)]
 #[tokio::test]
 async fn put_rejects_symlink_escape_inside_storage_root() {
-    use crate::storage::driver::StorageDriver;
-
-    let temp_root = std::env::temp_dir().join(format!(
-        "aster-local-symlink-test-{}-{}",
-        std::process::id(),
-        rand::random::<u64>()
-    ));
+    let temp_root = unique_temp_dir("local-symlink-test");
     let base = temp_root.join("storage");
     let outside = temp_root.join("outside");
     std::fs::create_dir_all(&base).unwrap();
@@ -207,11 +204,7 @@ async fn put_rejects_symlink_escape_inside_storage_root() {
 #[cfg(unix)]
 #[test]
 fn staging_path_rejects_symlink_escape() {
-    let temp_root = std::env::temp_dir().join(format!(
-        "aster-local-staging-symlink-test-{}-{}",
-        std::process::id(),
-        rand::random::<u64>()
-    ));
+    let temp_root = unique_temp_dir("local-staging-symlink-test");
     let base = temp_root.join("storage");
     let outside = temp_root.join("outside");
     std::fs::create_dir_all(&base).unwrap();
@@ -224,4 +217,121 @@ fn staging_path_rejects_symlink_escape() {
     assert!(result.is_err());
 
     let _ = std::fs::remove_dir_all(&temp_root);
+}
+
+#[tokio::test]
+async fn list_paths_returns_sorted_recursive_files_and_honors_prefix() {
+    let base = unique_temp_dir("local-list-test");
+    tokio::fs::create_dir_all(&base).await.unwrap();
+
+    let policy = build_policy(&base);
+    let driver = super::LocalDriver::new(&policy).unwrap();
+    driver.put("b/two.txt", b"2").await.unwrap();
+    driver.put("a/one.txt", b"1").await.unwrap();
+    driver.put("a/nested/three.txt", b"3").await.unwrap();
+
+    let listed = driver.list_paths(None).await.unwrap();
+    assert_eq!(
+        listed,
+        vec![
+            "a/nested/three.txt".to_string(),
+            "a/one.txt".to_string(),
+            "b/two.txt".to_string()
+        ]
+    );
+
+    let prefixed = driver.list_paths(Some("a")).await.unwrap();
+    assert_eq!(
+        prefixed,
+        vec!["a/nested/three.txt".to_string(), "a/one.txt".to_string()]
+    );
+
+    let missing = driver.list_paths(Some("missing")).await.unwrap();
+    assert!(missing.is_empty());
+
+    let _ = tokio::fs::remove_dir_all(&base).await;
+}
+
+#[tokio::test]
+async fn scan_paths_visits_single_file_and_missing_prefix() {
+    let base = unique_temp_dir("local-scan-file-test");
+    tokio::fs::create_dir_all(&base).await.unwrap();
+
+    let policy = build_policy(&base);
+    let driver = super::LocalDriver::new(&policy).unwrap();
+    driver.put("folder/file.txt", b"content").await.unwrap();
+
+    let mut visitor = CollectingVisitor { paths: Vec::new() };
+    driver
+        .scan_paths(Some("folder/file.txt"), &mut visitor)
+        .await
+        .unwrap();
+    assert_eq!(visitor.paths, vec!["folder/file.txt".to_string()]);
+
+    driver
+        .scan_paths(Some("folder/missing.txt"), &mut visitor)
+        .await
+        .unwrap();
+    assert_eq!(visitor.paths, vec!["folder/file.txt".to_string()]);
+
+    let _ = tokio::fs::remove_dir_all(&base).await;
+}
+
+#[tokio::test]
+async fn scan_paths_walks_directories_in_stable_order() {
+    let base = unique_temp_dir("local-scan-dir-test");
+    tokio::fs::create_dir_all(&base).await.unwrap();
+
+    let policy = build_policy(&base);
+    let driver = super::LocalDriver::new(&policy).unwrap();
+    driver.put("root/z.txt", b"z").await.unwrap();
+    driver.put("root/a.txt", b"a").await.unwrap();
+    driver.put("root/child/b.txt", b"b").await.unwrap();
+
+    let mut visitor = CollectingVisitor { paths: Vec::new() };
+    driver.scan_paths(Some("root"), &mut visitor).await.unwrap();
+
+    assert_eq!(
+        visitor.paths,
+        vec![
+            "root/a.txt".to_string(),
+            "root/z.txt".to_string(),
+            "root/child/b.txt".to_string()
+        ]
+    );
+
+    let _ = tokio::fs::remove_dir_all(&base).await;
+}
+
+#[tokio::test]
+async fn copy_metadata_stream_and_delete_roundtrip() {
+    let base = unique_temp_dir("local-roundtrip-test");
+    tokio::fs::create_dir_all(&base).await.unwrap();
+
+    let policy = build_policy(&base);
+    let driver = super::LocalDriver::new(&policy).unwrap();
+    driver.put("src/file.txt", b"copy me").await.unwrap();
+
+    let copied = driver
+        .copy_object("src/file.txt", "dest/file.txt")
+        .await
+        .unwrap();
+    assert_eq!(copied, "dest/file.txt");
+    assert!(driver.exists("dest/file.txt").await.unwrap());
+    assert_eq!(driver.metadata("dest/file.txt").await.unwrap().size, 7);
+
+    let mut stream = driver.get_stream("dest/file.txt").await.unwrap();
+    let mut data = Vec::new();
+    stream.read_to_end(&mut data).await.unwrap();
+    assert_eq!(data, b"copy me");
+
+    let local_path = driver
+        .resolve_local_path("dest/file.txt")
+        .expect("local path should resolve");
+    assert!(local_path.ends_with("dest/file.txt"));
+
+    driver.delete("dest/file.txt").await.unwrap();
+    assert!(!driver.exists("dest/file.txt").await.unwrap());
+
+    let _ = tokio::fs::remove_dir_all(&base).await;
 }

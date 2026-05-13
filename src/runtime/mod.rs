@@ -181,3 +181,95 @@ impl<T: PrimaryRuntimeState> PrimaryRuntimeState for web::Data<T> {
 }
 
 impl<T: FollowerRuntimeState> FollowerRuntimeState for web::Data<T> {}
+
+#[cfg(test)]
+mod tests {
+    use super::{FollowerRuntimeState, PrimaryAppState, PrimaryRuntimeState, SharedRuntimeState};
+    use crate::config::{CacheConfig, Config, RuntimeConfig};
+    use crate::services::share_service::build_share_download_rollback_queue;
+    use crate::storage::{DriverRegistry, PolicySnapshot};
+    use actix_web::web;
+    use migration::Migrator;
+    use std::sync::Arc;
+
+    async fn setup_state() -> PrimaryAppState {
+        let db = crate::db::connect(&crate::config::DatabaseConfig {
+            url: "sqlite::memory:".to_string(),
+            pool_size: 1,
+            retry_count: 0,
+        })
+        .await
+        .unwrap();
+        Migrator::up(&db, None).await.unwrap();
+
+        let cache = crate::cache::create_cache(&CacheConfig {
+            enabled: false,
+            ..Default::default()
+        })
+        .await;
+        let runtime_config = Arc::new(RuntimeConfig::new());
+        let (storage_change_tx, _) = tokio::sync::broadcast::channel(
+            crate::services::storage_change_service::STORAGE_CHANGE_CHANNEL_CAPACITY,
+        );
+        let (share_download_rollback, _worker) = build_share_download_rollback_queue(db.clone(), 1);
+
+        PrimaryAppState {
+            db,
+            driver_registry: Arc::new(DriverRegistry::new()),
+            runtime_config,
+            policy_snapshot: Arc::new(PolicySnapshot::new()),
+            config: Arc::new(Config::default()),
+            cache,
+            mail_sender: crate::services::mail_service::memory_sender(),
+            storage_change_tx,
+            share_download_rollback,
+        }
+    }
+
+    #[tokio::test]
+    async fn primary_state_follower_view_shares_runtime_dependencies() {
+        let state = setup_state().await;
+        let follower = state.follower_view();
+
+        assert!(Arc::ptr_eq(
+            &state.driver_registry,
+            follower.driver_registry()
+        ));
+        assert!(Arc::ptr_eq(
+            &state.policy_snapshot,
+            follower.policy_snapshot()
+        ));
+        assert!(Arc::ptr_eq(&state.config, follower.config()));
+        assert!(Arc::ptr_eq(&state.cache, follower.cache()));
+        assert_eq!(
+            state.db.get_database_backend(),
+            follower.db().get_database_backend()
+        );
+    }
+
+    #[tokio::test]
+    async fn web_data_forwards_primary_runtime_state_traits() {
+        let state = setup_state().await;
+        let data = web::Data::new(state.clone());
+
+        assert!(Arc::ptr_eq(&state.runtime_config, data.runtime_config()));
+        assert!(Arc::ptr_eq(&state.mail_sender, data.mail_sender()));
+        assert!(Arc::ptr_eq(&state.driver_registry, data.driver_registry()));
+        assert_eq!(
+            state.storage_change_tx.receiver_count(),
+            data.storage_change_tx().receiver_count()
+        );
+        let _ = data.share_download_rollback();
+    }
+
+    #[tokio::test]
+    async fn web_data_forwards_follower_runtime_state_trait() {
+        fn assert_follower_state<S: FollowerRuntimeState>(state: &S) {
+            assert_eq!(state.cache().backend_name(), "noop");
+        }
+
+        let follower = setup_state().await.follower_view();
+        let data = web::Data::new(follower);
+        assert_follower_state(&data);
+    }
+}
