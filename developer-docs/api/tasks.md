@@ -34,7 +34,7 @@
 - `thumbnail_generate`
 - `system_runtime`
 
-不过这两类任务没有 `creator_user_id`，普通用户 `/tasks` 列表通常看不到；管理员可以在 `/api/v1/admin/tasks` 看全部任务。
+不过这两类任务没有创建者，API 返回的 `creator` 为 `null`，普通用户 `/tasks` 列表通常看不到；管理员可以在 `/api/v1/admin/tasks` 看全部任务。
 
 ## 分页
 
@@ -47,7 +47,7 @@
 
 - 默认 `limit = 20`
 - 实际上限受运行时配置 `task_list_max_limit` 控制，默认 `100`
-- 个人接口只会返回 `creator_user_id = 当前用户` 且 `team_id = null` 的任务
+- 个人接口只会返回创建者为当前用户且 `team_id = null` 的任务
 - 团队接口只会返回 `team_id = {team_id}` 的任务
 
 ## `TaskInfo`
@@ -58,7 +58,7 @@
 - `kind`
 - `status`
 - `display_name`
-- `creator_user_id`
+- `creator`
 - `team_id`
 - `share_id`
 - `progress_current`
@@ -81,11 +81,12 @@
 
 其中：
 
+- `creator` 是创建者用户摘要；系统运行任务和缩略图任务通常为 `null`
 - `payload` / `result` 已经是结构化对象，不再是旧文档里说的 `payload_json` / `result_json`
 - `steps` 会给出更细的阶段状态、阶段进度和阶段文案
-- `can_retry = true` 目前只在 `status = failed` 时出现
+- `can_retry = true` 目前只在 `status = failed` 且失败类型允许手动重试时出现
 - `progress_total <= 0` 时，成功任务的 `progress_percent` 会直接视为 `100`
-- `expires_at` 表示这条任务记录的自然过期时间；任务临时产物会按保留期单独清理
+- `expires_at` 表示任务临时产物什么时候可以清理，不表示 `background_task` 历史记录一定会在这个时间删库
 
 ## 当前任务类型
 

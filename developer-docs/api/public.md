@@ -2,7 +2,7 @@
 
 这组路径都相对于 `/api/v1`，且不需要认证。
 
-其中前三条主要给匿名页面启动用，后两条用于 primary 和 follower 之间的远端节点 enrollment 握手。这些接口只在 `primary` 节点注册。
+其中品牌、预览应用和缩略图能力给匿名页面启动用；remote-enrollment 两条用于 primary 和 follower 之间的远端节点 enrollment 握手。这些接口只在 `primary` 节点注册。
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |

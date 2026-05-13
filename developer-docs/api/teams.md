@@ -26,10 +26,11 @@
 当前实现要点：
 
 - `GET /teams` 支持 `archived=true`，用来查看已归档团队
-- `POST /teams` 目前仍只允许系统管理员调用；创建者会成为团队 `owner`
+- `POST /teams` 目前仍只允许系统管理员调用；这条用户侧入口会把调用者自己设为团队 `owner`
+- 如果要由系统管理员“替别人创建团队并指定初始团队管理员”，使用 `/admin/teams`；admin 创建入口会把目标用户加入团队并赋予 `admin` 角色
 - `DELETE /teams/{id}` 是归档，不是物理删除；超过 `team_archive_retention_days` 后才会被后台清理
 - `GET /teams/{id}/audit-logs` 需要团队 `owner` 或 `admin`，支持 `user_id`、`action`、`after`、`before`、`limit`、`offset`
-- `GET /teams/{id}/members` 支持 `keyword`、`role`、`status`、`limit`、`offset`
+- `GET /teams/{id}/members` 支持 `keyword`、`role`、`status`、`limit`、`offset`、`sort_by`、`sort_order`
 - `POST /teams/{id}/members` 可用 `user_id` 或 `identifier` 指定目标用户，二选一；`role` 不传时默认 `member`
 - 成员分页返回除了 `items` / `total` / `limit` / `offset`，还会带 `owner_count` 和 `manager_count`
 

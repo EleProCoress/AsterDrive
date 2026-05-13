@@ -117,8 +117,7 @@ bootstrap_insecure_cookies = true
 - Access Key / Secret Key
 - 如果要使用浏览器直传，再准备对象存储的浏览器上传放行规则（CORS）
 
-如果文件要写到另一台 AsterDrive follower，先别急着改存储策略。  
-远程节点要先完成 enroll，再在主控后台给 follower 创建默认接收落点，最后才把远程存储策略放进策略组。
+如果文件要写到另一台 AsterDrive follower，先把远程节点接上，再给它创建默认接收落点，最后才把远程存储策略放进策略组。
 
 ## Docker 部署
 
@@ -201,7 +200,7 @@ ASTER__AUTH__BOOTSTRAP_INSECURE_COOKIES=true ./aster_drive
 
 ## 首次启动后会自动完成什么
 
-第一次成功启动后，AsterDrive 会自动完成：
+主控实例第一次成功启动后，会自动完成：
 
 - 生成默认 `data/config.toml`
 - 连接数据库并自动更新数据库结构

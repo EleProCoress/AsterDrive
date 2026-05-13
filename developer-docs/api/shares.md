@@ -79,11 +79,14 @@
 | `GET` | `/s/{token}` | 读取分享公开信息 |
 | `POST` | `/s/{token}/verify` | 校验分享密码 |
 | `POST` | `/s/{token}/preview-link` | 为分享文件生成短期预览链接 |
+| `POST` | `/s/{token}/stream-session` | 为分享文件生成短期流式播放 session |
 | `GET` | `/s/{token}/download` | 下载分享文件 |
+| `GET` | `/s/{token}/stream/{session_token}/{filename}` | 使用 stream session 流式读取分享文件 |
 | `GET` | `/s/{token}/content` | 读取分享文件夹根层内容 |
 | `GET` | `/s/{token}/folders/{folder_id}/content` | 浏览分享目录树中的子目录 |
 | `GET` | `/s/{token}/files/{file_id}/download` | 下载分享文件夹中的子文件 |
 | `POST` | `/s/{token}/files/{file_id}/preview-link` | 为分享目录树中的子文件生成短期预览链接 |
+| `POST` | `/s/{token}/files/{file_id}/stream-session` | 为分享目录树中的子文件生成短期流式播放 session |
 | `GET` | `/s/{token}/thumbnail` | 获取分享文件缩略图 |
 | `GET` | `/s/{token}/files/{file_id}/thumbnail` | 获取分享目录树中子文件的缩略图 |
 | `GET` | `/s/{token}/avatar/{size}` | 获取分享拥有者已上传头像 |
@@ -94,13 +97,36 @@
 - `/preview-link` 和 `/files/{file_id}/preview-link` 也会校验这枚 Cookie；受密码保护的分享必须先过 `/verify`
 - `/download` 只适用于文件分享
 - `/preview-link` 只适用于文件分享；返回的 `PreviewLinkInfo.path` 最终指向根路径 `/pv/{token}/{filename}`
+- `/stream-session` 只适用于文件分享；返回的 `ShareStreamSessionInfo.path` 最终指向 `/api/v1/s/{token}/stream/{session_token}/{filename}`
 - `/content` 只返回文件夹分享的根目录内容
 - `/folders/{folder_id}/content` 用于继续浏览分享目录树中的子目录
 - `/files/{file_id}/download` 用于下载分享文件夹树中的子文件
 - `/files/{file_id}/preview-link` 用于分享目录树里子文件的短期预览
+- `/files/{file_id}/stream-session` 用于分享目录树里子文件的短期流式播放 session
 - `/thumbnail` 只适用于服务端当前支持生成缩略图的文件分享
 - `/files/{file_id}/thumbnail` 只适用于分享目录树中服务端当前支持生成缩略图的文件
 - `/avatar/{size}` 只返回分享拥有者“已上传头像”的二进制资源，当前支持 `512` 和 `1024`
+
+`POST /s/{token}/stream-session` 和 `POST /s/{token}/files/{file_id}/stream-session` 的成功响应示例：
+
+```json
+{
+  "code": 0,
+  "msg": "",
+  "data": {
+    "path": "/api/v1/s/share_token/stream/session_token/video.mp4",
+    "expires_at": "2026-04-12T12:30:00Z"
+  }
+}
+```
+
+当前实现细节：
+
+- stream session 默认 30 分钟过期
+- `path` 可能是相对路径，也可能在配置了 `public_site_url` 后返回绝对 URL
+- stream session 读取支持 `Range`，返回的是原始文件流，不走统一 JSON 包装
+- 同一个 stream session 只会对分享下载计数做一次占用；如果响应构建失败，会尝试回滚计数
+- 创建 session 和消费 session 都会校验分享密码 Cookie；消费流时会忽略下载次数上限的二次校验，避免 session 已发出后播放中途被重复拦截
 
 文件夹分享的两个内容接口还支持和普通目录列表一致的参数：
 
@@ -116,6 +142,7 @@
 - 公开页已经支持在分享目录树内继续进入子文件夹浏览
 - 子目录访问、子文件下载和子文件缩略图都会校验是否仍处在分享根目录范围内
 - 子文件预览链接也会校验是否仍处在分享根目录范围内
+- 子文件 stream session 也会校验是否仍处在分享根目录范围内
 - 越过分享范围访问其他目录或文件会返回 `403`
 - 如果拥有者当前头像来源是 `gravatar` 或 `none`，前端应直接使用 `GET /s/{token}` 返回的 `shared_by.avatar.url_*`
 

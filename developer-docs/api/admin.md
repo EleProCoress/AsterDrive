@@ -18,6 +18,13 @@
 - `/admin/locks`
 - `/admin/audit-logs`
 
+这些分页接口的默认排序不完全一样，具体字段以 DTO 为准。常见默认值是：
+
+- 用户、团队、存储策略、策略组、远端节点、分享、审计日志：按 `created_at desc`
+- 后台任务：按 `updated_at desc`
+- 锁：按 `id asc`
+- 团队成员：按 `role asc`
+
 ## 存储策略
 
 | 方法 | 路径 | 说明 |
@@ -55,6 +62,7 @@
 - REST 已经可以通过 `allowed_types` 管理策略允许的 MIME / 类型列表；不传时创建会使用空列表，更新会保持原值
 - `driver_type = "remote"` 时需要绑定 `remote_node_id`，远端节点本身通过 `/admin/remote-nodes` 管理
 - 当前 `PATCH` 不能修改 `driver_type`
+- `GET /admin/policies` 支持 `limit`、`offset`、`sort_by`、`sort_order`
 
 ## 远端节点
 
@@ -89,7 +97,7 @@
 
 - `base_url` 为空时通常走 enrollment 流程，由 follower 兑换绑定信息后再完成实际接入
 - `/enrollment-token` 返回给 CLI 使用的命令信息；follower 会再调用公开 enrollment 接口完成 redeem / ack
-- `GET /admin/remote-nodes` 支持 `limit` 和 `offset`
+- `GET /admin/remote-nodes` 支持 `limit`、`offset`、`sort_by`、`sort_order`
 - 远端节点详情会返回 `enrollment_status`、`last_error`、`capabilities` 和 `last_checked_at`
 - ingress profile 的请求体和 follower 内部协议一致，见 [内部存储协议](./internal-storage.md)
 
@@ -136,6 +144,7 @@
 - `is_default = true` 的组必须保持启用
 - 已被用户或团队绑定的策略组不能直接删掉；被绑定时也不能随便禁用
 - `/migrate-users` 只迁移 `users.policy_group_id`，不会替你改团队绑定
+- `GET /admin/policy-groups` 支持 `limit`、`offset`、`sort_by`、`sort_order`
 
 迁移请求体很简单：
 
@@ -188,6 +197,8 @@
 - `keyword`
 - `role`
 - `status`
+- `sort_by`
+- `sort_order`
 
 `POST /admin/users` 的请求体与普通注册类似：
 
@@ -243,6 +254,8 @@
 - `offset`
 - `keyword`
 - `archived`
+- `sort_by`
+- `sort_order`
 
 创建示例：
 
@@ -260,8 +273,8 @@
 - `admin_user_id` 和 `admin_identifier` 二选一，不能同时传，也不能都不传
 - 创建团队时如果没传 `policy_group_id`，会退回系统默认策略组；如果系统没有默认组，创建会失败
 - 团队更新接口也支持 `policy_group_id`，但和用户一样，当前实现拒绝显式传 `null`
-- 团队成员列表支持 `keyword`、`role`、`status`、`limit`、`offset`
-- 团队审计接口支持 `user_id`、`action`、`after`、`before`、`limit`、`offset`
+- 团队成员列表支持 `keyword`、`role`、`status`、`limit`、`offset`、`sort_by`、`sort_order`
+- 团队审计接口支持 `user_id`、`action`、`entity_type`、`after`、`before`、`limit`、`offset`
 
 ## 后台任务
 
@@ -276,6 +289,8 @@
 - `offset`
 - `kind`
 - `status`
+- `sort_by`
+- `sort_order`
 
 清理请求体：
 
@@ -334,6 +349,25 @@
 - `remote_node_health_test_interval_secs`
 - `team_member_list_max_limit`
 - `task_list_max_limit`
+- `background_task_archive_max_concurrency`
+- `background_task_thumbnail_max_concurrency`
+- `share_download_rollback_queue_capacity`
+- `archive_extract_max_source_bytes`
+- `archive_extract_max_uncompressed_bytes`
+- `archive_extract_max_entries`
+- `archive_extract_max_files`
+- `archive_extract_max_directories`
+- `archive_extract_max_depth`
+- `archive_extract_max_path_bytes`
+- `archive_extract_max_compression_ratio`
+- `archive_extract_max_entry_compression_ratio`
+- `archive_extract_max_duration_secs`
+- `archive_build_max_entries`
+- `archive_build_max_total_source_bytes`
+- `archive_build_max_temp_bytes`
+- `thumbnail_default_processor`
+- `thumbnail_vips_cli_enabled`
+- `thumbnail_vips_command`
 - `task_retention_hours`
 - `archive_extract_max_staging_bytes`
 - `avatar_max_upload_size_bytes`
@@ -449,6 +483,8 @@
 
 - `limit`
 - `offset`
+- `sort_by`
+- `sort_order`
 
 ## 审计日志
 
@@ -465,6 +501,8 @@
 - `before`
 - `limit`
 - `offset`
+- `sort_by`
+- `sort_order`
 
 其中 `after` 和 `before` 使用 RFC3339 时间字符串。
 
@@ -482,6 +520,8 @@
 
 - `limit`
 - `offset`
+- `sort_by`
+- `sort_order`
 
 `DELETE /admin/locks/expired` 会返回：
 

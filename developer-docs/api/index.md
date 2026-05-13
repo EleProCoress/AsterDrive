@@ -63,7 +63,9 @@
 - 直接下载链接
 - 预览下载链接
 - 文件缩略图
+- 批量打包下载 ticket 对应的 ZIP 流
 - 分享文件下载
+- 分享 stream session 流式播放
 - 分享缩略图
 - 当前用户已上传头像
 - 管理员读取用户已上传头像
@@ -74,7 +76,7 @@
 - Prometheus 指标
 - follower 内部对象读取流 `/api/v1/internal/storage/objects/{tail:.*}`
 
-公开 enrollment、公开品牌配置和公开预览应用配置虽然不需要登录，但仍然是普通 `/api/v1/public/*` JSON 接口。
+公开品牌配置、公开预览应用配置、公开缩略图能力和公开 enrollment 虽然不需要登录，但仍然是普通 `/api/v1/public/*` JSON 接口。
 
 ## 错误码分域
 
@@ -84,7 +86,7 @@
 | `1000-1099` | 通用、数据库、配置、限流、邮件、冲突错误 |
 | `2000-2099` | 认证、授权、激活、联系方式验证错误 |
 | `3000-3099` | 文件、上传 session、分片、锁、缩略图、条件请求错误 |
-| `4000-4099` | 存储策略、配额、驱动、对象存储错误 |
+| `4000-4099` | 存储策略、配额、驱动、对象存储和存储后端细分错误 |
 | `5000-5099` | 文件夹错误 |
 | `6000-6099` | 分享错误 |
 
@@ -171,7 +173,7 @@
 - `debug_assertions + openapi feature` 构建：访问 `/swagger-ui` 与 `/api-docs/openapi.json`
 - 任意构建：运行 `cargo test --features openapi --test generate_openapi` 导出静态规范到 `frontend-panel/generated/openapi.json`
 
-OpenAPI 注册列表维护在 `src/api/openapi.rs`。新增 route 时如果忘了补这里，运行时接口仍可能存在，但生成的 SDK / 静态规范会漏掉它。
+OpenAPI 注册列表维护在 `src/api/openapi.rs`，真实 HTTP 注册入口仍然以 `src/api/primary.rs`、`src/api/follower.rs` 和 `src/api/routes/**` 为准。新增 route 时如果忘了补 `openapi.rs`，运行时接口仍可能存在，但 Swagger、静态规范和生成的 SDK 会漏掉它；如果两者冲突，先按 route 源码确认实际行为，再修 OpenAPI 装配。
 
 ## 继续阅读
 
