@@ -5,6 +5,7 @@ import type {
 	CreateTeamRequest,
 	TeamAuditPage,
 	TeamInfo,
+	TeamListQuery,
 	TeamMemberPage,
 	TeamMemberRole,
 	UpdateTeamMemberRequest,
@@ -30,10 +31,13 @@ interface TeamMemberListQuery {
 }
 
 export const teamService = {
-	list: (params?: { archived?: boolean }) =>
+	list: (params?: TeamListQuery) =>
 		api.get<TeamInfo[]>(
 			withQuery("/teams", {
 				archived: params?.archived,
+				keyword: params?.keyword,
+				limit: params?.limit,
+				offset: params?.offset,
 			}),
 		),
 	get: (id: number) => api.get<TeamInfo>(`/teams/${id}`),

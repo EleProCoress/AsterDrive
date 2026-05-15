@@ -221,6 +221,7 @@ export type WopiLaunchSession = components["schemas"]["WopiLaunchSession"];
 export type AddTeamMemberRequest = components["schemas"]["AddTeamMemberReq"];
 export type CreateTeamRequest = components["schemas"]["CreateTeamReq"];
 export type TeamInfo = components["schemas"]["TeamInfo"];
+export type TeamListQuery = OperationQuery<"list_teams">;
 export type TeamMemberInfo = components["schemas"]["TeamMemberInfo"];
 export type TeamMemberRole = components["schemas"]["TeamMemberRole"];
 export type UpdateTeamMemberRequest =

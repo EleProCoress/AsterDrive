@@ -3319,7 +3319,7 @@ export interface components {
          * @description 后台任务类型
          * @enum {string}
          */
-        BackgroundTaskKind: "archive_extract" | "archive_compress" | "thumbnail_generate" | "system_runtime";
+        BackgroundTaskKind: "archive_extract" | "archive_compress" | "thumbnail_generate" | "storage_policy_temp_cleanup" | "system_runtime";
         /**
          * @description 后台任务状态
          * @enum {string}
@@ -3723,10 +3723,45 @@ export interface components {
             sort_order?: null | components["schemas"]["SortOrder"];
             status?: null | components["schemas"]["UserStatus"];
         };
+        /** @description Query parameters for listing teams. */
+        ListTeamsQuery: {
+            archived?: boolean | null;
+            keyword?: string | null;
+            /** Format: int64 */
+            limit?: number | null;
+            /** Format: int64 */
+            offset?: number | null;
+        };
         /** @description Standard login credentials. */
         LoginReq: {
             identifier: string;
             password: string;
+        };
+        /**
+         * @description Partial `/auth/me` response. The always-needed account identity is kept
+         *     stable, while heavier or narrow-use groups are serialized only when selected.
+         */
+        MePartialResponse: {
+            /** Format: int64 */
+            access_token_expires_at?: number | null;
+            created_at: string;
+            email: string;
+            email_verified: boolean;
+            /** Format: int64 */
+            id: number;
+            pending_email?: string | null;
+            /** Format: int64 */
+            policy_group_id?: number | null;
+            preferences?: null | components["schemas"]["UserPreferences"];
+            profile?: null | components["schemas"]["UserProfileInfo"];
+            role: components["schemas"]["UserRole"];
+            status: components["schemas"]["UserStatus"];
+            /** Format: int64 */
+            storage_quota?: number | null;
+            /** Format: int64 */
+            storage_used?: number | null;
+            updated_at: string;
+            username: string;
         };
         /** @description /auth/me 响应：用户信息 + 偏好设置 */
         MeResponse: {
@@ -4706,6 +4741,22 @@ export interface components {
             id: number;
             name: string;
         };
+        StoragePolicyTempCleanupTaskPayloadInfo: {
+            driver_type: components["schemas"]["DriverType"];
+            multipart_upload_count: number;
+            /** Format: int64 */
+            policy_id: number;
+            policy_name: string;
+            temp_key_count: number;
+        };
+        StoragePolicyTempCleanupTaskResult: {
+            /** Format: int64 */
+            deleted_objects: number;
+            /** Format: int64 */
+            failed_objects: number;
+            /** Format: int64 */
+            missing_objects: number;
+        };
         StreamTicketInfo: {
             download_path: string;
             expires_at: string;
@@ -4781,6 +4832,9 @@ export interface components {
         }) | (components["schemas"]["ThumbnailGenerateTaskPayload"] & {
             /** @enum {string} */
             kind: "thumbnail_generate";
+        }) | (components["schemas"]["StoragePolicyTempCleanupTaskPayloadInfo"] & {
+            /** @enum {string} */
+            kind: "storage_policy_temp_cleanup";
         }) | (components["schemas"]["RuntimeTaskPayload"] & {
             /** @enum {string} */
             kind: "system_runtime";
@@ -4794,6 +4848,9 @@ export interface components {
         }) | (components["schemas"]["ThumbnailGenerateTaskResult"] & {
             /** @enum {string} */
             kind: "thumbnail_generate";
+        }) | (components["schemas"]["StoragePolicyTempCleanupTaskResult"] & {
+            /** @enum {string} */
+            kind: "storage_policy_temp_cleanup";
         }) | (components["schemas"]["RuntimeTaskResult"] & {
             /** @enum {string} */
             kind: "system_runtime";
@@ -9001,7 +9058,10 @@ export interface operations {
     };
     me: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Comma-separated field groups to include: profile, preferences, quota, session. */
+                fields?: string | null;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -13393,6 +13453,9 @@ export interface operations {
         parameters: {
             query?: {
                 archived?: boolean | null;
+                keyword?: string | null;
+                limit?: number | null;
+                offset?: number | null;
             };
             header?: never;
             path?: never;

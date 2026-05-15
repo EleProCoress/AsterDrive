@@ -519,6 +519,7 @@ use utoipa::{Modify, OpenApi};
             crate::services::team_service::TeamInfo,
             crate::services::team_service::TeamMemberInfo,
             crate::services::team_service::TeamMemberPage,
+            crate::api::routes::teams::ListTeamsQuery,
             crate::api::routes::teams::CreateTeamReq,
             crate::api::routes::teams::PatchTeamReq,
             crate::api::routes::teams::AddTeamMemberReq,
