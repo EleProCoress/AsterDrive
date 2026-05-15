@@ -97,6 +97,14 @@ fn default_preview_apps_serialize_and_parse() {
         app.key == "builtin.office_microsoft"
             && app.extensions.iter().any(|extension| extension == "docx")
     }));
+    assert!(parsed.apps.iter().any(|app| {
+        app.key == "builtin.archive"
+            && app.extensions.iter().any(|extension| extension == "zip")
+            && app
+                .labels
+                .get("zh")
+                .is_some_and(|label| label == "压缩包预览")
+    }));
 }
 
 #[test]
@@ -248,14 +256,40 @@ fn preview_apps_require_explicit_provider_fields() {
 }
 
 #[test]
-fn preview_apps_allow_removing_external_viewers_but_not_core_builtins() {
+fn preview_apps_restore_missing_core_builtins_without_external_viewers() {
     let raw = json!({
         "version": 2,
         "apps": minimum_builtin_apps_json()
     })
     .to_string();
 
-    assert!(normalize_public_preview_apps_config_value(&raw).is_ok());
+    let normalized = normalize_public_preview_apps_config_value(&raw).unwrap();
+    let normalized_json: Value = serde_json::from_str(&normalized).unwrap();
+
+    assert!(normalized_json["apps"].as_array().is_some_and(|apps| {
+        apps.iter().any(|app| app["key"] == "builtin.archive")
+            && !apps
+                .iter()
+                .any(|app| app["key"] == "builtin.office_microsoft")
+    }));
+}
+
+#[test]
+fn preview_apps_restore_all_core_builtins_when_config_is_empty() {
+    let raw = json!({
+        "version": 2,
+        "apps": []
+    })
+    .to_string();
+
+    let normalized = normalize_public_preview_apps_config_value(&raw).unwrap();
+    let normalized_json: Value = serde_json::from_str(&normalized).unwrap();
+
+    assert!(normalized_json["apps"].as_array().is_some_and(|apps| {
+        apps.iter().any(|app| app["key"] == "builtin.image")
+            && apps.iter().any(|app| app["key"] == "builtin.code")
+            && apps.iter().any(|app| app["key"] == "builtin.archive")
+    }));
 }
 
 #[test]

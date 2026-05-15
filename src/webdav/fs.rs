@@ -9,7 +9,7 @@ use crate::db::repository::{file_repo, folder_repo, property_repo, user_repo};
 use crate::runtime::PrimaryAppState;
 use crate::services::{
     audit_service::{self, AuditContext},
-    file_service, folder_service, webdav_service,
+    file_service, folder_service, property_service, webdav_service,
     workspace_storage_service::WorkspaceStorageScope,
 };
 use crate::types::{EntityType, NullablePatch};
@@ -536,8 +536,13 @@ impl DavFileSystem for AsterDavFs {
                     Some(v) => v,
                     None => return false,
                 };
-            property_repo::has_properties(&self.state.db, entity_type, entity_id)
+            property_repo::find_by_entity(&self.state.db, entity_type, entity_id)
                 .await
+                .map(|props| {
+                    props
+                        .iter()
+                        .any(|prop| !property_service::is_system_namespace(&prop.namespace))
+                })
                 .unwrap_or(false)
         })
     }
@@ -555,6 +560,7 @@ impl DavFileSystem for AsterDavFs {
 
             Ok(props
                 .into_iter()
+                .filter(|p| !property_service::is_system_namespace(&p.namespace))
                 .map(|p| DavProp {
                     name: p.name,
                     prefix: None,
@@ -589,8 +595,8 @@ impl DavFileSystem for AsterDavFs {
             for (set, prop) in patches {
                 let ns = prop.namespace.as_deref().unwrap_or("");
 
-                // DAV: 命名空间只读
-                if ns == "DAV:" {
+                // DAV: 与 system.* 命名空间只读，后者用于内部缓存/派生属性。
+                if ns == "DAV:" || property_service::is_system_namespace(ns) {
                     results.push((http::StatusCode::FORBIDDEN, prop));
                     continue;
                 }

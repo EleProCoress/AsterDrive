@@ -24,6 +24,8 @@ const mockState = vi.hoisted(() => ({
 			path: `/api/v1/s/${token}/stream/session/${fileId}.mp4`,
 		}),
 	),
+	getArchivePreview: vi.fn(() => Promise.resolve({ entries: [] })),
+	getFolderFileArchivePreview: vi.fn(() => Promise.resolve({ entries: [] })),
 	thumbnailPath: vi.fn((token: string) => `/s/${token}/thumbnail`),
 	downloadUrl: vi.fn((token: string) => `https://download/${token}`),
 	getInfo: vi.fn(),
@@ -132,12 +134,14 @@ vi.mock("@/components/files/FilePreview", () => ({
 		open = true,
 		downloadPath,
 		editable,
+		archivePreviewFactory,
 		videoStreamLinkFactory,
 	}: {
 		file: { name: string };
 		open?: boolean;
 		downloadPath?: string;
 		editable?: boolean;
+		archivePreviewFactory?: () => Promise<unknown>;
 		videoStreamLinkFactory?: () => Promise<unknown>;
 	}) =>
 		open ? (
@@ -146,6 +150,9 @@ vi.mock("@/components/files/FilePreview", () => ({
 				data-name={file.name}
 				data-download-path={downloadPath ?? ""}
 				data-editable={String(Boolean(editable))}
+				data-has-archive-preview-factory={String(
+					Boolean(archivePreviewFactory),
+				)}
 				data-has-video-stream-link-factory={String(
 					Boolean(videoStreamLinkFactory),
 				)}
@@ -348,6 +355,10 @@ vi.mock("@/services/shareService", () => ({
 			mockState.createStreamSession(...args),
 		createFolderFileStreamSession: (...args: unknown[]) =>
 			mockState.createFolderFileStreamSession(...args),
+		getArchivePreview: (...args: unknown[]) =>
+			mockState.getArchivePreview(...args),
+		getFolderFileArchivePreview: (...args: unknown[]) =>
+			mockState.getFolderFileArchivePreview(...args),
 		thumbnailPath: (...args: unknown[]) => mockState.thumbnailPath(...args),
 		downloadUrl: (...args: unknown[]) => mockState.downloadUrl(...args),
 		getInfo: (...args: unknown[]) => mockState.getInfo(...args),
@@ -365,6 +376,8 @@ describe("ShareViewPage", () => {
 		mockState.downloadPath.mockClear();
 		mockState.createStreamSession.mockClear();
 		mockState.createFolderFileStreamSession.mockClear();
+		mockState.getArchivePreview.mockClear();
+		mockState.getFolderFileArchivePreview.mockClear();
 		mockState.thumbnailPath.mockClear();
 		mockState.downloadUrl.mockClear();
 		mockState.getInfo.mockReset();
@@ -501,6 +514,10 @@ describe("ShareViewPage", () => {
 			"false",
 		);
 		expect(screen.getByTestId("file-preview")).toHaveAttribute(
+			"data-has-archive-preview-factory",
+			"true",
+		);
+		expect(screen.getByTestId("file-preview")).toHaveAttribute(
 			"data-has-video-stream-link-factory",
 			"true",
 		);
@@ -577,6 +594,10 @@ describe("ShareViewPage", () => {
 		expect(screen.getByTestId("file-preview")).toHaveAttribute(
 			"data-editable",
 			"false",
+		);
+		expect(screen.getByTestId("file-preview")).toHaveAttribute(
+			"data-has-archive-preview-factory",
+			"true",
 		);
 		expect(screen.getByTestId("file-preview")).toHaveAttribute(
 			"data-has-video-stream-link-factory",

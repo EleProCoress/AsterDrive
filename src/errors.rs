@@ -340,6 +340,10 @@ pub fn validation_error_with_subcode(subcode: &str, message: impl Into<String>) 
     tag_error_with_subcode(subcode, message, AsterError::validation_error)
 }
 
+pub fn auth_forbidden_with_subcode(subcode: &str, message: impl Into<String>) -> AsterError {
+    tag_error_with_subcode(subcode, message, AsterError::auth_forbidden)
+}
+
 pub fn precondition_failed_with_subcode(subcode: &str, message: impl Into<String>) -> AsterError {
     tag_error_with_subcode(subcode, message, AsterError::precondition_failed)
 }

@@ -4,6 +4,7 @@ import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { fileService } from "@/services/fileService";
 import { usePreviewAppStore } from "@/stores/previewAppStore";
 import type {
+	ArchivePreviewManifest,
 	FileInfo,
 	FileListItem,
 	PreviewLinkInfo,
@@ -33,6 +34,9 @@ interface FilePreviewDialogProps {
 	downloadPath?: string;
 	editable?: boolean;
 	previewLinkFactory?: () => Promise<PreviewLinkInfo>;
+	archivePreviewFactory?: (options?: {
+		signal?: AbortSignal;
+	}) => Promise<ArchivePreviewManifest>;
 	videoStreamLinkFactory?: () => Promise<ShareStreamSessionInfo>;
 	wopiSessionFactory?: (appKey: string) => Promise<WopiLaunchSession>;
 	openMode?: "auto" | "direct" | "picker";
@@ -59,6 +63,7 @@ export function FilePreviewDialog({
 	downloadPath,
 	editable = true,
 	previewLinkFactory,
+	archivePreviewFactory,
 	videoStreamLinkFactory,
 	wopiSessionFactory,
 	openMode = "auto",
@@ -109,8 +114,9 @@ export function FilePreviewDialog({
 
 	const isOptionAvailable = useCallback(
 		(option: OpenWithOption) =>
-			option.mode !== "wopi" || Boolean(wopiSessionFactory),
-		[wopiSessionFactory],
+			(option.mode !== "wopi" || Boolean(wopiSessionFactory)) &&
+			(option.mode !== "archive" || Boolean(archivePreviewFactory)),
+		[archivePreviewFactory, wopiSessionFactory],
 	);
 
 	const allOptions = useMemo(
@@ -162,8 +168,12 @@ export function FilePreviewDialog({
 		useState(true);
 	const [isExpanded, setIsExpanded] = useState(false);
 	const previousFileIdRef = useRef(file.id);
+	const archivePreviewFactoryRef = useRef(archivePreviewFactory);
 	const [hasConfirmedInitialMode, setHasConfirmedInitialMode] = useState(false);
 	const [forceOpenMethodChooser, setForceOpenMethodChooser] = useState(false);
+	useEffect(() => {
+		archivePreviewFactoryRef.current = archivePreviewFactory;
+	}, [archivePreviewFactory]);
 	useEffect(() => {
 		const hasFileChanged = previousFileIdRef.current !== file.id;
 		if (hasFileChanged) {
@@ -205,6 +215,21 @@ export function FilePreviewDialog({
 
 		return wopiSessionFactory(activeOption.key);
 	}, [activeOption, wopiSessionFactory]);
+	const stableArchivePreviewFactory = useCallback(
+		(options?: { signal?: AbortSignal }) => {
+			const factory = archivePreviewFactoryRef.current;
+			if (!factory) {
+				return Promise.reject(new Error("archive preview factory unavailable"));
+			}
+
+			return factory(options);
+		},
+		[],
+	);
+	const activeArchivePreviewFactory =
+		open && activeOption?.mode === "archive" && archivePreviewFactory
+			? stableArchivePreviewFactory
+			: undefined;
 	const showOpenMethodChooser =
 		previewAppsLoaded &&
 		(forceOpenMethodChooser
@@ -227,6 +252,7 @@ export function FilePreviewDialog({
 		activeOption?.mode === "code" ||
 		activeOption?.mode === "formatted" ||
 		activeOption?.mode === "markdown" ||
+		activeOption?.mode === "archive" ||
 		activeOption?.mode === "pdf" ||
 		activeOption?.mode === "table" ||
 		((activeOption?.mode === "url_template" || activeOption?.mode === "wopi") &&
@@ -347,6 +373,7 @@ export function FilePreviewDialog({
 									downloadPath={resolvedDownloadPath}
 									getOptionLabel={getOptionLabel}
 									previewLinkFactory={previewLinkFactory}
+									archivePreviewFactory={activeArchivePreviewFactory}
 									videoStreamLinkFactory={videoStreamLinkFactory}
 									createWopiSession={
 										wopiSessionFactory ? activeWopiSessionFactory : null

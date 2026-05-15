@@ -6,6 +6,7 @@ use crate::config::media_processing;
 use crate::db::repository::pagination_repo::fetch_offset_page;
 use crate::entities::system_config::{self, Entity as SystemConfig};
 use crate::errors::{AsterError, Result};
+use crate::services::preview_app_service;
 use crate::types::{MediaProcessorKind, SystemConfigSource, SystemConfigValueType};
 use chrono::Utc;
 use sea_orm::{
@@ -316,6 +317,9 @@ where
             .await?
             .ok_or_else(|| AsterError::record_not_found(format!("config key '{}'", def.key)))?;
         let mut active: system_config::ActiveModel = existing.into();
+        if def.key == preview_app_service::PREVIEW_APPS_CONFIG_KEY {
+            normalize_existing_preview_apps_config_value(&mut active);
+        }
         active.source = Set(SystemConfigSource::System);
         active.value_type = Set(def.value_type);
         active.requires_restart = Set(def.requires_restart);
@@ -332,11 +336,44 @@ where
     Ok(count)
 }
 
+fn normalize_existing_preview_apps_config_value(active: &mut system_config::ActiveModel) {
+    let existing = match &active.value {
+        sea_orm::ActiveValue::Set(value) | sea_orm::ActiveValue::Unchanged(value) => value.clone(),
+        sea_orm::ActiveValue::NotSet => return,
+    };
+
+    match preview_app_service::public_preview_apps_config_has_missing_required_builtins(&existing) {
+        Ok(false) => {}
+        Ok(true) => {
+            match preview_app_service::normalize_public_preview_apps_config_value(&existing) {
+                Ok(normalized) => {
+                    active.value = Set(normalized);
+                }
+                Err(error) => {
+                    tracing::warn!(
+                        error = %error,
+                        key = preview_app_service::PREVIEW_APPS_CONFIG_KEY,
+                        "failed to normalize existing preview app registry during default config sync"
+                    );
+                }
+            }
+        }
+        Err(error) => {
+            tracing::warn!(
+                error = %error,
+                key = preview_app_service::PREVIEW_APPS_CONFIG_KEY,
+                "failed to normalize existing preview app registry during default config sync"
+            );
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::config::DatabaseConfig;
     use crate::db;
+    use crate::services::preview_app_service::PREVIEW_APPS_CONFIG_KEY;
     use migration::Migrator;
 
     async fn setup_db() -> sea_orm::DatabaseConnection {
@@ -498,5 +535,68 @@ mod tests {
             .expect("media processing config should exist");
 
         assert_eq!(stored.value, existing);
+    }
+
+    #[tokio::test]
+    async fn ensure_defaults_restores_missing_preview_builtins_without_overwriting_existing_apps() {
+        let db = setup_db().await;
+        let existing = r#"{
+  "version": 2,
+  "apps": [
+    {
+      "key": "builtin.image",
+      "provider": "builtin",
+      "icon": "/custom/image.svg",
+      "labels": {
+        "en": "Custom image"
+      }
+    },
+    {
+      "key": "custom.viewer",
+      "provider": "url_template",
+      "icon": "https://viewer.example.com/icon.svg",
+      "enabled": true,
+      "labels": {
+        "en": "Viewer"
+      },
+      "extensions": [
+        "txt"
+      ],
+      "config": {
+        "mode": "iframe",
+        "url_template": "https://viewer.example.com/?src={{file_preview_url}}"
+      }
+    }
+  ]
+}"#;
+
+        ensure_system_value_if_missing(&db, PREVIEW_APPS_CONFIG_KEY, existing)
+            .await
+            .expect("initial preview app config insert should succeed");
+
+        ensure_defaults_with_env(&db, &|_| None)
+            .await
+            .expect("ensure_defaults should succeed");
+
+        let stored = find_by_key(&db, PREVIEW_APPS_CONFIG_KEY)
+            .await
+            .expect("preview app config lookup should succeed")
+            .expect("preview app config should exist");
+        let config: preview_app_service::PublicPreviewAppsConfig =
+            serde_json::from_str(&stored.value).expect("stored preview apps should parse");
+
+        assert!(config.apps.iter().any(|app| {
+            app.key == "builtin.image"
+                && app.icon == "/custom/image.svg"
+                && app
+                    .labels
+                    .get("en")
+                    .is_some_and(|label| label == "Custom image")
+        }));
+        assert!(config.apps.iter().any(|app| app.key == "custom.viewer"));
+        assert!(config.apps.iter().any(|app| {
+            app.key == "builtin.archive" && app.extensions.iter().any(|ext| ext == "zip")
+        }));
+        assert!(config.apps.iter().any(|app| app.key == "builtin.code"));
     }
 }

@@ -1321,6 +1321,22 @@ export interface paths {
         patch: operations["patch_file"];
         trace?: never;
     };
+    "/api/v1/files/{id}/archive-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_file_archive_preview"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/files/{id}/content": {
         parameters: {
             query?: never;
@@ -1721,6 +1737,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/s/{token}/archive-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_shared_file_archive_preview"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/s/{token}/avatar/{size}": {
         parameters: {
             query?: never;
@@ -1761,6 +1793,22 @@ export interface paths {
             cookie?: never;
         };
         get: operations["download_shared_file"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/s/{token}/files/{file_id}/archive-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_shared_folder_file_archive_preview"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2375,6 +2423,22 @@ export interface paths {
         options?: never;
         head?: never;
         patch: operations["patch_team_file"];
+        trace?: never;
+    };
+    "/api/v1/teams/{team_id}/files/{id}/archive-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_team_file_archive_preview"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/teams/{team_id}/files/{id}/content": {
@@ -3372,6 +3436,38 @@ export interface components {
             target_folder_id: number;
             target_folder_name: string;
             target_path: string;
+        };
+        ArchivePreviewEntry: {
+            /** Format: int64 */
+            compressed_size: number;
+            kind: components["schemas"]["ArchivePreviewEntryKind"];
+            modified_at?: string | null;
+            name: string;
+            parent?: string | null;
+            path: string;
+            /** Format: int64 */
+            size: number;
+        };
+        /** @enum {string} */
+        ArchivePreviewEntryKind: "file" | "directory";
+        ArchivePreviewManifest: {
+            /** Format: int64 */
+            directory_count: number;
+            entries: components["schemas"]["ArchivePreviewEntry"][];
+            /** Format: int64 */
+            entry_count: number;
+            /** Format: int64 */
+            file_count: number;
+            format: string;
+            generated_at: string;
+            /** Format: int32 */
+            schema_version: number;
+            /** Format: int64 */
+            source_blob_id: number;
+            source_hash: string;
+            /** Format: int64 */
+            total_uncompressed_size: number;
+            truncated: boolean;
         };
         /**
          * @description 审计日志动作
@@ -11280,6 +11376,80 @@ export interface operations {
             };
         };
     };
+    get_file_archive_preview: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description File ID */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description ZIP archive preview manifest */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            /** Format: int64 */
+                            directory_count: number;
+                            entries: components["schemas"]["ArchivePreviewEntry"][];
+                            /** Format: int64 */
+                            entry_count: number;
+                            /** Format: int64 */
+                            file_count: number;
+                            format: string;
+                            generated_at: string;
+                            /** Format: int32 */
+                            schema_version: number;
+                            /** Format: int64 */
+                            source_blob_id: number;
+                            source_hash: string;
+                            /** Format: int64 */
+                            total_uncompressed_size: number;
+                            truncated: boolean;
+                        };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Not a supported archive or archive rejected by limits */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Archive preview disabled */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description File not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     update_file_content: {
         parameters: {
             query?: never;
@@ -12832,6 +13002,73 @@ export interface operations {
             };
         };
     };
+    get_shared_file_archive_preview: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Share token */
+                token: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description ZIP archive preview manifest */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            /** Format: int64 */
+                            directory_count: number;
+                            entries: components["schemas"]["ArchivePreviewEntry"][];
+                            /** Format: int64 */
+                            entry_count: number;
+                            /** Format: int64 */
+                            file_count: number;
+                            format: string;
+                            generated_at: string;
+                            /** Format: int32 */
+                            schema_version: number;
+                            /** Format: int64 */
+                            source_blob_id: number;
+                            source_hash: string;
+                            /** Format: int64 */
+                            total_uncompressed_size: number;
+                            truncated: boolean;
+                        };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Not a supported archive or archive rejected by limits */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Password required or archive preview disabled */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Share not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     shared_avatar: {
         parameters: {
             query?: never;
@@ -12968,6 +13205,75 @@ export interface operations {
                 content?: never;
             };
             /** @description Share not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_shared_folder_file_archive_preview: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Share token */
+                token: string;
+                /** @description File ID inside shared folder */
+                file_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description ZIP archive preview manifest */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            /** Format: int64 */
+                            directory_count: number;
+                            entries: components["schemas"]["ArchivePreviewEntry"][];
+                            /** Format: int64 */
+                            entry_count: number;
+                            /** Format: int64 */
+                            file_count: number;
+                            format: string;
+                            generated_at: string;
+                            /** Format: int32 */
+                            schema_version: number;
+                            /** Format: int64 */
+                            source_blob_id: number;
+                            source_hash: string;
+                            /** Format: int64 */
+                            total_uncompressed_size: number;
+                            truncated: boolean;
+                        };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Not a supported archive or archive rejected by limits */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Password required, file outside shared folder, or archive preview disabled */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Share or file not found */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -15865,6 +16171,82 @@ export interface operations {
                 content?: never;
             };
             /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description File not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_team_file_archive_preview: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Team ID */
+                team_id: number;
+                /** @description File ID */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Team ZIP archive preview manifest */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            /** Format: int64 */
+                            directory_count: number;
+                            entries: components["schemas"]["ArchivePreviewEntry"][];
+                            /** Format: int64 */
+                            entry_count: number;
+                            /** Format: int64 */
+                            file_count: number;
+                            format: string;
+                            generated_at: string;
+                            /** Format: int32 */
+                            schema_version: number;
+                            /** Format: int64 */
+                            source_blob_id: number;
+                            source_hash: string;
+                            /** Format: int64 */
+                            total_uncompressed_size: number;
+                            truncated: boolean;
+                        };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Not a supported archive or archive rejected by limits */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden or archive preview disabled */
             403: {
                 headers: {
                     [name: string]: unknown;

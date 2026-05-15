@@ -22,7 +22,7 @@ use xmltree::{Element, XMLNode};
 
 use crate::config::WebDavConfig;
 use crate::runtime::PrimaryAppState;
-use crate::services::audit_service;
+use crate::services::{audit_service, property_service};
 use crate::utils::numbers::u64_to_usize;
 use crate::webdav::dav::{
     DavFileSystem, DavLock, DavLockSystem, DavMetaData, DavPath, DavProp, FsError, OpenOptions,
@@ -1053,6 +1053,10 @@ async fn requested_prop_elements(
     let mut missing = Vec::new();
 
     for prop in requested {
+        if prop.is_system_namespace() {
+            continue;
+        }
+
         if let Some(element) = standard_prop_element(lock_system, resource, prop).await? {
             ok.push(element);
             continue;
@@ -1473,6 +1477,12 @@ impl RequestedProp {
 
     fn matches(&self, prop: &DavProp) -> bool {
         self.name == prop.name && self.namespace.as_deref() == prop.namespace.as_deref()
+    }
+
+    fn is_system_namespace(&self) -> bool {
+        self.namespace
+            .as_deref()
+            .is_some_and(property_service::is_system_namespace)
     }
 }
 

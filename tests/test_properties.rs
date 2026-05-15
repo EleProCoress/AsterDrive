@@ -4,12 +4,14 @@
 mod common;
 
 use actix_web::test;
+use aster_drive::db::repository::property_repo;
+use aster_drive::types::EntityType;
 use serde_json::Value;
 
 #[actix_web::test]
 async fn test_entity_properties() {
     let state = common::setup().await;
-    let app = create_test_app!(state);
+    let app = create_test_app!(state.clone());
 
     let (token, _) = register_and_login!(app);
     let file_id = upload_test_file!(app, token);
@@ -74,6 +76,47 @@ async fn test_entity_properties() {
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert!(resp.status() == 403 || resp.status() == 423);
+
+    // system.* 命名空间保留给内部缓存，用户 API 不允许写入
+    let req = test::TestRequest::put()
+        .uri(&format!("/api/v1/properties/file/{file_id}"))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .set_json(serde_json::json!({
+            "namespace": "system.archive_preview",
+            "name": "zip_manifest.v1",
+            "value": "{}"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 403);
+
+    property_repo::upsert(
+        &state.db,
+        EntityType::File,
+        file_id,
+        "system.archive_preview",
+        "zip_manifest.v1",
+        Some("{}"),
+    )
+    .await
+    .expect("internal system property should be writable through repo");
+
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/properties/file/{file_id}"))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    let listed = body["data"].as_array().unwrap();
+    assert!(
+        listed
+            .iter()
+            .all(|item| item["namespace"] != "system.archive_preview"),
+        "system properties must be hidden from user property listing: {listed:?}"
+    );
 }
 
 #[actix_web::test]

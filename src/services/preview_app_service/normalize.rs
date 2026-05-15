@@ -22,6 +22,21 @@ pub fn normalize_public_preview_apps_config_value(value: &str) -> Result<String>
     })
 }
 
+pub fn public_preview_apps_config_has_missing_required_builtins(value: &str) -> Result<bool> {
+    let config: PublicPreviewAppsConfig = serde_json::from_str(value).map_err(|error| {
+        AsterError::validation_error(format!("preview apps config must be valid JSON: {error}"))
+    })?;
+    let keys = config
+        .apps
+        .iter()
+        .map(|app| app.key.trim())
+        .collect::<HashSet<_>>();
+
+    Ok(REQUIRED_BUILTIN_PREVIEW_APP_KEYS
+        .iter()
+        .any(|key| !keys.contains(*key)))
+}
+
 pub fn get_public_preview_apps(state: &PrimaryAppState) -> PublicPreviewAppsConfig {
     let Some(raw) = state.runtime_config.get(PREVIEW_APPS_CONFIG_KEY) else {
         return default_public_preview_apps();
@@ -58,12 +73,6 @@ fn validate_preview_apps_config(config: &mut PublicPreviewAppsConfig) -> Result<
         )));
     }
 
-    if config.apps.is_empty() {
-        return Err(AsterError::validation_error(
-            "preview apps config must contain at least one app",
-        ));
-    }
-
     let mut seen_keys = HashSet::new();
     for app in &mut config.apps {
         app.key = normalize_non_empty("app key", &app.key)?;
@@ -86,13 +95,32 @@ fn validate_preview_apps_config(config: &mut PublicPreviewAppsConfig) -> Result<
         validate_preview_app_config(app)?;
     }
 
+    append_missing_required_builtin_preview_apps(config, &seen_keys)?;
+
+    Ok(())
+}
+
+fn append_missing_required_builtin_preview_apps(
+    config: &mut PublicPreviewAppsConfig,
+    seen_keys: &HashSet<String>,
+) -> Result<()> {
+    let default_apps = default_public_preview_apps();
     for builtin_key in REQUIRED_BUILTIN_PREVIEW_APP_KEYS {
-        if !seen_keys.contains(*builtin_key) {
-            return Err(AsterError::validation_error(format!(
-                "built-in preview app '{}' cannot be removed",
-                builtin_key
-            )));
+        if seen_keys.contains(*builtin_key) {
+            continue;
         }
+
+        let default_app = default_apps
+            .apps
+            .iter()
+            .find(|app| app.key == *builtin_key)
+            .cloned()
+            .ok_or_else(|| {
+                AsterError::internal_error(format!(
+                    "required built-in preview app '{builtin_key}' is missing from defaults"
+                ))
+            })?;
+        config.apps.push(default_app);
     }
 
     Ok(())

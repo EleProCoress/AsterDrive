@@ -90,6 +90,11 @@ export type FolderContents = components["schemas"]["FolderContents"];
 export type FolderInfo = components["schemas"]["FolderInfo"];
 export type FolderListParams = OperationQuery<"list_root">;
 export type FolderListItem = components["schemas"]["FolderListItem"];
+export type ArchivePreviewEntry = components["schemas"]["ArchivePreviewEntry"];
+export type ArchivePreviewEntryKind =
+	components["schemas"]["ArchivePreviewEntryKind"];
+export type ArchivePreviewManifest =
+	components["schemas"]["ArchivePreviewManifest"];
 export type PurgedCountResponse = components["schemas"]["PurgedCountResponse"];
 export type TrashContents = components["schemas"]["TrashContents"];
 export type TrashFileItem = components["schemas"]["TrashFileItem"];

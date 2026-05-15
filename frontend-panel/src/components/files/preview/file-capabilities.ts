@@ -61,6 +61,16 @@ function isSvgFile(file: PreviewableFileLike) {
 	return ext === "svg" || file.mime_type === "image/svg+xml";
 }
 
+function isZipArchive(file: PreviewableFileLike) {
+	const { ext } = getExtension(file.name);
+	const mime = file.mime_type.toLowerCase();
+	return (
+		ext === "zip" ||
+		mime === "application/zip" ||
+		mime === "application/x-zip-compressed"
+	);
+}
+
 export function getEditorLanguage(file: PreviewableFileLike): string {
 	const { ext, specialLanguage } = getExtension(file.name);
 	if (specialLanguage) return specialLanguage;
@@ -295,6 +305,16 @@ function detectBuiltinFilePreviewProfile(
 			options: BUILTIN_PREVIEW_OPTIONS.xml,
 		};
 	}
+	if (typeInfo.category === "archive" && isZipArchive(file)) {
+		return {
+			category: "archive",
+			isBlobPreview: false,
+			isTextBased: false,
+			isEditableText: false,
+			defaultMode: "builtin.archive",
+			options: BUILTIN_PREVIEW_OPTIONS.archive,
+		};
+	}
 
 	const isKnownText =
 		typeInfo.category === "text" ||
@@ -449,6 +469,8 @@ function getConfiguredPreviewMode(
 		case "builtin.code":
 		case "builtin.try_text":
 			return "code";
+		case "builtin.archive":
+			return "archive";
 		default:
 			return null;
 	}

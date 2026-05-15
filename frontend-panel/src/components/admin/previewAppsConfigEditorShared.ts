@@ -20,6 +20,7 @@ export const PREVIEW_APP_PROTECTED_BUILTIN_KEYS = [
 	"builtin.formatted",
 	"builtin.code",
 	"builtin.try_text",
+	"builtin.archive",
 ] as const;
 
 export interface PreviewAppsEditorApp {
@@ -49,6 +50,10 @@ const PREVIEW_APP_KEY_META: Record<string, { icon: string; labelKey: string }> =
 		"builtin.audio": {
 			icon: PREVIEW_APP_ICON_URLS.audio,
 			labelKey: "preview_apps_provider_audio",
+		},
+		"builtin.archive": {
+			icon: PREVIEW_APP_ICON_URLS.archive,
+			labelKey: "preview_apps_provider_archive",
 		},
 		"builtin.code": {
 			icon: PREVIEW_APP_ICON_URLS.code,
@@ -209,6 +214,88 @@ function normalizeApp(value: unknown): PreviewAppsEditorApp {
 	};
 }
 
+function createProtectedBuiltinPreviewAppDraft(
+	key: (typeof PREVIEW_APP_PROTECTED_BUILTIN_KEYS)[number],
+): PreviewAppsEditorApp {
+	const base: PreviewAppsEditorApp = {
+		config: {},
+		enabled: true,
+		extensions: [],
+		icon: "",
+		key,
+		labels: protectedBuiltinLabels(key),
+		provider: "builtin",
+	};
+
+	if (isTablePreviewAppKey(key)) {
+		return {
+			...base,
+			config: { delimiter: "auto" },
+			extensions: ["csv", "tsv"],
+		};
+	}
+
+	if (key === "builtin.pdf") {
+		return { ...base, extensions: ["pdf"] };
+	}
+
+	if (key === "builtin.markdown") {
+		return { ...base, extensions: ["md", "markdown"] };
+	}
+
+	if (key === "builtin.formatted") {
+		return { ...base, extensions: ["json", "xml"] };
+	}
+
+	if (key === "builtin.archive") {
+		return { ...base, extensions: ["zip"] };
+	}
+
+	return base;
+}
+
+function protectedBuiltinLabels(key: string): Record<string, string> {
+	switch (key) {
+		case "builtin.image":
+			return { en: "Image preview", zh: "图片预览" };
+		case "builtin.video":
+			return { en: "Video preview", zh: "视频预览" };
+		case "builtin.audio":
+			return { en: "Audio preview", zh: "音频预览" };
+		case "builtin.pdf":
+			return { en: "PDF preview", zh: "PDF 预览" };
+		case "builtin.markdown":
+			return { en: "Markdown preview", zh: "Markdown 预览" };
+		case BUILTIN_TABLE_PREVIEW_APP_KEY:
+			return { en: "Table preview", zh: "表格预览" };
+		case "builtin.formatted":
+			return { en: "Formatted view", zh: "格式化视图" };
+		case "builtin.code":
+			return { en: "Source view", zh: "源码视图" };
+		case "builtin.try_text":
+			return { en: "Open as text", zh: "以文本方式打开" };
+		case "builtin.archive":
+			return { en: "Archive preview", zh: "压缩包预览" };
+		default:
+			return {};
+	}
+}
+
+function restoreMissingProtectedBuiltinPreviewApps(
+	apps: PreviewAppsEditorApp[],
+) {
+	const existingKeys = new Set(
+		apps.map((app) => app.key.trim()).filter((key) => key.length > 0),
+	);
+
+	return [
+		...apps,
+		...PREVIEW_APP_PROTECTED_BUILTIN_KEYS.filter(
+			(key) => !existingKeys.has(key),
+		).map(createProtectedBuiltinPreviewAppDraft),
+	];
+}
+
 function pruneConfigValue(value: unknown): unknown {
 	if (typeof value === "string") {
 		const trimmed = value.trim();
@@ -321,7 +408,9 @@ export function parsePreviewAppsConfig(value: string): PreviewAppsEditorConfig {
 	}
 
 	return {
-		apps: Array.isArray(parsed.apps) ? parsed.apps.map(normalizeApp) : [],
+		apps: restoreMissingProtectedBuiltinPreviewApps(
+			Array.isArray(parsed.apps) ? parsed.apps.map(normalizeApp) : [],
+		),
 		version:
 			typeof parsed.version === "number"
 				? parsed.version
@@ -377,10 +466,6 @@ export function getPreviewAppsConfigIssues(
 		});
 	}
 
-	if (config.apps.length === 0) {
-		issues.push({ key: "preview_apps_error_no_apps" });
-	}
-
 	const keyCounts = new Map<string, number>();
 	for (const app of config.apps) {
 		const key = app.key.trim();
@@ -389,10 +474,6 @@ export function getPreviewAppsConfigIssues(
 		}
 		keyCounts.set(key, (keyCounts.get(key) ?? 0) + 1);
 	}
-
-	const appKeys = new Set(
-		config.apps.map((app) => app.key.trim()).filter((key) => key.length > 0),
-	);
 
 	for (const [index, app] of config.apps.entries()) {
 		const appNumber = index + 1;
@@ -474,15 +555,6 @@ export function getPreviewAppsConfigIssues(
 					values: { index: appNumber },
 				});
 			}
-		}
-	}
-
-	for (const builtinKey of PREVIEW_APP_PROTECTED_BUILTIN_KEYS) {
-		if (!appKeys.has(builtinKey)) {
-			issues.push({
-				key: "preview_apps_error_builtin_required",
-				values: { key: builtinKey },
-			});
 		}
 	}
 

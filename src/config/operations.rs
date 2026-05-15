@@ -1,6 +1,7 @@
 //! 配置子模块：`operations`。
 
 use crate::config::RuntimeConfig;
+use crate::config::bool_like::parse_bool_like;
 use crate::errors::{AsterError, Result};
 use crate::utils::numbers::{u64_to_i64, u64_to_usize, usize_to_u64};
 
@@ -12,7 +13,11 @@ pub use crate::config::definitions::{
     ARCHIVE_EXTRACT_MAX_ENTRY_COMPRESSION_RATIO_KEY, ARCHIVE_EXTRACT_MAX_FILES_KEY,
     ARCHIVE_EXTRACT_MAX_PATH_BYTES_KEY, ARCHIVE_EXTRACT_MAX_SOURCE_BYTES_KEY,
     ARCHIVE_EXTRACT_MAX_STAGING_BYTES_KEY, ARCHIVE_EXTRACT_MAX_UNCOMPRESSED_BYTES_KEY,
-    AVATAR_MAX_UPLOAD_SIZE_BYTES_KEY, BACKGROUND_TASK_ARCHIVE_MAX_CONCURRENCY_KEY,
+    ARCHIVE_PREVIEW_ENABLED_KEY, ARCHIVE_PREVIEW_MAX_DURATION_SECS_KEY,
+    ARCHIVE_PREVIEW_MAX_ENTRIES_KEY, ARCHIVE_PREVIEW_MAX_MANIFEST_BYTES_KEY,
+    ARCHIVE_PREVIEW_MAX_SOURCE_BYTES_KEY, ARCHIVE_PREVIEW_SHARE_ENABLED_KEY,
+    ARCHIVE_PREVIEW_USER_ENABLED_KEY, AVATAR_MAX_UPLOAD_SIZE_BYTES_KEY,
+    BACKGROUND_TASK_ARCHIVE_MAX_CONCURRENCY_KEY,
     BACKGROUND_TASK_DISPATCH_IDLE_MAX_INTERVAL_SECS_KEY,
     BACKGROUND_TASK_DISPATCH_INTERVAL_SECS_KEY, BACKGROUND_TASK_MAX_ATTEMPTS_KEY,
     BACKGROUND_TASK_MAX_CONCURRENCY_KEY, BACKGROUND_TASK_THUMBNAIL_MAX_CONCURRENCY_KEY,
@@ -48,6 +53,13 @@ pub const DEFAULT_ARCHIVE_EXTRACT_MAX_PATH_BYTES: u64 = 4096;
 pub const DEFAULT_ARCHIVE_EXTRACT_MAX_COMPRESSION_RATIO: u64 = 200;
 pub const DEFAULT_ARCHIVE_EXTRACT_MAX_ENTRY_COMPRESSION_RATIO: u64 = 500;
 pub const DEFAULT_ARCHIVE_EXTRACT_MAX_DURATION_SECS: u64 = 300;
+pub const DEFAULT_ARCHIVE_PREVIEW_ENABLED: bool = false;
+pub const DEFAULT_ARCHIVE_PREVIEW_USER_ENABLED: bool = false;
+pub const DEFAULT_ARCHIVE_PREVIEW_SHARE_ENABLED: bool = false;
+pub const DEFAULT_ARCHIVE_PREVIEW_MAX_SOURCE_BYTES: u64 = 64 * 1024 * 1024;
+pub const DEFAULT_ARCHIVE_PREVIEW_MAX_ENTRIES: u64 = 2_000;
+pub const DEFAULT_ARCHIVE_PREVIEW_MAX_MANIFEST_BYTES: u64 = 64 * 1024;
+pub const DEFAULT_ARCHIVE_PREVIEW_MAX_DURATION_SECS: u64 = 30;
 pub const DEFAULT_ARCHIVE_BUILD_MAX_ENTRIES: u64 = 10_000;
 pub const DEFAULT_ARCHIVE_BUILD_MAX_TOTAL_SOURCE_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 pub const DEFAULT_ARCHIVE_BUILD_MAX_TEMP_BYTES: u64 = 2 * 1024 * 1024 * 1024;
@@ -68,6 +80,15 @@ pub fn normalize_attempts_config_value(key: &str, value: &str) -> Result<String>
 
 pub fn normalize_bytes_config_value(key: &str, value: &str) -> Result<String> {
     normalize_positive_u64_config_value(key, value)
+}
+
+pub fn normalize_bool_config_value(key: &str, value: &str) -> Result<String> {
+    match parse_bool_like(value) {
+        Some(value) => Ok(if value { "true" } else { "false" }.to_string()),
+        None => Err(AsterError::validation_error(format!(
+            "{key} must be 'true' or 'false'",
+        ))),
+    }
 }
 
 pub fn normalize_list_max_limit_config_value(key: &str, value: &str) -> Result<String> {
@@ -338,6 +359,63 @@ pub fn archive_extract_max_duration_secs(runtime_config: &RuntimeConfig) -> u64 
     )
 }
 
+pub fn archive_preview_enabled(runtime_config: &RuntimeConfig) -> bool {
+    read_bool(
+        runtime_config,
+        ARCHIVE_PREVIEW_ENABLED_KEY,
+        DEFAULT_ARCHIVE_PREVIEW_ENABLED,
+    )
+}
+
+pub fn archive_preview_user_enabled(runtime_config: &RuntimeConfig) -> bool {
+    read_bool(
+        runtime_config,
+        ARCHIVE_PREVIEW_USER_ENABLED_KEY,
+        DEFAULT_ARCHIVE_PREVIEW_USER_ENABLED,
+    )
+}
+
+pub fn archive_preview_share_enabled(runtime_config: &RuntimeConfig) -> bool {
+    read_bool(
+        runtime_config,
+        ARCHIVE_PREVIEW_SHARE_ENABLED_KEY,
+        DEFAULT_ARCHIVE_PREVIEW_SHARE_ENABLED,
+    )
+}
+
+pub fn archive_preview_max_source_bytes(runtime_config: &RuntimeConfig) -> i64 {
+    read_positive_i64_bytes(
+        runtime_config,
+        ARCHIVE_PREVIEW_MAX_SOURCE_BYTES_KEY,
+        DEFAULT_ARCHIVE_PREVIEW_MAX_SOURCE_BYTES,
+        "archive preview source size config exceeds i64; using default",
+    )
+}
+
+pub fn archive_preview_max_entries(runtime_config: &RuntimeConfig) -> u64 {
+    read_positive_u64(
+        runtime_config,
+        ARCHIVE_PREVIEW_MAX_ENTRIES_KEY,
+        DEFAULT_ARCHIVE_PREVIEW_MAX_ENTRIES,
+    )
+}
+
+pub fn archive_preview_max_manifest_bytes(runtime_config: &RuntimeConfig) -> u64 {
+    read_positive_u64(
+        runtime_config,
+        ARCHIVE_PREVIEW_MAX_MANIFEST_BYTES_KEY,
+        DEFAULT_ARCHIVE_PREVIEW_MAX_MANIFEST_BYTES,
+    )
+}
+
+pub fn archive_preview_max_duration_secs(runtime_config: &RuntimeConfig) -> u64 {
+    read_positive_u64(
+        runtime_config,
+        ARCHIVE_PREVIEW_MAX_DURATION_SECS_KEY,
+        DEFAULT_ARCHIVE_PREVIEW_MAX_DURATION_SECS,
+    )
+}
+
 pub fn archive_build_max_entries(runtime_config: &RuntimeConfig) -> u64 {
     read_positive_u64(
         runtime_config,
@@ -418,6 +496,19 @@ fn read_positive_i32(runtime_config: &RuntimeConfig, key: &str, default: i32) ->
             Some(value) => value,
             None => {
                 tracing::warn!(key, value = %raw, "invalid runtime operations config; using default");
+                default
+            }
+        },
+        None => default,
+    }
+}
+
+fn read_bool(runtime_config: &RuntimeConfig, key: &str, default: bool) -> bool {
+    match runtime_config.get(key) {
+        Some(raw) => match parse_bool_like(&raw) {
+            Some(value) => value,
+            None => {
+                tracing::warn!(key, value = %raw, "invalid runtime operations boolean config; using default");
                 default
             }
         },

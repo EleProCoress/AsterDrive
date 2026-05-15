@@ -22,6 +22,24 @@ pub async fn find_by_entity<C: ConnectionTrait>(
         .map_err(AsterError::from)
 }
 
+/// 查询实体的单个属性
+pub async fn find_by_key<C: ConnectionTrait>(
+    db: &C,
+    entity_type: EntityType,
+    entity_id: i64,
+    namespace: &str,
+    name: &str,
+) -> Result<Option<entity_property::Model>> {
+    EntityProperty::find()
+        .filter(entity_property::Column::EntityType.eq(entity_type))
+        .filter(entity_property::Column::EntityId.eq(entity_id))
+        .filter(entity_property::Column::Namespace.eq(namespace))
+        .filter(entity_property::Column::Name.eq(name))
+        .one(db)
+        .await
+        .map_err(AsterError::from)
+}
+
 /// 插入或更新属性
 pub async fn upsert<C: ConnectionTrait>(
     db: &C,

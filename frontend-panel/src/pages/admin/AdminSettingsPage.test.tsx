@@ -68,6 +68,11 @@ const translationMap: Record<string, string> = {
 	settings_subcategory_storage_media_processing: "Media Processing",
 	settings_subcategory_storage_media_processing_desc:
 		"Configure available media processors, thumbnail limits, and optional vips or ffmpeg CLI integrations.",
+	settings_subcategory_storage_archive_extract: "Archive Extraction",
+	settings_subcategory_storage_archive_extract_desc:
+		"Archive extraction limits.",
+	settings_subcategory_storage_archive_preview: "Archive Preview",
+	settings_subcategory_storage_archive_preview_desc: "Archive preview limits.",
 	media_processing_editor_title: "media_processing_editor_title",
 	media_processing_editor_desc: "media_processing_editor_desc",
 	media_processing_editor_validation_title:
@@ -1650,6 +1655,57 @@ describe("AdminSettingsPage", () => {
 		expect(
 			screen.getByText("media_processing_editor_title"),
 		).toBeInTheDocument();
+	});
+
+	it("defaults archive storage subcategory sections to collapsed", async () => {
+		mockState.listConfigs.mockResolvedValueOnce({
+			items: [
+				createConfig({
+					category: "storage.archive_extract",
+					key: "archive_extract_max_entries",
+					value: "10000",
+					value_type: "number",
+				}),
+				createConfig({
+					category: "storage.archive_preview",
+					key: "archive_preview_max_entries",
+					value: "2000",
+					value_type: "number",
+				}),
+			],
+		});
+		mockState.schema.mockResolvedValueOnce([
+			createSchemaItem({
+				category: "storage.archive_extract",
+				key: "archive_extract_max_entries",
+				value_type: "number",
+			}),
+			createSchemaItem({
+				category: "storage.archive_preview",
+				key: "archive_preview_max_entries",
+				value_type: "number",
+			}),
+		]);
+
+		render(<AdminSettingsPage section="storage" />);
+
+		const extractTitle = await screen.findByText("Archive Extraction");
+		const previewTitle = await screen.findByText("Archive Preview");
+		expect(screen.queryByText("archive_extract_max_entries")).toBeNull();
+		expect(screen.queryByText("archive_preview_max_entries")).toBeNull();
+
+		const extractSection = extractTitle.closest("section") as HTMLElement;
+		fireEvent.click(
+			within(extractSection).getByRole("button", {
+				name: /settings_section_expand/i,
+			}),
+		);
+
+		expect(
+			await screen.findByText("archive_extract_max_entries"),
+		).toBeInTheDocument();
+		expect(screen.queryByText("archive_preview_max_entries")).toBeNull();
+		expect(previewTitle).toBeInTheDocument();
 	});
 
 	it("renders media processing registry with the custom editor", async () => {

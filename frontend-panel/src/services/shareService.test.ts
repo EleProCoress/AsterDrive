@@ -98,17 +98,29 @@ describe("shareService", () => {
 
 		shareService.getInfo("token-1");
 		shareService.verifyPassword("token-1", "secret");
+		shareService.getArchivePreview("token-1");
+		shareService.getFolderFileArchivePreview("token-1", 42);
 		shareService.listContent("token-1", params);
 		shareService.listSubfolderContent("token-1", 42, params);
 
 		expect(apiGet).toHaveBeenNthCalledWith(1, "/s/token-1");
+		expect(apiGet).toHaveBeenNthCalledWith(
+			2,
+			"/s/token-1/archive-preview",
+			undefined,
+		);
+		expect(apiGet).toHaveBeenNthCalledWith(
+			3,
+			"/s/token-1/files/42/archive-preview",
+			undefined,
+		);
 		expect(apiPost).toHaveBeenCalledWith("/s/token-1/verify", {
 			password: "secret",
 		});
-		expect(apiGet).toHaveBeenNthCalledWith(2, "/s/token-1/content", {
+		expect(apiGet).toHaveBeenNthCalledWith(4, "/s/token-1/content", {
 			params,
 		});
-		expect(apiGet).toHaveBeenNthCalledWith(3, "/s/token-1/folders/42/content", {
+		expect(apiGet).toHaveBeenNthCalledWith(5, "/s/token-1/folders/42/content", {
 			params,
 		});
 		expect(shareService.pagePath("token-1")).toBe("/s/token-1");
@@ -125,6 +137,24 @@ describe("shareService", () => {
 		);
 		expect(shareService.downloadFolderFileUrl("token-1", 42)).toBe(
 			"/api/v1/s/token-1/files/42/download",
+		);
+	});
+
+	it("forwards abort signals for public archive preview requests", () => {
+		const controller = new AbortController();
+
+		shareService.getArchivePreview("token-1", { signal: controller.signal });
+		shareService.getFolderFileArchivePreview("token-1", 42, {
+			signal: controller.signal,
+		});
+
+		expect(apiGet).toHaveBeenNthCalledWith(1, "/s/token-1/archive-preview", {
+			signal: controller.signal,
+		});
+		expect(apiGet).toHaveBeenNthCalledWith(
+			2,
+			"/s/token-1/files/42/archive-preview",
+			{ signal: controller.signal },
 		);
 	});
 

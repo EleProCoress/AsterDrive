@@ -6,6 +6,7 @@ use crate::api::routes::team_scope;
 use crate::errors::Result;
 use crate::runtime::PrimaryAppState;
 use crate::services::{
+    archive_preview_service,
     audit_service::{self, AuditContext},
     auth_service::Claims,
     direct_link_service, file_service, media_processing_service, preview_link_service,
@@ -41,6 +42,38 @@ pub async fn get_file(
 ) -> Result<HttpResponse> {
     get_file_response(
         &state,
+        WorkspaceStorageScope::Personal {
+            user_id: claims.user_id,
+        },
+        *path,
+    )
+    .await
+}
+
+#[api_docs_macros::path(
+    get,
+    path = "/api/v1/files/{id}/archive-preview",
+    tag = "files",
+    operation_id = "get_file_archive_preview",
+    params(("id" = i64, Path, description = "File ID")),
+    responses(
+        (status = 200, description = "ZIP archive preview manifest", body = inline(ApiResponse<archive_preview_service::ArchivePreviewManifest>)),
+        (status = 400, description = "Not a supported archive or archive rejected by limits"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
+        (status = 403, description = "Archive preview disabled"),
+        (status = 404, description = "File not found"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn get_archive_preview(
+    state: web::Data<PrimaryAppState>,
+    claims: web::ReqData<Claims>,
+    req: HttpRequest,
+    path: web::Path<i64>,
+) -> Result<HttpResponse> {
+    archive_preview_response(
+        &state,
+        &req,
         WorkspaceStorageScope::Personal {
             user_id: claims.user_id,
         },
@@ -240,6 +273,34 @@ pub(crate) async fn team_get_file(
 
 #[api_docs_macros::path(
     get,
+    path = "/api/v1/teams/{team_id}/files/{id}/archive-preview",
+    tag = "teams",
+    operation_id = "get_team_file_archive_preview",
+    params(
+        ("team_id" = i64, Path, description = "Team ID"),
+        ("id" = i64, Path, description = "File ID")
+    ),
+    responses(
+        (status = 200, description = "Team ZIP archive preview manifest", body = inline(ApiResponse<archive_preview_service::ArchivePreviewManifest>)),
+        (status = 400, description = "Not a supported archive or archive rejected by limits"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
+        (status = 403, description = "Forbidden or archive preview disabled"),
+        (status = 404, description = "File not found"),
+    ),
+    security(("bearer" = [])),
+)]
+pub(crate) async fn team_get_archive_preview(
+    state: web::Data<PrimaryAppState>,
+    claims: web::ReqData<Claims>,
+    req: HttpRequest,
+    path: web::Path<(i64, i64)>,
+) -> Result<HttpResponse> {
+    let (team_id, file_id) = path.into_inner();
+    archive_preview_response(&state, &req, team_scope(team_id, claims.user_id), file_id).await
+}
+
+#[api_docs_macros::path(
+    get,
     path = "/api/v1/teams/{team_id}/files/{id}/direct-link",
     tag = "teams",
     operation_id = "get_team_file_direct_link",
@@ -417,6 +478,50 @@ pub(crate) async fn get_file_response(
 ) -> Result<HttpResponse> {
     let file = file_service::get_info_in_scope(state, scope, file_id).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(FileInfo::from(file))))
+}
+
+pub(crate) async fn archive_preview_response(
+    state: &PrimaryAppState,
+    req: &HttpRequest,
+    scope: WorkspaceStorageScope,
+    file_id: i64,
+) -> Result<HttpResponse> {
+    let if_none_match = req
+        .headers()
+        .get(header::IF_NONE_MATCH)
+        .and_then(|value| value.to_str().ok());
+    let manifest = archive_preview_service::preview_file_in_scope(state, scope, file_id).await?;
+    archive_preview_manifest_response(
+        manifest,
+        if_none_match,
+        "private, max-age=0, must-revalidate",
+    )
+}
+
+pub(crate) fn archive_preview_manifest_response(
+    manifest: archive_preview_service::ArchivePreviewManifest,
+    if_none_match: Option<&str>,
+    cache_control: &str,
+) -> Result<HttpResponse> {
+    let etag_value = format!(
+        "archive-preview-{}",
+        archive_preview_service::manifest_etag_value(&manifest)?
+    );
+    let etag = format!("\"{etag_value}\"");
+
+    if let Some(if_none_match) = if_none_match
+        && file_service::if_none_match_matches_value(if_none_match, &etag_value)
+    {
+        return Ok(HttpResponse::NotModified()
+            .insert_header((header::ETAG, etag))
+            .insert_header((header::CACHE_CONTROL, cache_control))
+            .finish());
+    }
+
+    Ok(HttpResponse::Ok()
+        .insert_header((header::ETAG, etag))
+        .insert_header((header::CACHE_CONTROL, cache_control))
+        .json(ApiResponse::ok(manifest)))
 }
 
 pub(crate) async fn direct_link_response(

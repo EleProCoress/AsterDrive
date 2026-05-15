@@ -3,7 +3,8 @@
 use std::collections::BTreeMap;
 
 use super::{
-    BUILTIN_TABLE_PREVIEW_APP_KEY, DEFAULT_TABLE_PREVIEW_DELIMITER, PREVIEW_APP_ICON_AUDIO,
+    BUILTIN_ARCHIVE_PREVIEW_APP_KEY, BUILTIN_TABLE_PREVIEW_APP_KEY,
+    DEFAULT_TABLE_PREVIEW_DELIMITER, PREVIEW_APP_ICON_ARCHIVE, PREVIEW_APP_ICON_AUDIO,
     PREVIEW_APP_ICON_CODE, PREVIEW_APP_ICON_FILE, PREVIEW_APP_ICON_GOOGLE_DRIVE,
     PREVIEW_APP_ICON_IMAGE, PREVIEW_APP_ICON_JSON, PREVIEW_APP_ICON_MARKDOWN,
     PREVIEW_APP_ICON_MICROSOFT_ONEDRIVE, PREVIEW_APP_ICON_PDF, PREVIEW_APP_ICON_TABLE,
@@ -104,6 +105,12 @@ pub fn default_public_preview_apps() -> PublicPreviewAppsConfig {
                 PREVIEW_APP_ICON_FILE,
                 labels(("en", "Open as text"), ("zh", "以文本方式打开")),
                 &[],
+            ),
+            builtin_app(
+                BUILTIN_ARCHIVE_PREVIEW_APP_KEY,
+                PREVIEW_APP_ICON_ARCHIVE,
+                labels(("en", "Archive preview"), ("zh", "压缩包预览")),
+                &["zip"],
             ),
         ],
     }

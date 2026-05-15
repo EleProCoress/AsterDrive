@@ -15,6 +15,11 @@ import { Icon } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
 import type { SystemConfig } from "@/types/api";
 
+const DEFAULT_COLLAPSED_SUBCATEGORY_GROUP_KEYS = new Set([
+	"storage:archive_extract",
+	"storage:archive_preview",
+]);
+
 function AdminSettingsMailTemplateGroup({
 	changedCount,
 	configs,
@@ -115,9 +120,14 @@ function AdminSettingsSystemSubcategoryCard({
 	const groupKey = getSubcategoryGroupKey(category, group.subcategory);
 	const isMailTemplateSection =
 		category === "mail" && group.subcategory === "template";
+	const defaultCollapsed =
+		DEFAULT_COLLAPSED_SUBCATEGORY_GROUP_KEYS.has(groupKey);
 	const collapsible =
 		!isMailTemplateSection &&
-		group.configs.some((config) => isMultilineType(getConfigValueType(config)));
+		(defaultCollapsed ||
+			group.configs.some((config) =>
+				isMultilineType(getConfigValueType(config)),
+			));
 	const defaultExpanded = !collapsible;
 	const expanded = expandedSubcategoryGroups[groupKey] ?? defaultExpanded;
 	const groupDescription = getSubcategoryDescription(
