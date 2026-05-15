@@ -24,6 +24,8 @@ const client: AxiosInstance = axios.create({
 const SKIP_REFRESH_PATHS = [
 	"/auth/refresh",
 	"/auth/login",
+	"/auth/passkeys/login/start",
+	"/auth/passkeys/login/finish",
 	"/auth/register",
 	"/auth/register/resend",
 	"/auth/logout",

@@ -37,8 +37,21 @@ describe("authService", () => {
 			sort_by: "updated_at",
 		};
 		mockState.post.mockImplementation((url: string) => {
-			if (url === "/auth/login" || url === "/auth/refresh") {
+			if (
+				url === "/auth/login" ||
+				url === "/auth/refresh" ||
+				url === "/auth/passkeys/login/finish"
+			) {
 				return { expires_in: 900 };
+			}
+			if (url === "/auth/passkeys/login/start") {
+				return { flow_id: "login-flow", public_key: {} };
+			}
+			if (url === "/auth/passkeys/register/start") {
+				return { flow_id: "register-flow", public_key: {} };
+			}
+			if (url === "/auth/passkeys/register/finish") {
+				return { id: 1, name: "Laptop" };
 			}
 			return undefined;
 		});
@@ -50,6 +63,9 @@ describe("authService", () => {
 		});
 		mockState.get.mockImplementation((url: string) => {
 			if (url === "/auth/sessions") {
+				return [];
+			}
+			if (url === "/auth/passkeys") {
 				return [];
 			}
 			return undefined;
@@ -74,6 +90,10 @@ describe("authService", () => {
 		await expect(authService.refreshToken()).resolves.toEqual({
 			expiresIn: 900,
 		});
+		authService.startPasskeyLogin({ identifier: "alice@example.com" });
+		await expect(
+			authService.finishPasskeyLogin("login-flow", { id: "cred" }),
+		).resolves.toEqual({ expiresIn: 900 });
 		authService.me();
 		authService.me(["quota"]);
 		authService.updatePreferences(prefs);
@@ -90,6 +110,15 @@ describe("authService", () => {
 		authService.resendEmailChange();
 		authService.setAvatarSource("gravatar");
 		expect(authService.listSessions()).toEqual([]);
+		expect(authService.listPasskeys()).toEqual([]);
+		authService.startPasskeyRegistration({ name: "Laptop" });
+		authService.finishPasskeyRegistration(
+			"register-flow",
+			{ id: "cred" },
+			"Laptop",
+		);
+		authService.renamePasskey(1, { name: "Phone" });
+		authService.deletePasskey(1);
 		authService.revokeSession("session-1");
 		await expect(authService.revokeOtherSessions()).resolves.toBe(2);
 
@@ -113,6 +142,21 @@ describe("authService", () => {
 		});
 		expect(mockState.post).toHaveBeenNthCalledWith(6, "/auth/logout");
 		expect(mockState.post).toHaveBeenNthCalledWith(7, "/auth/refresh");
+		expect(mockState.post).toHaveBeenNthCalledWith(
+			8,
+			"/auth/passkeys/login/start",
+			{
+				identifier: "alice@example.com",
+			},
+		);
+		expect(mockState.post).toHaveBeenNthCalledWith(
+			9,
+			"/auth/passkeys/login/finish",
+			{
+				flow_id: "login-flow",
+				credential: { id: "cred" },
+			},
+		);
 		expect(mockState.get).toHaveBeenNthCalledWith(1, "/auth/me");
 		expect(mockState.get).toHaveBeenNthCalledWith(2, "/auth/me", {
 			params: { fields: "quota" },
@@ -129,11 +173,11 @@ describe("authService", () => {
 		expect(mockState.patch).toHaveBeenNthCalledWith(2, "/auth/profile", {
 			display_name: "Alice",
 		});
-		expect(mockState.post).toHaveBeenNthCalledWith(8, "/auth/email/change", {
+		expect(mockState.post).toHaveBeenNthCalledWith(10, "/auth/email/change", {
 			new_email: "alice+next@example.com",
 		});
 		expect(mockState.post).toHaveBeenNthCalledWith(
-			9,
+			11,
 			"/auth/email/change/resend",
 		);
 		expect(mockState.put).toHaveBeenNthCalledWith(
@@ -144,12 +188,31 @@ describe("authService", () => {
 			},
 		);
 		expect(mockState.get).toHaveBeenNthCalledWith(3, "/auth/sessions");
+		expect(mockState.get).toHaveBeenNthCalledWith(4, "/auth/passkeys");
+		expect(mockState.post).toHaveBeenNthCalledWith(
+			12,
+			"/auth/passkeys/register/start",
+			{ name: "Laptop" },
+		);
+		expect(mockState.post).toHaveBeenNthCalledWith(
+			13,
+			"/auth/passkeys/register/finish",
+			{
+				flow_id: "register-flow",
+				credential: { id: "cred" },
+				name: "Laptop",
+			},
+		);
+		expect(mockState.patch).toHaveBeenNthCalledWith(3, "/auth/passkeys/1", {
+			name: "Phone",
+		});
+		expect(mockState.delete).toHaveBeenNthCalledWith(1, "/auth/passkeys/1");
 		expect(mockState.delete).toHaveBeenNthCalledWith(
-			1,
+			2,
 			"/auth/sessions/session-1",
 		);
 		expect(mockState.delete).toHaveBeenNthCalledWith(
-			2,
+			3,
 			"/auth/sessions/others",
 		);
 	});
