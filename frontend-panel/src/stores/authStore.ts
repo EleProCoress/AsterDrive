@@ -366,8 +366,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 					? (getExpiresAtFromUser(user) ??
 						get().expiresAt ??
 						getStoredExpiresAt())
-					: (get().expiresAt ??
-						getExpiresAtFromUser(user) ??
+					: (getExpiresAtFromUser(user) ??
+						get().expiresAt ??
 						getStoredExpiresAt());
 				setCachedUser(user);
 				if (expiresAt !== null) {

@@ -189,7 +189,14 @@ pub(super) async fn recursive_purge_folder_forest_in_resource_scope(
         "purging folder forest permanently"
     );
     let root_folders = folder_repo::find_by_ids(&state.db, folder_ids).await?;
-    let parent_ids: Vec<Option<i64>> = root_folders.iter().map(|folder| folder.parent_id).collect();
+    let root_parent_ids: HashMap<i64, Option<i64>> = root_folders
+        .iter()
+        .map(|folder| (folder.id, folder.parent_id))
+        .collect();
+    let parent_ids: Vec<Option<i64>> = folder_ids
+        .iter()
+        .map(|folder_id| root_parent_ids.get(folder_id).copied().flatten())
+        .collect();
     let (all_files, all_folder_ids) =
         folder_service::collect_folder_forest_in_resource_scope(&state.db, scope, folder_ids, true)
             .await?;

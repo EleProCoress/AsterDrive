@@ -44,6 +44,8 @@ pub struct TeamMemberPageFilters<'a> {
     pub sort_order: SortOrder,
 }
 
+pub type UserTeamMembershipOrder = (team_member::Column, Order);
+
 fn team_member_keyword_like_condition(keyword: &str) -> Condition {
     let mut condition = Condition::any()
         .add(lower_like_condition(
@@ -194,7 +196,7 @@ pub async fn list_by_user_with_team<C: ConnectionTrait>(
     db: &C,
     user_id: i64,
 ) -> Result<Vec<(team_member::Model, team::Model)>> {
-    list_by_user_with_team_filtered(db, user_id, None, None, 0).await
+    list_by_user_with_team_filtered(db, user_id, None, None, None, None).await
 }
 
 pub async fn list_by_user_with_team_filtered<C: ConnectionTrait>(
@@ -202,16 +204,18 @@ pub async fn list_by_user_with_team_filtered<C: ConnectionTrait>(
     user_id: i64,
     keyword: Option<&str>,
     limit: Option<u64>,
-    offset: u64,
+    offset: Option<u64>,
+    order: Option<UserTeamMembershipOrder>,
 ) -> Result<Vec<(team_member::Model, team::Model)>> {
-    list_by_user_with_team_for_archived_state(db, user_id, false, keyword, limit, offset).await
+    list_by_user_with_team_for_archived_state(db, user_id, false, keyword, limit, offset, order)
+        .await
 }
 
 pub async fn list_by_user_with_archived_team<C: ConnectionTrait>(
     db: &C,
     user_id: i64,
 ) -> Result<Vec<(team_member::Model, team::Model)>> {
-    list_by_user_with_archived_team_filtered(db, user_id, None, None, 0).await
+    list_by_user_with_archived_team_filtered(db, user_id, None, None, None, None).await
 }
 
 pub async fn list_by_user_with_archived_team_filtered<C: ConnectionTrait>(
@@ -219,9 +223,11 @@ pub async fn list_by_user_with_archived_team_filtered<C: ConnectionTrait>(
     user_id: i64,
     keyword: Option<&str>,
     limit: Option<u64>,
-    offset: u64,
+    offset: Option<u64>,
+    order: Option<UserTeamMembershipOrder>,
 ) -> Result<Vec<(team_member::Model, team::Model)>> {
-    list_by_user_with_team_for_archived_state(db, user_id, true, keyword, limit, offset).await
+    list_by_user_with_team_for_archived_state(db, user_id, true, keyword, limit, offset, order)
+        .await
 }
 
 async fn list_by_user_with_team_for_archived_state<C: ConnectionTrait>(
@@ -230,14 +236,18 @@ async fn list_by_user_with_team_for_archived_state<C: ConnectionTrait>(
     archived: bool,
     keyword: Option<&str>,
     limit: Option<u64>,
-    offset: u64,
+    offset: Option<u64>,
+    order: Option<UserTeamMembershipOrder>,
 ) -> Result<Vec<(team_member::Model, team::Model)>> {
     let backend = db.get_database_backend();
     let mut query = TeamMember::find()
         .inner_join(team::Entity)
         .select_also(team::Entity)
-        .filter(team_member::Column::UserId.eq(user_id))
-        .order_by_desc(team_member::Column::UpdatedAt);
+        .filter(team_member::Column::UserId.eq(user_id));
+
+    let (order_column, order_direction) =
+        order.unwrap_or((team_member::Column::UpdatedAt, Order::Desc));
+    query = query.order_by(order_column, order_direction);
 
     query = if archived {
         query.filter(team::Column::ArchivedAt.is_not_null())
@@ -249,8 +259,12 @@ async fn list_by_user_with_team_for_archived_state<C: ConnectionTrait>(
         query = query.filter(team_keyword_condition(backend, keyword));
     }
 
+    if let Some(offset) = offset {
+        query = query.offset(offset);
+    }
+
     if let Some(limit) = limit {
-        query = query.offset(offset).limit(limit);
+        query = query.limit(limit);
     }
 
     Ok(query

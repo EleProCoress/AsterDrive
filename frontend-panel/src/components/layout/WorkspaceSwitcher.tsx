@@ -1,3 +1,4 @@
+import type { ChangeEvent } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
@@ -133,7 +134,7 @@ export function WorkspaceSwitcher({
 		? (teams.find((team) => team.id === workspace.teamId) ?? null)
 		: null;
 	const visibleTeams = useMemo(
-		() => (hasTeamQuery ? (searchedTeams ?? teams) : teams),
+		() => (hasTeamQuery ? (searchedTeams ?? []) : teams),
 		[hasTeamQuery, searchedTeams, teams],
 	);
 	const currentLabel = isTeamWorkspace(workspace)
@@ -152,12 +153,21 @@ export function WorkspaceSwitcher({
 	const handleManageTeams = () => {
 		navigate("/settings/teams");
 	};
-	const isLoadingTeamOptions = loadingTeams || searchLoading;
-	const showLoadingState = loadingTeams && teams.length === 0 && !hasTeamQuery;
+	const handleTeamQueryChange = (event: ChangeEvent<HTMLInputElement>) => {
+		setTeamQuery(event.target.value);
+		setSearchedTeams(null);
+	};
+	const searchPending = hasTeamQuery && searchedTeams === null;
+	const isLoadingTeamOptions = loadingTeams || searchLoading || searchPending;
+	const showLoadingState =
+		(loadingTeams && teams.length === 0 && !hasTeamQuery) || searchPending;
 	const showEmptyTeamsState =
 		!loadingTeams && teams.length === 0 && !hasTeamQuery;
 	const showNoMatchesState =
-		hasTeamQuery && !searchLoading && visibleTeams.length === 0;
+		hasTeamQuery &&
+		!searchLoading &&
+		searchedTeams !== null &&
+		visibleTeams.length === 0;
 	const isSidebarVariant = variant === "sidebar";
 
 	return (
@@ -214,7 +224,7 @@ export function WorkspaceSwitcher({
 						/>
 						<Input
 							value={teamQuery}
-							onChange={(event) => setTeamQuery(event.target.value)}
+							onChange={handleTeamQueryChange}
 							onKeyDown={(event) => event.stopPropagation()}
 							placeholder={t("workspace_search_placeholder")}
 							aria-label={t("workspace_search_placeholder")}

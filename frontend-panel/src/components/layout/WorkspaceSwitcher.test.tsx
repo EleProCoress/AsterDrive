@@ -274,9 +274,13 @@ describe("WorkspaceSwitcher", () => {
 			{ target: { value: "des" } },
 		);
 
-		expect(screen.getByRole("button", { name: /^Core/ })).toBeInTheDocument();
-		expect(screen.getByRole("button", { name: /^Design/ })).toBeInTheDocument();
-		expect(screen.queryByText("translated:loading")).not.toBeInTheDocument();
+		expect(
+			screen.queryByRole("button", { name: /^Core/ }),
+		).not.toBeInTheDocument();
+		expect(
+			screen.queryByRole("button", { name: /^Design/ }),
+		).not.toBeInTheDocument();
+		expect(screen.getByText("translated:loading")).toBeInTheDocument();
 
 		await act(async () => {
 			await vi.advanceTimersByTimeAsync(250);
@@ -287,6 +291,9 @@ describe("WorkspaceSwitcher", () => {
 			limit: 50,
 		});
 		expect(screen.getByRole("button", { name: /^Design/ })).toBeInTheDocument();
+		expect(
+			screen.queryByRole("button", { name: /^Core/ }),
+		).not.toBeInTheDocument();
 	});
 
 	it("shows an empty search state when the backend returns no teams", async () => {

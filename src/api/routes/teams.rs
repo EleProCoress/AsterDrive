@@ -70,7 +70,7 @@ pub async fn list_teams(
         query.archived.unwrap_or(false),
         query.keyword.as_deref(),
         Some(query.limit()),
-        query.offset(),
+        Some(query.offset()),
     )
     .await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(teams)))

@@ -23,7 +23,7 @@ pub async fn list_teams(
     user_id: i64,
     archived: bool,
 ) -> Result<Vec<TeamInfo>> {
-    list_teams_filtered(state, user_id, archived, None, None, 0).await
+    list_teams_filtered(state, user_id, archived, None, None, None).await
 }
 
 pub async fn list_teams_filtered(
@@ -32,7 +32,7 @@ pub async fn list_teams_filtered(
     archived: bool,
     keyword: Option<&str>,
     limit: Option<u64>,
-    offset: u64,
+    offset: Option<u64>,
 ) -> Result<Vec<TeamInfo>> {
     let memberships =
         list_user_team_memberships(state, user_id, archived, keyword, limit, offset).await?;
@@ -63,7 +63,7 @@ pub async fn list_user_team_ids(
     archived: bool,
 ) -> Result<HashSet<i64>> {
     Ok(
-        list_user_team_memberships(state, user_id, archived, None, None, 0)
+        list_user_team_memberships(state, user_id, archived, None, None, None)
             .await?
             .into_iter()
             .map(|(membership, _)| membership.team_id)
@@ -77,18 +77,18 @@ async fn list_user_team_memberships(
     archived: bool,
     keyword: Option<&str>,
     limit: Option<u64>,
-    offset: u64,
+    offset: Option<u64>,
 ) -> Result<Vec<(team_member::Model, team::Model)>> {
     // 用户视角列团队时，本质是“先看 membership，再带 team”。
     // 这样角色信息和 archived 过滤能保持一致，不会出现“能看到 team 但没有 membership”的状态。
     if archived {
         team_member_repo::list_by_user_with_archived_team_filtered(
-            &state.db, user_id, keyword, limit, offset,
+            &state.db, user_id, keyword, limit, offset, None,
         )
         .await
     } else {
         team_member_repo::list_by_user_with_team_filtered(
-            &state.db, user_id, keyword, limit, offset,
+            &state.db, user_id, keyword, limit, offset, None,
         )
         .await
     }
