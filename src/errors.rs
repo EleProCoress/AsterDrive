@@ -104,6 +104,7 @@ define_errors! {
     FileTooLarge(         "E021", "File Too Large"),
     FileTypeNotAllowed(   "E022", "File Type Not Allowed"),
     FileUploadFailed(     "E023", "Upload Failed"),
+    PayloadTooLarge(      "E024", "Payload Too Large"),
 
     // ========== E030-E039: 存储策略错误 ==========
     StoragePolicyNotFound("E030", "Storage Policy Not Found"),
@@ -195,6 +196,8 @@ impl AsterError {
             | Self::FileTooLarge(_)
             | Self::FileTypeNotAllowed(_)
             | Self::UnsupportedDriver(_) => StatusCode::BAD_REQUEST,
+
+            Self::PayloadTooLarge(_) => StatusCode::PAYLOAD_TOO_LARGE,
 
             Self::ContactVerificationInvalid(_) => StatusCode::BAD_REQUEST,
 
@@ -368,6 +371,10 @@ pub fn precondition_failed_with_subcode(subcode: &str, message: impl Into<String
 
 pub fn file_upload_error_with_subcode(subcode: &str, message: impl Into<String>) -> AsterError {
     tag_error_with_subcode(subcode, message, AsterError::file_upload_failed)
+}
+
+pub fn payload_too_large_with_subcode(subcode: &str, message: impl Into<String>) -> AsterError {
+    tag_error_with_subcode(subcode, message, AsterError::payload_too_large)
 }
 
 pub fn chunk_upload_error_with_subcode(subcode: &str, message: impl Into<String>) -> AsterError {

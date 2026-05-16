@@ -4,10 +4,11 @@
 //! 将其隔离在 `MultipartStorageDriver` 子 trait 中，避免 `StorageDriver` trait
 //! 被 upload_id / part_number / ETag 等直传语义污染。
 
-use crate::errors::Result;
+use crate::errors::{AsterError, MapAsterErr, Result};
 use async_trait::async_trait;
 use bytes::Bytes;
 use std::time::Duration;
+use tokio::io::AsyncRead;
 
 /// Multipart upload 支持。
 ///
@@ -55,6 +56,30 @@ pub trait MultipartStorageDriver: Send + Sync {
         part_number: i32,
         data: Bytes,
     ) -> Result<String> {
+        self.upload_multipart_part(path, upload_id, part_number, &data)
+            .await
+    }
+
+    /// 服务端直接流式上传一个 multipart part，返回该 part 的 ETag。
+    async fn upload_multipart_part_reader(
+        &self,
+        path: &str,
+        upload_id: &str,
+        part_number: i32,
+        reader: Box<dyn AsyncRead + Unpin + Send + Sync>,
+        size: i64,
+    ) -> Result<String> {
+        let mut reader = reader;
+        let mut data = Vec::with_capacity(crate::utils::numbers::bytes_to_usize(
+            size,
+            "multipart part size",
+        )?);
+        tokio::io::AsyncReadExt::read_to_end(&mut reader, &mut data)
+            .await
+            .map_aster_err_ctx(
+                "read multipart part stream",
+                AsterError::storage_driver_error,
+            )?;
         self.upload_multipart_part(path, upload_id, part_number, &data)
             .await
     }

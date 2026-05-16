@@ -131,6 +131,7 @@ impl From<&AsterError> for ErrorCode {
             AsterError::FileTooLarge(_) => ErrorCode::FileTooLarge,
             AsterError::FileTypeNotAllowed(_) => ErrorCode::FileTypeNotAllowed,
             AsterError::FileUploadFailed(_) => ErrorCode::FileUploadFailed,
+            AsterError::PayloadTooLarge(_) => ErrorCode::FileTooLarge,
 
             // 存储策略
             AsterError::StoragePolicyNotFound(_) => ErrorCode::StoragePolicyNotFound,
@@ -182,6 +183,6 @@ impl From<&AsterError> for ErrorCode {
 // 穷举性静态检查：AsterError 每新增一个变体，必须同步更新 From 实现，
 // 否则 const 断言会编译失败。
 const _: () = assert!(
-    crate::errors::ASTER_ERROR_VARIANT_COUNT == 37,
+    crate::errors::ASTER_ERROR_VARIANT_COUNT == 38,
     "AsterError variant count mismatch: update the assertion or the From impl"
 );

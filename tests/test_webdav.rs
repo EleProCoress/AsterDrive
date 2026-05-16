@@ -5,6 +5,7 @@ mod common;
 
 use actix_web::test;
 use actix_web::{App, web};
+use aster_drive::config::{RateLimitConfig, WebDavConfig};
 use aster_drive::db::repository::{file_repo, property_repo};
 use aster_drive::types::EntityType;
 use base64::Engine;
@@ -70,6 +71,35 @@ fn snapshot_dir_tree(
     Ok(entries)
 }
 
+async fn setup_with_custom_webdav_config(
+    webdav_config: WebDavConfig,
+) -> impl actix_web::dev::Service<
+    actix_http::Request,
+    Response = actix_web::dev::ServiceResponse,
+    Error = actix_web::Error,
+> {
+    let state = common::setup().await;
+    let db = state.db.clone();
+    let rl = RateLimitConfig::default();
+
+    test::init_service(
+        App::new()
+            .wrap(aster_drive::api::middleware::security_headers::default_headers())
+            .app_data(web::PayloadConfig::new(1024 * 1024))
+            .app_data(web::JsonConfig::default().limit(1024 * 1024))
+            .app_data(web::Data::new(state))
+            .configure(move |cfg| {
+                aster_drive::webdav::configure(cfg, &webdav_config, &db);
+                cfg.service(
+                    web::scope("/api/v1")
+                        .service(aster_drive::api::routes::auth::routes(&rl))
+                        .service(aster_drive::api::routes::webdav_accounts::routes(&rl)),
+                );
+            }),
+    )
+    .await
+}
+
 #[actix_web::test]
 async fn test_webdav_propfind_root() {
     let app = setup_with_webdav!();
@@ -116,6 +146,163 @@ async fn test_webdav_mkcol_and_list() {
         xml.contains("testdir"),
         "PROPFIND should list testdir: {xml}"
     );
+}
+
+#[actix_web::test]
+async fn test_webdav_propfind_rejects_xml_body_over_limit() {
+    let webdav_config = WebDavConfig {
+        xml_payload_limit: 8,
+        ..WebDavConfig::default()
+    };
+    let app = setup_with_custom_webdav_config(webdav_config).await;
+
+    let (token, _) = register_and_login!(app);
+    let auth = create_webdav_basic_auth!(app, token);
+    let req = test::TestRequest::with_uri("/webdav/")
+        .method(actix_web::http::Method::from_bytes(b"PROPFIND").unwrap())
+        .insert_header(("Authorization", auth))
+        .insert_header(("Depth", "0"))
+        .set_payload("<propfind />")
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        actix_web::http::StatusCode::PAYLOAD_TOO_LARGE
+    );
+}
+
+#[actix_web::test]
+async fn test_webdav_xml_methods_reject_body_over_limit() {
+    let webdav_config = WebDavConfig {
+        xml_payload_limit: 8,
+        ..WebDavConfig::default()
+    };
+    let app = setup_with_custom_webdav_config(webdav_config).await;
+
+    let (token, _) = register_and_login!(app);
+    let auth = create_webdav_basic_auth!(app, token);
+    let over_limit_xml = "<?xml version=\"1.0\"?><D:x xmlns:D=\"DAV:\">too-large</D:x>";
+
+    for method in ["REPORT", "PROPFIND", "PROPPATCH", "LOCK"] {
+        let req = test::TestRequest::with_uri("/webdav/")
+            .method(actix_web::http::Method::from_bytes(method.as_bytes()).unwrap())
+            .insert_header(("Authorization", auth.clone()))
+            .insert_header(("Depth", "0"))
+            .insert_header(("Content-Type", "application/xml"))
+            .set_payload(over_limit_xml)
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(
+            resp.status(),
+            actix_web::http::StatusCode::PAYLOAD_TOO_LARGE,
+            "{method} should reject XML bodies over webdav.xml_payload_limit"
+        );
+    }
+}
+
+#[actix_web::test]
+async fn test_webdav_small_xml_methods_still_reach_handlers() {
+    let webdav_config = WebDavConfig {
+        xml_payload_limit: 128,
+        ..WebDavConfig::default()
+    };
+    let app = setup_with_custom_webdav_config(webdav_config).await;
+
+    let (token, _) = register_and_login!(app);
+    let auth = create_webdav_basic_auth!(app, token);
+
+    let req = test::TestRequest::put()
+        .uri("/webdav/xml-limit-small.txt")
+        .insert_header(("Authorization", auth.clone()))
+        .insert_header(("Content-Type", "text/plain"))
+        .insert_header(("Content-Length", "5"))
+        .set_payload("hello")
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), actix_web::http::StatusCode::CREATED);
+
+    let cases = [
+        (
+            "PROPFIND",
+            "/webdav/",
+            "<D:propfind xmlns:D=\"DAV:\"/>",
+            actix_web::http::StatusCode::MULTI_STATUS,
+        ),
+        (
+            "PROPPATCH",
+            "/webdav/xml-limit-small.txt",
+            "<D:propertyupdate xmlns:D=\"DAV:\"/>",
+            actix_web::http::StatusCode::MULTI_STATUS,
+        ),
+        (
+            "REPORT",
+            "/webdav/xml-limit-small.txt",
+            "<D:version-tree xmlns:D=\"DAV:\"/>",
+            actix_web::http::StatusCode::MULTI_STATUS,
+        ),
+    ];
+
+    for (method, uri, payload, expected_status) in cases {
+        let req = test::TestRequest::with_uri(uri)
+            .method(actix_web::http::Method::from_bytes(method.as_bytes()).unwrap())
+            .insert_header(("Authorization", auth.clone()))
+            .insert_header(("Depth", "0"))
+            .insert_header(("Content-Type", "application/xml"))
+            .set_payload(payload)
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(
+            resp.status(),
+            expected_status,
+            "{method} should accept XML bodies within webdav.xml_payload_limit"
+        );
+    }
+
+    let lock_body = r#"<D:lockinfo xmlns:D="DAV:"><D:lockscope><D:exclusive/></D:lockscope><D:locktype><D:write/></D:locktype></D:lockinfo>"#;
+    let req = test::TestRequest::with_uri("/webdav/xml-limit-small.txt")
+        .method(actix_web::http::Method::from_bytes(b"LOCK").unwrap())
+        .insert_header(("Authorization", auth))
+        .insert_header(("Content-Type", "application/xml"))
+        .insert_header(("Timeout", "Second-3600"))
+        .set_payload(lock_body)
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        actix_web::http::StatusCode::OK,
+        "LOCK should accept XML bodies within webdav.xml_payload_limit"
+    );
+}
+
+#[actix_web::test]
+async fn test_webdav_put_is_not_limited_by_xml_body_limit() {
+    let webdav_config = WebDavConfig {
+        xml_payload_limit: 8,
+        ..WebDavConfig::default()
+    };
+    let app = setup_with_custom_webdav_config(webdav_config).await;
+
+    let (token, _) = register_and_login!(app);
+    let auth = create_webdav_basic_auth!(app, token);
+    let data = vec![b'p'; 32];
+    let req = test::TestRequest::put()
+        .uri("/webdav/xml-limit-put.txt")
+        .insert_header(("Authorization", auth.clone()))
+        .insert_header(("Content-Type", "application/octet-stream"))
+        .insert_header(("Content-Length", data.len().to_string()))
+        .set_payload(data.clone())
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), actix_web::http::StatusCode::CREATED);
+
+    let req = test::TestRequest::get()
+        .uri("/webdav/xml-limit-put.txt")
+        .insert_header(("Authorization", auth))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), actix_web::http::StatusCode::OK);
+    let body = test::read_body(resp).await;
+    assert_eq!(body.as_ref(), data.as_slice());
 }
 
 #[actix_web::test]

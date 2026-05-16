@@ -56,6 +56,7 @@ pub(crate) fn encode_href(path: &str) -> String {
 /// WebDAV 共享状态（单例）
 pub struct WebDavState {
     pub prefix: String,
+    pub xml_payload_limit: usize,
 }
 
 struct RequestedProp {
@@ -110,7 +111,7 @@ pub async fn webdav_handler(
 
     match req.method().as_str() {
         "OPTIONS" => handle_options(),
-        "REPORT" => match collect_payload(&mut payload).await {
+        "REPORT" => match collect_xml_payload(&mut payload, webdav.xml_payload_limit).await {
             Ok(body) => {
                 deltav::handle_report(req.uri(), &body, &state.db, &auth_result, &webdav.prefix)
                     .await
@@ -120,13 +121,13 @@ pub async fn webdav_handler(
         "VERSION-CONTROL" => {
             deltav::handle_version_control(req.uri(), &state.db, &auth_result, &webdav.prefix).await
         }
-        "PROPFIND" => match collect_payload(&mut payload).await {
+        "PROPFIND" => match collect_xml_payload(&mut payload, webdav.xml_payload_limit).await {
             Ok(body) => {
                 handle_propfind(&req, &dav_fs, lock_system.as_ref(), &webdav.prefix, &body).await
             }
             Err(resp) => resp,
         },
-        "PROPPATCH" => match collect_payload(&mut payload).await {
+        "PROPPATCH" => match collect_xml_payload(&mut payload, webdav.xml_payload_limit).await {
             Ok(body) => {
                 handle_proppatch(&req, &dav_fs, lock_system.as_ref(), &webdav.prefix, &body).await
             }
@@ -159,7 +160,7 @@ pub async fn webdav_handler(
             handle_copy_move(&req, &dav_fs, lock_system.as_ref(), &webdav.prefix, false).await
         }
         "MOVE" => handle_copy_move(&req, &dav_fs, lock_system.as_ref(), &webdav.prefix, true).await,
-        "LOCK" => match collect_payload(&mut payload).await {
+        "LOCK" => match collect_xml_payload(&mut payload, webdav.xml_payload_limit).await {
             Ok(body) => {
                 handle_lock(&req, &dav_fs, lock_system.as_ref(), &webdav.prefix, &body).await
             }
@@ -179,6 +180,28 @@ async fn collect_payload(payload: &mut web::Payload) -> Result<Vec<u8>, HttpResp
             Ok(chunk) => chunk,
             Err(_) => return Err(HttpResponse::BadRequest().body("Failed to read request body")),
         };
+        data.extend_from_slice(&chunk);
+    }
+    Ok(data)
+}
+
+async fn collect_xml_payload(
+    payload: &mut web::Payload,
+    max_len: usize,
+) -> Result<Vec<u8>, HttpResponse> {
+    let mut data = Vec::with_capacity(max_len.min(4096));
+    while let Some(chunk) = payload.next().await {
+        let chunk = match chunk {
+            Ok(chunk) => chunk,
+            Err(_) => return Err(HttpResponse::BadRequest().body("Failed to read request body")),
+        };
+        let next_len = match data.len().checked_add(chunk.len()) {
+            Some(next_len) => next_len,
+            None => return Err(HttpResponse::PayloadTooLarge().body("WebDAV XML body too large")),
+        };
+        if next_len > max_len {
+            return Err(HttpResponse::PayloadTooLarge().body("WebDAV XML body too large"));
+        }
         data.extend_from_slice(&chunk);
     }
     Ok(data)
@@ -1504,6 +1527,18 @@ pub fn configure(
         });
     let webdav_state = web::Data::new(WebDavState {
         prefix: webdav_config.prefix.clone(),
+        xml_payload_limit: u64_to_usize(
+            webdav_config.xml_payload_limit,
+            "webdav.xml_payload_limit",
+        )
+        .unwrap_or_else(|_| {
+            tracing::warn!(
+                configured = webdav_config.xml_payload_limit,
+                platform_limit = usize::MAX,
+                "webdav.xml_payload_limit exceeds platform usize range; using platform limit"
+            );
+            usize::MAX
+        }),
     });
 
     cfg.app_data(webdav_state).service(

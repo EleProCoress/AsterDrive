@@ -15,9 +15,9 @@ use crate::utils::numbers;
 
 use super::S3Driver;
 
-const STREAM_UPLOAD_BUFFER_SIZE: usize = 64 * 1024;
+pub(super) const STREAM_UPLOAD_BUFFER_SIZE: usize = 64 * 1024;
 
-struct SizedReaderBody<R> {
+pub(super) struct SizedReaderBody<R> {
     stream: ReaderStream<R>,
     remaining: u64,
     finished: bool,
@@ -27,7 +27,7 @@ impl<R> SizedReaderBody<R>
 where
     R: AsyncRead + Unpin,
 {
-    fn new(reader: R, size: u64) -> Self {
+    pub(super) fn new(reader: R, size: u64) -> Self {
         Self {
             stream: ReaderStream::with_capacity(reader, STREAM_UPLOAD_BUFFER_SIZE),
             remaining: size,

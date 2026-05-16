@@ -6,11 +6,14 @@
 
 use bytes::Bytes;
 use chrono::Utc;
+use futures::StreamExt;
+use tokio::io::AsyncWriteExt;
 
 use crate::db::repository::{upload_session_part_repo, upload_session_repo};
 use crate::entities::upload_session;
 use crate::errors::{
-    AsterError, MapAsterErr, Result, chunk_upload_error_with_subcode, validation_error_with_subcode,
+    AsterError, MapAsterErr, Result, chunk_upload_error_with_subcode,
+    payload_too_large_with_subcode, validation_error_with_subcode,
 };
 use crate::runtime::PrimaryAppState;
 use crate::services::upload_service::responses::ChunkUploadResponse;
@@ -21,6 +24,8 @@ use crate::services::upload_service::shared::{
 use crate::types::UploadSessionStatus;
 use crate::utils::numbers::{i64_to_u64, usize_to_i64};
 use crate::utils::paths;
+
+const RELAY_STREAM_PIPE_BUFFER_SIZE: usize = 64 * 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ExistingLocalChunk {
@@ -138,6 +143,209 @@ async fn write_local_chunk_temp(
     }
 
     write_result
+}
+
+fn chunk_body_read_failed() -> AsterError {
+    validation_error_with_subcode(
+        "upload.request_body_read_failed",
+        "failed to read request body",
+    )
+}
+
+fn chunk_body_size_mismatch(chunk_number: i32, expected_size: i64, actual_size: i64) -> AsterError {
+    chunk_upload_error_with_subcode(
+        "upload.chunk_size_mismatch",
+        format!("chunk {chunk_number} size mismatch: expected {expected_size}, got {actual_size}"),
+    )
+}
+
+fn chunk_body_too_large(chunk_number: i32, expected_size: i64) -> AsterError {
+    payload_too_large_with_subcode(
+        "upload.chunk_too_large",
+        format!("chunk {chunk_number} exceeds expected size {expected_size}"),
+    )
+}
+
+fn chunk_body_size_overflow() -> AsterError {
+    payload_too_large_with_subcode(
+        "upload.chunk_size_overflow",
+        "chunk body size exceeds supported range",
+    )
+}
+
+fn add_chunk_body_len(current: i64, chunk_len: usize) -> Result<i64> {
+    current
+        .checked_add(usize_to_i64(chunk_len, "chunk body part length")?)
+        .ok_or_else(chunk_body_size_overflow)
+}
+
+fn ensure_chunk_body_not_too_large(
+    actual_size: i64,
+    expected_size: i64,
+    chunk_number: i32,
+) -> Result<()> {
+    if actual_size > expected_size {
+        return Err(chunk_body_too_large(chunk_number, expected_size));
+    }
+    Ok(())
+}
+
+fn ensure_chunk_body_exact_size(
+    actual_size: i64,
+    expected_size: i64,
+    chunk_number: i32,
+) -> Result<()> {
+    if actual_size != expected_size {
+        return Err(chunk_body_size_mismatch(
+            chunk_number,
+            expected_size,
+            actual_size,
+        ));
+    }
+    Ok(())
+}
+
+async fn drain_chunk_payload_exact_size(
+    payload: &mut actix_web::web::Payload,
+    expected_size: i64,
+    chunk_number: i32,
+) -> Result<()> {
+    let mut size = 0i64;
+    while let Some(chunk) = payload.next().await {
+        let chunk = chunk.map_aster_err_with(chunk_body_read_failed)?;
+        size = add_chunk_body_len(size, chunk.len())?;
+        ensure_chunk_body_not_too_large(size, expected_size, chunk_number)?;
+    }
+    ensure_chunk_body_exact_size(size, expected_size, chunk_number)
+}
+
+async fn write_local_chunk_temp_stream(
+    temp_path: &str,
+    payload: &mut actix_web::web::Payload,
+    expected_size: i64,
+    upload_id: &str,
+    chunk_number: i32,
+) -> Result<()> {
+    use tokio::fs::OpenOptions;
+    use tokio::io::BufWriter;
+
+    let write_result = async {
+        let file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(temp_path)
+            .await
+            .map_err(|error| {
+                chunk_upload_error_with_subcode(
+                    "upload.chunk_persist_failed",
+                    format!("create temp chunk file: {error}"),
+                )
+            })?;
+        let mut file = BufWriter::new(file);
+        let mut size = 0i64;
+
+        while let Some(chunk) = payload.next().await {
+            let chunk = chunk.map_aster_err_with(chunk_body_read_failed)?;
+            size = add_chunk_body_len(size, chunk.len())?;
+            ensure_chunk_body_not_too_large(size, expected_size, chunk_number)?;
+            file.write_all(&chunk)
+                .await
+                .map_aster_err_ctx("write chunk", |message| {
+                    chunk_upload_error_with_subcode("upload.chunk_persist_failed", message)
+                })?;
+        }
+
+        ensure_chunk_body_exact_size(size, expected_size, chunk_number)?;
+        file.flush()
+            .await
+            .map_aster_err_ctx("flush chunk", |message| {
+                chunk_upload_error_with_subcode("upload.chunk_persist_failed", message)
+            })?;
+        Ok::<(), AsterError>(())
+    }
+    .await;
+
+    if write_result.is_err() {
+        remove_local_chunk_file(temp_path, upload_id, chunk_number, "temp chunk write error").await;
+    }
+
+    write_result
+}
+
+async fn pipe_payload_to_writer(
+    mut payload: actix_web::web::Payload,
+    mut writer: tokio::io::DuplexStream,
+    expected_size: i64,
+    chunk_number: i32,
+) -> Result<()> {
+    let write_result = async {
+        let mut size = 0i64;
+        while let Some(chunk) = payload.next().await {
+            let chunk = chunk.map_aster_err_with(chunk_body_read_failed)?;
+            size = add_chunk_body_len(size, chunk.len())?;
+            ensure_chunk_body_not_too_large(size, expected_size, chunk_number)?;
+            writer
+                .write_all(&chunk)
+                .await
+                .map_aster_err_ctx("stream relay chunk", |message| {
+                    chunk_upload_error_with_subcode("upload.chunk_relay_failed", message)
+                })?;
+        }
+        ensure_chunk_body_exact_size(size, expected_size, chunk_number)?;
+        writer
+            .shutdown()
+            .await
+            .map_aster_err_ctx("finish relay chunk stream", |message| {
+                chunk_upload_error_with_subcode("upload.chunk_relay_failed", message)
+            })?;
+        Ok::<(), AsterError>(())
+    }
+    .await;
+
+    drop(writer);
+    write_result
+}
+
+async fn upload_multipart_part_payload(
+    multipart: &(dyn crate::storage::MultipartStorageDriver + Send + Sync),
+    temp_key: &str,
+    multipart_id: &str,
+    s3_part_number: i32,
+    payload: actix_web::web::Payload,
+    expected_size: i64,
+    chunk_number: i32,
+) -> Result<String> {
+    let (reader, writer) = tokio::io::duplex(RELAY_STREAM_PIPE_BUFFER_SIZE);
+    let writer_future = pipe_payload_to_writer(payload, writer, expected_size, chunk_number);
+    let upload_future = multipart.upload_multipart_part_reader(
+        temp_key,
+        multipart_id,
+        s3_part_number,
+        Box::new(reader),
+        expected_size,
+    );
+    let (upload_result, writer_result) = tokio::join!(upload_future, writer_future);
+
+    match (upload_result, writer_result) {
+        (Ok(etag), Ok(())) => Ok(etag),
+        (Err(error), Ok(())) => Err(error),
+        (Ok(_), Err(error)) => Err(error),
+        (Err(upload_error), Err(writer_error)) => {
+            if matches!(
+                writer_error.api_error_subcode(),
+                Some(
+                    "upload.chunk_too_large"
+                        | "upload.chunk_size_mismatch"
+                        | "upload.chunk_size_overflow"
+                        | "upload.request_body_read_failed"
+                )
+            ) {
+                Err(writer_error)
+            } else {
+                Err(upload_error)
+            }
+        }
+    }
 }
 
 async fn publish_local_chunk_temp(
@@ -405,6 +613,220 @@ async fn upload_chunk_impl(
     })
 }
 
+async fn upload_chunk_payload_impl(
+    state: &PrimaryAppState,
+    session: upload_session::Model,
+    chunk_number: i32,
+    mut payload: actix_web::web::Payload,
+) -> Result<ChunkUploadResponse> {
+    let db = &state.db;
+    let upload_id = session.id.as_str();
+    tracing::debug!(
+        upload_id,
+        chunk_number,
+        status = ?session.status,
+        total_chunks = session.total_chunks,
+        "handling upload chunk stream"
+    );
+    if session.status != UploadSessionStatus::Uploading {
+        return Err(upload_session_chunk_unavailable_error(&session));
+    }
+    if session.expires_at < Utc::now() {
+        return Err(AsterError::upload_session_expired("session expired"));
+    }
+    if chunk_number < 0 || chunk_number >= session.total_chunks {
+        return Err(validation_error_with_subcode(
+            "upload.chunk_number_out_of_range",
+            format!(
+                "chunk_number {} out of range [0, {})",
+                chunk_number, session.total_chunks
+            ),
+        ));
+    }
+
+    let expected_size = expected_chunk_size_for_upload(&session, chunk_number)?;
+
+    if let (Some(temp_key), Some(multipart_id)) = (
+        session.s3_temp_key.as_deref(),
+        session.s3_multipart_id.as_deref(),
+    ) {
+        let s3_part_number = chunk_number + 1;
+
+        if !upload_session_part_repo::try_claim_part(db, upload_id, s3_part_number).await? {
+            drain_chunk_payload_exact_size(&mut payload, expected_size, chunk_number).await?;
+            let updated = upload_session_repo::find_by_id(db, upload_id).await?;
+            tracing::debug!(
+                upload_id,
+                chunk_number,
+                part_number = s3_part_number,
+                received_count = updated.received_count,
+                total_chunks = updated.total_chunks,
+                "skipping already claimed relay multipart part"
+            );
+            return Ok(ChunkUploadResponse {
+                received_count: updated.received_count,
+                total_chunks: updated.total_chunks,
+            });
+        }
+
+        let policy = state.policy_snapshot.get_policy_or_err(session.policy_id)?;
+        let multipart = state.driver_registry.get_multipart_driver(&policy)?;
+        let etag = match upload_multipart_part_payload(
+            multipart.as_ref(),
+            temp_key,
+            multipart_id,
+            s3_part_number,
+            payload,
+            expected_size,
+            chunk_number,
+        )
+        .await
+        {
+            Ok(etag) => etag,
+            Err(err) => {
+                if let Err(cleanup_err) = upload_session_part_repo::delete_by_upload_and_part(
+                    db,
+                    upload_id,
+                    s3_part_number,
+                )
+                .await
+                {
+                    tracing::warn!(
+                        upload_id,
+                        part_number = s3_part_number,
+                        "failed to release relay multipart part claim after upload error: {cleanup_err}"
+                    );
+                }
+                return Err(err);
+            }
+        };
+
+        let txn = crate::db::transaction::begin(db).await?;
+        let finalize_result = async {
+            upload_session_part_repo::upsert_part(
+                &txn,
+                upload_id,
+                s3_part_number,
+                &etag,
+                expected_size,
+            )
+            .await?;
+            increment_session_received_count(&txn, upload_id).await?;
+            crate::db::transaction::commit(txn).await?;
+            Ok::<(), AsterError>(())
+        }
+        .await;
+
+        if let Err(err) = finalize_result {
+            if let Err(cleanup_err) =
+                upload_session_part_repo::delete_by_upload_and_part(db, upload_id, s3_part_number)
+                    .await
+            {
+                tracing::warn!(
+                    upload_id,
+                    part_number = s3_part_number,
+                    "failed to release relay multipart part claim after DB finalize error: {cleanup_err}"
+                );
+            }
+            return Err(err);
+        }
+
+        let updated = upload_session_repo::find_by_id(db, upload_id).await?;
+        tracing::debug!(
+            upload_id,
+            chunk_number,
+            part_number = s3_part_number,
+            received_count = updated.received_count,
+            total_chunks = updated.total_chunks,
+            "stored relay multipart chunk"
+        );
+        return Ok(ChunkUploadResponse {
+            received_count: updated.received_count,
+            total_chunks: updated.total_chunks,
+        });
+    }
+
+    let chunk_path = paths::upload_chunk_path(
+        &state.config.server.upload_temp_dir,
+        upload_id,
+        chunk_number,
+    );
+
+    if inspect_existing_local_chunk(&chunk_path, expected_size, upload_id, chunk_number).await?
+        == ExistingLocalChunk::Complete
+    {
+        drain_chunk_payload_exact_size(&mut payload, expected_size, chunk_number).await?;
+        let updated = upload_session_repo::find_by_id(db, upload_id).await?;
+        tracing::debug!(
+            upload_id,
+            chunk_number,
+            received_count = updated.received_count,
+            total_chunks = updated.total_chunks,
+            "skipping already uploaded chunk"
+        );
+        return Ok(ChunkUploadResponse {
+            received_count: updated.received_count,
+            total_chunks: updated.total_chunks,
+        });
+    }
+
+    let chunk_dir = paths::upload_temp_dir(&state.config.server.upload_temp_dir, upload_id);
+    let temp_chunk_path = paths::temp_file_path(
+        &chunk_dir,
+        &format!(
+            ".chunk_{chunk_number}.{}.partial",
+            crate::utils::id::new_uuid()
+        ),
+    );
+
+    write_local_chunk_temp_stream(
+        &temp_chunk_path,
+        &mut payload,
+        expected_size,
+        upload_id,
+        chunk_number,
+    )
+    .await?;
+
+    if !publish_local_chunk_temp(
+        &temp_chunk_path,
+        &chunk_path,
+        expected_size,
+        upload_id,
+        chunk_number,
+    )
+    .await?
+    {
+        let updated = upload_session_repo::find_by_id(db, upload_id).await?;
+        tracing::debug!(
+            upload_id,
+            chunk_number,
+            received_count = updated.received_count,
+            total_chunks = updated.total_chunks,
+            "skipping already uploaded chunk"
+        );
+        return Ok(ChunkUploadResponse {
+            received_count: updated.received_count,
+            total_chunks: updated.total_chunks,
+        });
+    }
+
+    increment_session_received_count(db, upload_id).await?;
+
+    let updated = upload_session_repo::find_by_id(db, upload_id).await?;
+    tracing::debug!(
+        upload_id,
+        chunk_number,
+        received_count = updated.received_count,
+        total_chunks = updated.total_chunks,
+        "stored upload chunk"
+    );
+    Ok(ChunkUploadResponse {
+        received_count: updated.received_count,
+        total_chunks: updated.total_chunks,
+    })
+}
+
 /// 上传单个分片
 pub async fn upload_chunk(
     state: &PrimaryAppState,
@@ -429,6 +851,17 @@ pub async fn upload_chunk_bytes(
     upload_chunk_impl(state, session, chunk_number, data).await
 }
 
+pub async fn upload_chunk_payload(
+    state: &PrimaryAppState,
+    upload_id: &str,
+    chunk_number: i32,
+    user_id: i64,
+    payload: actix_web::web::Payload,
+) -> Result<ChunkUploadResponse> {
+    let session = load_upload_session(state, personal_scope(user_id), upload_id).await?;
+    upload_chunk_payload_impl(state, session, chunk_number, payload).await
+}
+
 pub async fn upload_chunk_for_team(
     state: &PrimaryAppState,
     team_id: i64,
@@ -451,4 +884,16 @@ pub async fn upload_chunk_bytes_for_team(
 ) -> Result<ChunkUploadResponse> {
     let session = load_upload_session(state, team_scope(team_id, user_id), upload_id).await?;
     upload_chunk_impl(state, session, chunk_number, data).await
+}
+
+pub async fn upload_chunk_payload_for_team(
+    state: &PrimaryAppState,
+    team_id: i64,
+    upload_id: &str,
+    chunk_number: i32,
+    user_id: i64,
+    payload: actix_web::web::Payload,
+) -> Result<ChunkUploadResponse> {
+    let session = load_upload_session(state, team_scope(team_id, user_id), upload_id).await?;
+    upload_chunk_payload_impl(state, session, chunk_number, payload).await
 }
