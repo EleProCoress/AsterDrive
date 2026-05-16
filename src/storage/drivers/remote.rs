@@ -9,9 +9,42 @@ use crate::storage::multipart::MultipartStorageDriver;
 use crate::storage::object_key;
 use crate::storage::remote_protocol::RemoteStorageClient;
 use async_trait::async_trait;
+use sha2::{Digest, Sha256};
 use std::path::Path;
+use std::pin::Pin;
+use std::sync::{Arc, Mutex};
+use std::task::{Context, Poll};
 use std::time::Duration;
-use tokio::io::AsyncRead;
+use tokio::io::{AsyncRead, ReadBuf};
+
+struct HashingReader {
+    inner: Box<dyn AsyncRead + Unpin + Send + Sync>,
+    hasher: Arc<Mutex<Sha256>>,
+}
+
+impl AsyncRead for HashingReader {
+    fn poll_read(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut ReadBuf<'_>,
+    ) -> Poll<std::io::Result<()>> {
+        let before = buf.filled().len();
+        match Pin::new(&mut self.inner).poll_read(cx, buf) {
+            Poll::Ready(Ok(())) => {
+                let filled = buf.filled();
+                if filled.len() > before {
+                    let mut hasher = self
+                        .hasher
+                        .lock()
+                        .unwrap_or_else(|error| error.into_inner());
+                    hasher.update(&filled[before..]);
+                }
+                Poll::Ready(Ok(()))
+            }
+            other => other,
+        }
+    }
+}
 
 pub struct RemoteDriver {
     client: RemoteStorageClient,
@@ -84,6 +117,10 @@ impl StorageDriver for RemoteDriver {
         self.client
             .get_stream(&self.object_key(path), Some(offset), length)
             .await
+    }
+
+    fn supports_efficient_range(&self) -> bool {
+        true
     }
 
     async fn delete(&self, path: &str) -> Result<()> {
@@ -262,6 +299,37 @@ impl MultipartStorageDriver for RemoteDriver {
         let mut hasher = Sha256::new();
         hasher.update(data);
         Ok(format!("\"{}\"", hex::encode(hasher.finalize())))
+    }
+
+    async fn upload_multipart_part_reader(
+        &self,
+        _path: &str,
+        upload_id: &str,
+        part_number: i32,
+        reader: Box<dyn tokio::io::AsyncRead + Unpin + Send + Sync>,
+        size: i64,
+    ) -> Result<String> {
+        let part_key = Self::multipart_part_key(upload_id, part_number)?;
+        let size = u64::try_from(size).map_err(|_| {
+            storage_driver_error(
+                StorageErrorKind::Precondition,
+                "remote multipart part size cannot be negative",
+            )
+        })?;
+        let hasher = Arc::new(Mutex::new(Sha256::new()));
+        let hashing_reader = HashingReader {
+            inner: reader,
+            hasher: hasher.clone(),
+        };
+        self.client
+            .put_reader(&self.object_key(&part_key), Box::new(hashing_reader), size)
+            .await?;
+
+        let digest = {
+            let hasher = hasher.lock().unwrap_or_else(|error| error.into_inner());
+            hasher.clone().finalize()
+        };
+        Ok(format!("\"{}\"", hex::encode(digest)))
     }
 
     async fn abort_multipart_upload(&self, _path: &str, upload_id: &str) -> Result<()> {

@@ -3,8 +3,9 @@
 
 [advisories]
 ignore = [
-    # rsa 0.9.x Marvin Attack (timing sidechannel) — 传递依赖 (sqlx-mysql, jsonwebtoken)
-    # 本项目 JWT 使用 HMAC 签名，不做 RSA PKCS#1 v1.5 解密，无攻击面
+    # rsa 0.9.x Marvin Attack (timing sidechannel)
+    # 本项目运行时只用 rsa 做 WOPI proof-key 公钥验签；JWT 使用 HMAC 签名
+    # 不暴露 RSA 私钥解密/签名 oracle，无 Marvin Attack 私钥恢复攻击面
     # 上游状态：rsa crate 尚无修复版本
     "RUSTSEC-2023-0071",
 
@@ -13,6 +14,7 @@ ignore = [
     "RUSTSEC-2024-0436",
 
     # rand 0.8.x unsound with custom logger — 传递依赖 (sqlx, actix-multipart, jsonwebtoken)
-    # 本项目直接依赖 rand 0.10，0.8 为上游间接引入；触发条件为自定义 logger 内调用 rand::rng()，不适用
+    # 当前锁文件使用已修复的 rand 0.8.6；保留 ignore 是为了兼容旧 advisory DB 对版本范围的误报
+    # 触发条件为自定义 logger 内调用 rand::rng()/thread_rng()，本项目不适用
     "RUSTSEC-2026-0097",
 ]

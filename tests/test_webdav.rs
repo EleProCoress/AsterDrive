@@ -5,6 +5,7 @@ mod common;
 
 use actix_web::test;
 use actix_web::{App, web};
+use aster_drive::config::{RateLimitConfig, WebDavConfig};
 use aster_drive::db::repository::{file_repo, property_repo};
 use aster_drive::types::EntityType;
 use base64::Engine;
@@ -70,6 +71,35 @@ fn snapshot_dir_tree(
     Ok(entries)
 }
 
+async fn setup_with_custom_webdav_config(
+    webdav_config: WebDavConfig,
+) -> impl actix_web::dev::Service<
+    actix_http::Request,
+    Response = actix_web::dev::ServiceResponse,
+    Error = actix_web::Error,
+> {
+    let state = common::setup().await;
+    let db = state.db.clone();
+    let rl = RateLimitConfig::default();
+
+    test::init_service(
+        App::new()
+            .wrap(aster_drive::api::middleware::security_headers::default_headers())
+            .app_data(web::PayloadConfig::new(1024 * 1024))
+            .app_data(web::JsonConfig::default().limit(1024 * 1024))
+            .app_data(web::Data::new(state))
+            .configure(move |cfg| {
+                aster_drive::webdav::configure(cfg, &webdav_config, &db);
+                cfg.service(
+                    web::scope("/api/v1")
+                        .service(aster_drive::api::routes::auth::routes(&rl))
+                        .service(aster_drive::api::routes::webdav_accounts::routes(&rl)),
+                );
+            }),
+    )
+    .await
+}
+
 #[actix_web::test]
 async fn test_webdav_propfind_root() {
     let app = setup_with_webdav!();
@@ -116,6 +146,163 @@ async fn test_webdav_mkcol_and_list() {
         xml.contains("testdir"),
         "PROPFIND should list testdir: {xml}"
     );
+}
+
+#[actix_web::test]
+async fn test_webdav_propfind_rejects_xml_body_over_limit() {
+    let webdav_config = WebDavConfig {
+        xml_payload_limit: 8,
+        ..WebDavConfig::default()
+    };
+    let app = setup_with_custom_webdav_config(webdav_config).await;
+
+    let (token, _) = register_and_login!(app);
+    let auth = create_webdav_basic_auth!(app, token);
+    let req = test::TestRequest::with_uri("/webdav/")
+        .method(actix_web::http::Method::from_bytes(b"PROPFIND").unwrap())
+        .insert_header(("Authorization", auth))
+        .insert_header(("Depth", "0"))
+        .set_payload("<propfind />")
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        actix_web::http::StatusCode::PAYLOAD_TOO_LARGE
+    );
+}
+
+#[actix_web::test]
+async fn test_webdav_xml_methods_reject_body_over_limit() {
+    let webdav_config = WebDavConfig {
+        xml_payload_limit: 8,
+        ..WebDavConfig::default()
+    };
+    let app = setup_with_custom_webdav_config(webdav_config).await;
+
+    let (token, _) = register_and_login!(app);
+    let auth = create_webdav_basic_auth!(app, token);
+    let over_limit_xml = "<?xml version=\"1.0\"?><D:x xmlns:D=\"DAV:\">too-large</D:x>";
+
+    for method in ["REPORT", "PROPFIND", "PROPPATCH", "LOCK"] {
+        let req = test::TestRequest::with_uri("/webdav/")
+            .method(actix_web::http::Method::from_bytes(method.as_bytes()).unwrap())
+            .insert_header(("Authorization", auth.clone()))
+            .insert_header(("Depth", "0"))
+            .insert_header(("Content-Type", "application/xml"))
+            .set_payload(over_limit_xml)
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(
+            resp.status(),
+            actix_web::http::StatusCode::PAYLOAD_TOO_LARGE,
+            "{method} should reject XML bodies over webdav.xml_payload_limit"
+        );
+    }
+}
+
+#[actix_web::test]
+async fn test_webdav_small_xml_methods_still_reach_handlers() {
+    let webdav_config = WebDavConfig {
+        xml_payload_limit: 128,
+        ..WebDavConfig::default()
+    };
+    let app = setup_with_custom_webdav_config(webdav_config).await;
+
+    let (token, _) = register_and_login!(app);
+    let auth = create_webdav_basic_auth!(app, token);
+
+    let req = test::TestRequest::put()
+        .uri("/webdav/xml-limit-small.txt")
+        .insert_header(("Authorization", auth.clone()))
+        .insert_header(("Content-Type", "text/plain"))
+        .insert_header(("Content-Length", "5"))
+        .set_payload("hello")
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), actix_web::http::StatusCode::CREATED);
+
+    let cases = [
+        (
+            "PROPFIND",
+            "/webdav/",
+            "<D:propfind xmlns:D=\"DAV:\"/>",
+            actix_web::http::StatusCode::MULTI_STATUS,
+        ),
+        (
+            "PROPPATCH",
+            "/webdav/xml-limit-small.txt",
+            "<D:propertyupdate xmlns:D=\"DAV:\"/>",
+            actix_web::http::StatusCode::MULTI_STATUS,
+        ),
+        (
+            "REPORT",
+            "/webdav/xml-limit-small.txt",
+            "<D:version-tree xmlns:D=\"DAV:\"/>",
+            actix_web::http::StatusCode::MULTI_STATUS,
+        ),
+    ];
+
+    for (method, uri, payload, expected_status) in cases {
+        let req = test::TestRequest::with_uri(uri)
+            .method(actix_web::http::Method::from_bytes(method.as_bytes()).unwrap())
+            .insert_header(("Authorization", auth.clone()))
+            .insert_header(("Depth", "0"))
+            .insert_header(("Content-Type", "application/xml"))
+            .set_payload(payload)
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(
+            resp.status(),
+            expected_status,
+            "{method} should accept XML bodies within webdav.xml_payload_limit"
+        );
+    }
+
+    let lock_body = r#"<D:lockinfo xmlns:D="DAV:"><D:lockscope><D:exclusive/></D:lockscope><D:locktype><D:write/></D:locktype></D:lockinfo>"#;
+    let req = test::TestRequest::with_uri("/webdav/xml-limit-small.txt")
+        .method(actix_web::http::Method::from_bytes(b"LOCK").unwrap())
+        .insert_header(("Authorization", auth))
+        .insert_header(("Content-Type", "application/xml"))
+        .insert_header(("Timeout", "Second-3600"))
+        .set_payload(lock_body)
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        actix_web::http::StatusCode::OK,
+        "LOCK should accept XML bodies within webdav.xml_payload_limit"
+    );
+}
+
+#[actix_web::test]
+async fn test_webdav_put_is_not_limited_by_xml_body_limit() {
+    let webdav_config = WebDavConfig {
+        xml_payload_limit: 8,
+        ..WebDavConfig::default()
+    };
+    let app = setup_with_custom_webdav_config(webdav_config).await;
+
+    let (token, _) = register_and_login!(app);
+    let auth = create_webdav_basic_auth!(app, token);
+    let data = vec![b'p'; 32];
+    let req = test::TestRequest::put()
+        .uri("/webdav/xml-limit-put.txt")
+        .insert_header(("Authorization", auth.clone()))
+        .insert_header(("Content-Type", "application/octet-stream"))
+        .insert_header(("Content-Length", data.len().to_string()))
+        .set_payload(data.clone())
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), actix_web::http::StatusCode::CREATED);
+
+    let req = test::TestRequest::get()
+        .uri("/webdav/xml-limit-put.txt")
+        .insert_header(("Authorization", auth))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), actix_web::http::StatusCode::OK);
+    let body = test::read_body(resp).await;
+    assert_eq!(body.as_ref(), data.as_slice());
 }
 
 #[actix_web::test]
@@ -675,10 +862,107 @@ async fn test_webdav_move_overwrites_existing_destination() {
 }
 
 #[actix_web::test]
-async fn test_webdav_propfind_hides_hidden_artifacts() {
+async fn test_webdav_blocks_system_file_write_targets_by_default() {
     let app = setup_with_webdav!();
     let (token, _) = register_and_login!(app);
     let auth = create_webdav_basic_auth!(app, token);
+
+    for path in [
+        "/webdav/.DS_Store",
+        "/webdav/Thumbs.db",
+        "/webdav/desktop.ini",
+    ] {
+        let req = test::TestRequest::put()
+            .uri(path)
+            .insert_header(("Authorization", auth.clone()))
+            .set_payload("artifact")
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), 403, "PUT {path} should be blocked");
+
+        let req = test::TestRequest::get()
+            .uri(path)
+            .insert_header(("Authorization", auth.clone()))
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(
+            resp.status(),
+            404,
+            "blocked PUT {path} should not create a file"
+        );
+    }
+
+    for path in ["/webdav/.Spotlight-V100/", "/webdav/$RECYCLE.BIN/"] {
+        let req = test::TestRequest::with_uri(path)
+            .method(actix_web::http::Method::from_bytes(b"MKCOL").unwrap())
+            .insert_header(("Authorization", auth.clone()))
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), 403, "MKCOL {path} should be blocked");
+    }
+
+    let req = test::TestRequest::put()
+        .uri("/webdav/source-system-block.txt")
+        .insert_header(("Authorization", auth.clone()))
+        .set_payload("source")
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert!(resp.status() == 201 || resp.status() == 204);
+
+    for (method, destination) in [
+        ("COPY", "/webdav/Thumbs.db"),
+        ("MOVE", "/webdav/desktop.ini"),
+    ] {
+        let req = test::TestRequest::with_uri("/webdav/source-system-block.txt")
+            .method(actix_web::http::Method::from_bytes(method.as_bytes()).unwrap())
+            .insert_header(("Authorization", auth.clone()))
+            .insert_header(("Destination", destination))
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(
+            resp.status(),
+            403,
+            "{method} to {destination} should be blocked"
+        );
+
+        let req = test::TestRequest::get()
+            .uri(destination)
+            .insert_header(("Authorization", auth.clone()))
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(
+            resp.status(),
+            404,
+            "blocked {method} should not create destination {destination}"
+        );
+    }
+
+    let req = test::TestRequest::get()
+        .uri("/webdav/source-system-block.txt")
+        .insert_header(("Authorization", auth.clone()))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        200,
+        "blocked MOVE should leave source intact"
+    );
+}
+
+#[actix_web::test]
+async fn test_webdav_system_file_names_are_visible_when_blocking_is_disabled() {
+    let app = setup_with_webdav!();
+    let (token, _) = register_and_login!(app);
+    let auth = create_webdav_basic_auth!(app, token);
+
+    let req = test::TestRequest::put()
+        .uri("/api/v1/admin/config/webdav_block_system_files_enabled")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .set_json(serde_json::json!({ "value": "false" }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
 
     for path in [
         "/webdav/._hidden",
@@ -691,7 +975,10 @@ async fn test_webdav_propfind_hides_hidden_artifacts() {
             .set_payload("artifact")
             .to_request();
         let resp = test::call_service(&app, req).await;
-        assert!(resp.status() == 201 || resp.status() == 204);
+        assert!(
+            resp.status() == 201 || resp.status() == 204,
+            "PUT {path} should be allowed after disabling blocking"
+        );
     }
 
     let req = test::TestRequest::with_uri("/webdav/")
@@ -709,13 +996,197 @@ async fn test_webdav_propfind_hides_hidden_artifacts() {
         "visible file should be listed: {xml}"
     );
     assert!(
-        !xml.contains("._hidden"),
-        "._hidden should be filtered out: {xml}"
+        xml.contains("._hidden"),
+        "._hidden should remain visible when blocking is disabled: {xml}"
     );
     assert!(
-        !xml.contains(".DS_Store"),
-        ".DS_Store should be filtered out: {xml}"
+        xml.contains(".DS_Store"),
+        ".DS_Store should remain visible when blocking is disabled: {xml}"
     );
+}
+
+#[actix_web::test]
+async fn test_webdav_system_file_patterns_use_json_list_runtime_config() {
+    let app = setup_with_webdav!();
+    let (token, _) = register_and_login!(app);
+    let auth = create_webdav_basic_auth!(app, token);
+
+    let req = test::TestRequest::put()
+        .uri("/api/v1/admin/config/webdav_block_system_file_patterns")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .set_json(serde_json::json!({ "value": ["blocked-*"] }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let req = test::TestRequest::put()
+        .uri("/webdav/blocked-file.txt")
+        .insert_header(("Authorization", auth.clone()))
+        .set_payload("blocked")
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 403);
+
+    let req = test::TestRequest::put()
+        .uri("/webdav/.DS_Store")
+        .insert_header(("Authorization", auth.clone()))
+        .set_payload("custom patterns replaced defaults")
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert!(
+        resp.status() == 201 || resp.status() == 204,
+        "custom JSON list should replace default system-file patterns"
+    );
+}
+
+#[actix_web::test]
+async fn test_webdav_empty_system_file_pattern_list_blocks_nothing() {
+    let app = setup_with_webdav!();
+    let (token, _) = register_and_login!(app);
+    let auth = create_webdav_basic_auth!(app, token);
+
+    let req = test::TestRequest::put()
+        .uri("/api/v1/admin/config/webdav_block_system_file_patterns")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .set_json(serde_json::json!({ "value": [] }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    for path in ["/webdav/.DS_Store", "/webdav/Thumbs.db"] {
+        let req = test::TestRequest::put()
+            .uri(path)
+            .insert_header(("Authorization", auth.clone()))
+            .set_payload("empty pattern list")
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert!(
+            resp.status() == 201 || resp.status() == 204,
+            "empty pattern list should allow {path}"
+        );
+    }
+}
+
+#[actix_web::test]
+async fn test_webdav_system_file_matching_uses_decoded_basename_only() {
+    let app = setup_with_webdav!();
+    let (token, _) = register_and_login!(app);
+    let auth = create_webdav_basic_auth!(app, token);
+
+    let req = test::TestRequest::with_uri("/webdav/metadata/")
+        .method(actix_web::http::Method::from_bytes(b"MKCOL").unwrap())
+        .insert_header(("Authorization", auth.clone()))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+
+    let req = test::TestRequest::put()
+        .uri("/webdav/metadata/%2eDS_Store")
+        .insert_header(("Authorization", auth.clone()))
+        .set_payload("encoded system file")
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        403,
+        "percent-encoded .DS_Store basename should be blocked"
+    );
+
+    let req = test::TestRequest::put()
+        .uri("/webdav/metadata/report.DS_Store")
+        .insert_header(("Authorization", auth.clone()))
+        .set_payload("normal file with similar suffix")
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert!(
+        resp.status() == 201 || resp.status() == 204,
+        "system-file matching should only compare the basename, not suffix substrings"
+    );
+
+    let req = test::TestRequest::put()
+        .uri("/webdav/System%20Volume%20Information")
+        .insert_header(("Authorization", auth.clone()))
+        .set_payload("encoded spaces")
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        403,
+        "decoded basename with spaces should be blocked"
+    );
+
+    let req = test::TestRequest::put()
+        .uri("/webdav/metadata/report.docx")
+        .insert_header(("Authorization", auth.clone()))
+        .set_payload("business file")
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert!(
+        resp.status() == 201 || resp.status() == 204,
+        "normal nested business file should not be blocked"
+    );
+}
+
+#[actix_web::test]
+async fn test_webdav_existing_system_files_remain_readable_and_deletable() {
+    let app = setup_with_webdav!();
+    let (token, _) = register_and_login!(app);
+    let auth = create_webdav_basic_auth!(app, token);
+
+    let req = test::TestRequest::put()
+        .uri("/api/v1/admin/config/webdav_block_system_files_enabled")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .set_json(serde_json::json!({ "value": "false" }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let req = test::TestRequest::put()
+        .uri("/webdav/.DS_Store")
+        .insert_header(("Authorization", auth.clone()))
+        .set_payload("historical metadata")
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert!(resp.status() == 201 || resp.status() == 204);
+
+    let req = test::TestRequest::put()
+        .uri("/api/v1/admin/config/webdav_block_system_files_enabled")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .set_json(serde_json::json!({ "value": "true" }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let req = test::TestRequest::get()
+        .uri("/webdav/.DS_Store")
+        .insert_header(("Authorization", auth.clone()))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body = test::read_body(resp).await;
+    assert_eq!(String::from_utf8_lossy(&body), "historical metadata");
+
+    let req = test::TestRequest::delete()
+        .uri("/webdav/.DS_Store")
+        .insert_header(("Authorization", auth.clone()))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        204,
+        "blocking should not prevent users from deleting historical system files"
+    );
+
+    let req = test::TestRequest::get()
+        .uri("/webdav/.DS_Store")
+        .insert_header(("Authorization", auth.clone()))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 404);
 }
 
 #[actix_web::test]

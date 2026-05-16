@@ -3828,6 +3828,10 @@ async fn test_remote_relay_stream_chunked_upload_e2e() {
     )
     .await
     .expect("consumer test user should be created");
+    let login = auth_service::login(&consumer_state, "remrelaych", "pass1234", None, None)
+        .await
+        .expect("consumer test user should log in");
+    common::seed_csrf_token(&login.access_token);
     let folder = folder_service::create(&consumer_state, user.id, "remote-relay-chunked", None)
         .await
         .expect("remote folder should be created");
@@ -3856,6 +3860,7 @@ async fn test_remote_relay_stream_chunked_upload_e2e() {
     assert_eq!(init.mode, aster_drive::types::UploadMode::Chunked);
     assert_eq!(init.chunk_size, Some(4));
 
+    let app = create_test_app!(consumer_state.clone());
     let upload_id = init
         .upload_id
         .clone()
@@ -3899,18 +3904,72 @@ async fn test_remote_relay_stream_chunked_upload_e2e() {
             .is_empty()
     );
 
+    let oversized_init = upload_service::init_upload(
+        &consumer_state,
+        user.id,
+        "relay-chunked-oversized.bin",
+        5,
+        Some(folder.id),
+        None,
+    )
+    .await
+    .expect("remote relay oversized upload should initialize");
+    let oversized_upload_id = oversized_init
+        .upload_id
+        .expect("chunked mode should return upload id");
+    let req = test::TestRequest::put()
+        .uri(&format!("/api/v1/files/upload/{oversized_upload_id}/0"))
+        .insert_header(("Cookie", common::access_cookie_header(&login.access_token)))
+        .insert_header(common::csrf_header_for(&login.access_token))
+        .insert_header(("Content-Type", "application/octet-stream"))
+        .set_payload(b"12345".to_vec())
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        actix_web::http::StatusCode::PAYLOAD_TOO_LARGE
+    );
+    let error_body: serde_json::Value = test::read_body_json(resp).await;
+    assert_eq!(error_body["error"]["internal_code"], "E024");
+    assert_eq!(error_body["error"]["subcode"], "upload.chunk_too_large");
+    assert!(
+        upload_session_part_repo::list_by_upload(&consumer_state.db, &oversized_upload_id)
+            .await
+            .expect("multipart parts should be queryable")
+            .is_empty(),
+        "oversized remote relay chunk must release the claimed part row"
+    );
+    let oversized_progress =
+        upload_service::get_progress(&consumer_state, &oversized_upload_id, user.id)
+            .await
+            .expect("remote relay oversized progress should be queryable");
+    assert!(oversized_progress.chunks_on_disk.is_empty());
+
     let first_chunk_end = std::cmp::min(chunk_size, body.len());
     let first_chunk = body[..first_chunk_end].to_vec();
-    let first = upload_service::upload_chunk(&consumer_state, &upload_id, 0, user.id, &first_chunk)
-        .await
-        .expect("first remote relay chunk should upload");
-    assert_eq!(first.received_count, 1);
+    let req = test::TestRequest::put()
+        .uri(&format!("/api/v1/files/upload/{upload_id}/0"))
+        .insert_header(("Cookie", common::access_cookie_header(&login.access_token)))
+        .insert_header(common::csrf_header_for(&login.access_token))
+        .insert_header(("Content-Type", "application/octet-stream"))
+        .set_payload(first_chunk.clone())
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), actix_web::http::StatusCode::OK);
+    let first: serde_json::Value = test::read_body_json(resp).await;
+    assert_eq!(first["data"]["received_count"], 1);
 
-    let duplicate =
-        upload_service::upload_chunk(&consumer_state, &upload_id, 0, user.id, &first_chunk)
-            .await
-            .expect("duplicate remote relay chunk should be idempotent");
-    assert_eq!(duplicate.received_count, 1);
+    let req = test::TestRequest::put()
+        .uri(&format!("/api/v1/files/upload/{upload_id}/0"))
+        .insert_header(("Cookie", common::access_cookie_header(&login.access_token)))
+        .insert_header(common::csrf_header_for(&login.access_token))
+        .insert_header(("Content-Type", "application/octet-stream"))
+        .set_payload(first_chunk.clone())
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), actix_web::http::StatusCode::OK);
+    let duplicate: serde_json::Value = test::read_body_json(resp).await;
+    assert_eq!(duplicate["data"]["received_count"], 1);
 
     let progress = upload_service::get_progress(&consumer_state, &upload_id, user.id)
         .await
@@ -3927,15 +3986,18 @@ async fn test_remote_relay_stream_chunked_upload_e2e() {
     for chunk_number in 1..total_chunks {
         let start = chunk_number * chunk_size;
         let end = std::cmp::min(start + chunk_size, body.len());
-        upload_service::upload_chunk(
-            &consumer_state,
-            &upload_id,
-            i32::try_from(chunk_number).expect("chunk number should fit i32"),
-            user.id,
-            &body[start..end],
-        )
-        .await
-        .expect("remote relay chunk should upload");
+        let req = test::TestRequest::put()
+            .uri(&format!(
+                "/api/v1/files/upload/{upload_id}/{}",
+                i32::try_from(chunk_number).expect("chunk number should fit i32")
+            ))
+            .insert_header(("Cookie", common::access_cookie_header(&login.access_token)))
+            .insert_header(common::csrf_header_for(&login.access_token))
+            .insert_header(("Content-Type", "application/octet-stream"))
+            .set_payload(body[start..end].to_vec())
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), actix_web::http::StatusCode::OK);
     }
 
     let progress = upload_service::get_progress(&consumer_state, &upload_id, user.id)

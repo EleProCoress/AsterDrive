@@ -4,6 +4,7 @@ use async_trait::async_trait;
 use aws_sdk_s3::presigning::PresigningConfig;
 use aws_sdk_s3::primitives::ByteStream;
 use bytes::Bytes;
+use tokio::io::AsyncRead;
 
 use crate::errors::{MapAsterErr, Result};
 use crate::storage::error::{StorageErrorKind, storage_driver_error};
@@ -131,6 +132,41 @@ impl MultipartStorageDriver for S3Driver {
             .upload_id(upload_id)
             .part_number(part_number)
             .body(ByteStream::from(data))
+            .send()
+            .await
+            .map_err(|err| Self::map_sdk_error("S3 upload_part failed", err))?;
+
+        resp.e_tag().map(str::to_string).ok_or_else(|| {
+            storage_driver_error(
+                StorageErrorKind::Unknown,
+                "S3 multipart upload: missing ETag",
+            )
+        })
+    }
+
+    async fn upload_multipart_part_reader(
+        &self,
+        path: &str,
+        upload_id: &str,
+        part_number: i32,
+        reader: Box<dyn AsyncRead + Unpin + Send + Sync>,
+        size: i64,
+    ) -> Result<String> {
+        let key = self.full_key(path);
+        let content_length = crate::utils::numbers::i64_to_u64(size, "S3 multipart part size")?;
+        let body = ByteStream::from_body_1_x(super::stream_upload::SizedReaderBody::new(
+            reader,
+            content_length,
+        ));
+        let resp = self
+            .client
+            .upload_part()
+            .bucket(&self.bucket)
+            .key(&key)
+            .upload_id(upload_id)
+            .part_number(part_number)
+            .content_length(size)
+            .body(body)
             .send()
             .await
             .map_err(|err| Self::map_sdk_error("S3 upload_part failed", err))?;

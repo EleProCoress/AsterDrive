@@ -9,6 +9,7 @@ pub mod file;
 pub mod fs;
 pub mod metadata;
 pub mod path_resolver;
+pub mod system_file;
 
 use std::collections::BTreeMap;
 use std::io::Cursor;
@@ -56,6 +57,7 @@ pub(crate) fn encode_href(path: &str) -> String {
 /// WebDAV 共享状态（单例）
 pub struct WebDavState {
     pub prefix: String,
+    pub xml_payload_limit: usize,
 }
 
 struct RequestedProp {
@@ -110,7 +112,7 @@ pub async fn webdav_handler(
 
     match req.method().as_str() {
         "OPTIONS" => handle_options(),
-        "REPORT" => match collect_payload(&mut payload).await {
+        "REPORT" => match collect_xml_payload(&mut payload, webdav.xml_payload_limit).await {
             Ok(body) => {
                 deltav::handle_report(req.uri(), &body, &state.db, &auth_result, &webdav.prefix)
                     .await
@@ -120,13 +122,13 @@ pub async fn webdav_handler(
         "VERSION-CONTROL" => {
             deltav::handle_version_control(req.uri(), &state.db, &auth_result, &webdav.prefix).await
         }
-        "PROPFIND" => match collect_payload(&mut payload).await {
+        "PROPFIND" => match collect_xml_payload(&mut payload, webdav.xml_payload_limit).await {
             Ok(body) => {
                 handle_propfind(&req, &dav_fs, lock_system.as_ref(), &webdav.prefix, &body).await
             }
             Err(resp) => resp,
         },
-        "PROPPATCH" => match collect_payload(&mut payload).await {
+        "PROPPATCH" => match collect_xml_payload(&mut payload, webdav.xml_payload_limit).await {
             Ok(body) => {
                 handle_proppatch(&req, &dav_fs, lock_system.as_ref(), &webdav.prefix, &body).await
             }
@@ -135,31 +137,59 @@ pub async fn webdav_handler(
         "GET" => handle_get_head(&req, &dav_fs, &webdav.prefix, false).await,
         "HEAD" => handle_get_head(&req, &dav_fs, &webdav.prefix, true).await,
         "PUT" => {
+            let system_file_policy =
+                system_file::SystemFileBlockPolicy::from_runtime_config(&state.runtime_config);
             handle_put(
                 &req,
                 &dav_fs,
                 lock_system.as_ref(),
                 &webdav.prefix,
+                &system_file_policy,
                 &mut payload,
             )
             .await
         }
         "MKCOL" => {
+            let system_file_policy =
+                system_file::SystemFileBlockPolicy::from_runtime_config(&state.runtime_config);
             handle_mkcol(
                 &req,
                 &dav_fs,
                 lock_system.as_ref(),
                 &webdav.prefix,
+                &system_file_policy,
                 &mut payload,
             )
             .await
         }
         "DELETE" => handle_delete(&req, &dav_fs, lock_system.as_ref(), &webdav.prefix).await,
         "COPY" => {
-            handle_copy_move(&req, &dav_fs, lock_system.as_ref(), &webdav.prefix, false).await
+            let system_file_policy =
+                system_file::SystemFileBlockPolicy::from_runtime_config(&state.runtime_config);
+            handle_copy_move(
+                &req,
+                &dav_fs,
+                lock_system.as_ref(),
+                &webdav.prefix,
+                &system_file_policy,
+                false,
+            )
+            .await
         }
-        "MOVE" => handle_copy_move(&req, &dav_fs, lock_system.as_ref(), &webdav.prefix, true).await,
-        "LOCK" => match collect_payload(&mut payload).await {
+        "MOVE" => {
+            let system_file_policy =
+                system_file::SystemFileBlockPolicy::from_runtime_config(&state.runtime_config);
+            handle_copy_move(
+                &req,
+                &dav_fs,
+                lock_system.as_ref(),
+                &webdav.prefix,
+                &system_file_policy,
+                true,
+            )
+            .await
+        }
+        "LOCK" => match collect_xml_payload(&mut payload, webdav.xml_payload_limit).await {
             Ok(body) => {
                 handle_lock(&req, &dav_fs, lock_system.as_ref(), &webdav.prefix, &body).await
             }
@@ -179,6 +209,28 @@ async fn collect_payload(payload: &mut web::Payload) -> Result<Vec<u8>, HttpResp
             Ok(chunk) => chunk,
             Err(_) => return Err(HttpResponse::BadRequest().body("Failed to read request body")),
         };
+        data.extend_from_slice(&chunk);
+    }
+    Ok(data)
+}
+
+async fn collect_xml_payload(
+    payload: &mut web::Payload,
+    max_len: usize,
+) -> Result<Vec<u8>, HttpResponse> {
+    let mut data = Vec::with_capacity(max_len.min(4096));
+    while let Some(chunk) = payload.next().await {
+        let chunk = match chunk {
+            Ok(chunk) => chunk,
+            Err(_) => return Err(HttpResponse::BadRequest().body("Failed to read request body")),
+        };
+        let next_len = match data.len().checked_add(chunk.len()) {
+            Some(next_len) => next_len,
+            None => return Err(HttpResponse::PayloadTooLarge().body("WebDAV XML body too large")),
+        };
+        if next_len > max_len {
+            return Err(HttpResponse::PayloadTooLarge().body("WebDAV XML body too large"));
+        }
         data.extend_from_slice(&chunk);
     }
     Ok(data)
@@ -242,12 +294,16 @@ async fn handle_put(
     dav_fs: &fs::AsterDavFs,
     lock_system: &dyn DavLockSystem,
     prefix: &str,
+    system_file_policy: &system_file::SystemFileBlockPolicy,
     payload: &mut web::Payload,
 ) -> HttpResponse {
     let (path, relative) = match request_path(req, prefix) {
         Ok(v) => v,
         Err(resp) => return resp,
     };
+    if let Err(resp) = ensure_system_file_name_allowed(system_file_policy, &relative) {
+        return resp;
+    }
     let existed = dav_fs.metadata(&path).await.is_ok();
 
     if let Err(resp) = ensure_unlocked(lock_system, &path, false, req.headers()).await {
@@ -305,6 +361,7 @@ async fn handle_mkcol(
     dav_fs: &fs::AsterDavFs,
     lock_system: &dyn DavLockSystem,
     prefix: &str,
+    system_file_policy: &system_file::SystemFileBlockPolicy,
     payload: &mut web::Payload,
 ) -> HttpResponse {
     if let Err(resp) = ensure_empty_body(payload).await {
@@ -317,6 +374,9 @@ async fn handle_mkcol(
     };
     if relative == "/" {
         return HttpResponse::MethodNotAllowed().finish();
+    }
+    if let Err(resp) = ensure_system_file_name_allowed(system_file_policy, &relative) {
+        return resp;
     }
 
     if let Err(resp) = ensure_parent_exists(dav_fs, &relative).await {
@@ -382,6 +442,7 @@ async fn handle_copy_move(
     dav_fs: &fs::AsterDavFs,
     lock_system: &dyn DavLockSystem,
     prefix: &str,
+    system_file_policy: &system_file::SystemFileBlockPolicy,
     is_move: bool,
 ) -> HttpResponse {
     let (source, source_relative) = match request_path(req, prefix) {
@@ -395,6 +456,9 @@ async fn handle_copy_move(
     };
     if source_relative == destination_relative {
         return HttpResponse::Forbidden().finish();
+    }
+    if let Err(resp) = ensure_system_file_name_allowed(system_file_policy, &destination_relative) {
+        return resp;
     }
     if let Err(resp) = ensure_parent_exists(dav_fs, &destination_relative).await {
         return resp;
@@ -706,6 +770,18 @@ async fn ensure_parent_exists(dav_fs: &fs::AsterDavFs, relative: &str) -> Result
         Err(FsError::NotFound) => Err(HttpResponse::Conflict().finish()),
         Err(err) => Err(fs_error_response(err)),
     }
+}
+
+fn ensure_system_file_name_allowed(
+    system_file_policy: &system_file::SystemFileBlockPolicy,
+    relative: &str,
+) -> Result<(), HttpResponse> {
+    let name = display_name(relative);
+    if name.is_empty() || !system_file_policy.is_blocked_name(name) {
+        return Ok(());
+    }
+
+    Err(HttpResponse::Forbidden().body("WebDAV system file name is blocked"))
 }
 
 async fn ensure_unlocked(
@@ -1504,6 +1580,18 @@ pub fn configure(
         });
     let webdav_state = web::Data::new(WebDavState {
         prefix: webdav_config.prefix.clone(),
+        xml_payload_limit: u64_to_usize(
+            webdav_config.xml_payload_limit,
+            "webdav.xml_payload_limit",
+        )
+        .unwrap_or_else(|_| {
+            tracing::warn!(
+                configured = webdav_config.xml_payload_limit,
+                platform_limit = usize::MAX,
+                "webdav.xml_payload_limit exceeds platform usize range; using platform limit"
+            );
+            usize::MAX
+        }),
     });
 
     cfg.app_data(webdav_state).service(
@@ -2113,6 +2201,10 @@ mod tests {
 
         let dav_fs = AsterDavFs::new(state.clone(), user.id, None);
         let lock_system = NoopLockSystem;
+        let system_file_policy =
+            crate::webdav::system_file::SystemFileBlockPolicy::from_runtime_config(
+                &state.runtime_config,
+            );
         let body = "webdav direct stream upload";
         let (req, mut dev_payload) = actix_web::test::TestRequest::put()
             .uri("/webdav/direct.txt")
@@ -2122,7 +2214,15 @@ mod tests {
         let mut payload = web::Payload::from_request(&req, &mut dev_payload)
             .await
             .expect("webdav test payload should extract");
-        let response = handle_put(&req, &dav_fs, &lock_system, "/webdav", &mut payload).await;
+        let response = handle_put(
+            &req,
+            &dav_fs,
+            &lock_system,
+            "/webdav",
+            &system_file_policy,
+            &mut payload,
+        )
+        .await;
 
         assert_eq!(response.status(), StatusCode::CREATED);
         assert_eq!(

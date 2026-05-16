@@ -4,6 +4,7 @@
 mod common;
 
 use actix_web::test;
+use aster_drive::api::subcode::ApiSubcode;
 use aster_drive::db::repository::policy_repo;
 use serde_json::Value;
 use testcontainers::{GenericImage, ImageExt, runners::AsyncRunner};
@@ -809,6 +810,94 @@ async fn test_chunked_upload_flow() {
         let body: Value = test::read_body_json(resp).await;
         assert_eq!(body["data"]["name"], "chunked.txt");
     }
+}
+
+#[actix_web::test]
+async fn test_chunk_upload_endpoint_streams_and_rejects_oversized_chunk_with_413() {
+    use aster_drive::api::error_code::ErrorCode;
+
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/files/upload/init")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .set_json(serde_json::json!({
+            "filename": "oversized-chunk.bin",
+            "total_size": TEST_CHUNK_SIZE + 1
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["mode"], "chunked");
+    let upload_id = body["data"]["upload_id"].as_str().unwrap().to_string();
+
+    let req = test::TestRequest::put()
+        .uri(&format!("/api/v1/files/upload/{upload_id}/0"))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .insert_header(("Content-Type", "application/octet-stream"))
+        .set_payload(vec![b'x'; TEST_CHUNK_SIZE + 1])
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        actix_web::http::StatusCode::PAYLOAD_TOO_LARGE
+    );
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(
+        body["code"],
+        serde_json::json!(ErrorCode::FileTooLarge as i32)
+    );
+    assert_eq!(body["error"]["internal_code"], "E024");
+    assert_eq!(body["error"]["subcode"], "upload.chunk_too_large");
+}
+
+#[actix_web::test]
+async fn test_chunk_upload_endpoint_keeps_duplicate_size_validation() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/files/upload/init")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .set_json(serde_json::json!({
+            "filename": "duplicate-size.bin",
+            "total_size": TEST_CHUNK_SIZE + 1
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let upload_id = body["data"]["upload_id"].as_str().unwrap().to_string();
+
+    let req = test::TestRequest::put()
+        .uri(&format!("/api/v1/files/upload/{upload_id}/0"))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .insert_header(("Content-Type", "application/octet-stream"))
+        .set_payload(vec![b'a'; TEST_CHUNK_SIZE])
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let req = test::TestRequest::put()
+        .uri(&format!("/api/v1/files/upload/{upload_id}/0"))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .insert_header(("Content-Type", "application/octet-stream"))
+        .set_payload(b"short".to_vec())
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert!(resp.status().is_client_error());
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["error"]["internal_code"], "E056");
+    assert_eq!(body["error"]["subcode"], "upload.chunk_size_mismatch");
 }
 
 #[actix_web::test]
@@ -2381,14 +2470,17 @@ async fn test_upload_service_presign_parts_validates_part_number_batch() {
     let err = upload_service::presign_parts(&state, &upload_id, user.id, vec![])
         .await
         .unwrap_err();
-    assert_eq!(err.api_error_subcode(), Some("upload.part_numbers_empty"));
+    assert_eq!(
+        err.api_error_subcode(),
+        Some(ApiSubcode::UploadPartNumbersEmpty)
+    );
 
     let err = upload_service::presign_parts(&state, &upload_id, user.id, vec![0])
         .await
         .unwrap_err();
     assert_eq!(
         err.api_error_subcode(),
-        Some("upload.part_number_out_of_range")
+        Some(ApiSubcode::UploadPartNumberOutOfRange)
     );
 
     let too_many = (1..=65).collect();
@@ -2397,7 +2489,7 @@ async fn test_upload_service_presign_parts_validates_part_number_batch() {
         .unwrap_err();
     assert_eq!(
         err.api_error_subcode(),
-        Some("upload.part_numbers_too_many")
+        Some(ApiSubcode::UploadPartNumbersTooMany)
     );
 }
 
@@ -3512,6 +3604,10 @@ async fn test_relay_stream_chunked_upload_s3_e2e() {
         1_048_576,
     )
     .await;
+    let login = auth_service::login(&state, "relaychunked", "pass1234", None, None)
+        .await
+        .unwrap();
+    common::seed_csrf_token(&login.access_token);
 
     let part1 = vec![b'A'; 5_242_880];
     let part2 = b"relay-stream-tail".to_vec();
@@ -3533,6 +3629,54 @@ async fn test_relay_stream_chunked_upload_s3_e2e() {
     assert_eq!(init.total_chunks, Some(2));
 
     let upload_id = init.upload_id.unwrap();
+    let app = create_test_app!(state.clone());
+
+    let oversized_init = upload_service::init_upload(
+        &state,
+        user.id,
+        "relay-oversized-multipart.bin",
+        (part1.len() + 1) as i64,
+        None,
+        None,
+    )
+    .await
+    .unwrap();
+    let oversized_upload_id = oversized_init.upload_id.unwrap();
+    let req = test::TestRequest::put()
+        .uri(&format!("/api/v1/files/upload/{oversized_upload_id}/0"))
+        .insert_header(("Cookie", common::access_cookie_header(&login.access_token)))
+        .insert_header(common::csrf_header_for(&login.access_token))
+        .insert_header(("Content-Type", "application/octet-stream"))
+        .set_payload(vec![b'Z'; part1.len() + 1])
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        actix_web::http::StatusCode::PAYLOAD_TOO_LARGE
+    );
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["error"]["internal_code"], "E024");
+    assert_eq!(body["error"]["subcode"], "upload.chunk_too_large");
+    assert!(
+        upload_session_part_repo::list_by_upload(&state.db, &oversized_upload_id)
+            .await
+            .unwrap()
+            .is_empty(),
+        "oversized relay chunk must release the claimed part row"
+    );
+    let oversized_progress = upload_service::get_progress(&state, &oversized_upload_id, user.id)
+        .await
+        .unwrap();
+    assert!(oversized_progress.chunks_on_disk.is_empty());
+    let oversized_relay_temp_dir = aster_drive::utils::paths::upload_temp_dir(
+        &state.config.server.upload_temp_dir,
+        &oversized_upload_id,
+    );
+    assert!(
+        !std::path::Path::new(&oversized_relay_temp_dir).exists(),
+        "oversized relay_stream chunks should not create local upload temp dirs"
+    );
+
     let relay_temp_dir = aster_drive::utils::paths::upload_temp_dir(
         &state.config.server.upload_temp_dir,
         &upload_id,
@@ -3548,26 +3692,30 @@ async fn test_relay_stream_chunked_upload_s3_e2e() {
             .is_empty()
     );
 
-    let (first_attempt, second_attempt) = tokio::join!(
-        upload_service::upload_chunk(&state, &upload_id, 0, user.id, &part1),
-        upload_service::upload_chunk(&state, &upload_id, 0, user.id, &part1),
-    );
-    first_attempt.unwrap();
-    second_attempt.unwrap();
+    let req = test::TestRequest::put()
+        .uri(&format!("/api/v1/files/upload/{upload_id}/0"))
+        .insert_header(("Cookie", common::access_cookie_header(&login.access_token)))
+        .insert_header(common::csrf_header_for(&login.access_token))
+        .insert_header(("Content-Type", "application/octet-stream"))
+        .set_payload(part1.clone())
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["received_count"], 1);
 
-    let session_after_race = upload_session_repo::find_by_id(&state.db, &upload_id)
-        .await
-        .unwrap();
+    let req = test::TestRequest::put()
+        .uri(&format!("/api/v1/files/upload/{upload_id}/0"))
+        .insert_header(("Cookie", common::access_cookie_header(&login.access_token)))
+        .insert_header(common::csrf_header_for(&login.access_token))
+        .insert_header(("Content-Type", "application/octet-stream"))
+        .set_payload(part1.clone())
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let duplicate: Value = test::read_body_json(resp).await;
     assert_eq!(
-        session_after_race.received_count, 1,
-        "concurrent duplicate relay part uploads should only count once"
-    );
-
-    let duplicate = upload_service::upload_chunk(&state, &upload_id, 0, user.id, &part1)
-        .await
-        .unwrap();
-    assert_eq!(
-        duplicate.received_count, 1,
+        duplicate["data"]["received_count"], 1,
         "duplicate relay part upload should be idempotent"
     );
 
@@ -3588,10 +3736,17 @@ async fn test_relay_stream_chunked_upload_s3_e2e() {
         "relay_stream should still avoid local temp dirs after part upload"
     );
 
-    let second = upload_service::upload_chunk(&state, &upload_id, 1, user.id, &part2)
-        .await
-        .unwrap();
-    assert_eq!(second.received_count, 2);
+    let req = test::TestRequest::put()
+        .uri(&format!("/api/v1/files/upload/{upload_id}/1"))
+        .insert_header(("Cookie", common::access_cookie_header(&login.access_token)))
+        .insert_header(common::csrf_header_for(&login.access_token))
+        .insert_header(("Content-Type", "application/octet-stream"))
+        .set_payload(part2.clone())
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["received_count"], 2);
 
     let progress = upload_service::get_progress(&state, &upload_id, user.id)
         .await

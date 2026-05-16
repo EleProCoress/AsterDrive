@@ -65,6 +65,7 @@ pub(super) fn default_retry_class(error: &AsterError) -> TaskRetryClass {
         | AsterError::FileTooLarge(_)
         | AsterError::FileTypeNotAllowed(_)
         | AsterError::FileUploadFailed(_)
+        | AsterError::PayloadTooLarge(_)
         | AsterError::UnsupportedDriver(_)
         | AsterError::FolderNotFound(_)
         | AsterError::ShareNotFound(_)

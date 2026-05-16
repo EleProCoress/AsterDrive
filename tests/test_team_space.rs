@@ -2117,6 +2117,141 @@ async fn test_team_space_chunked_upload_flow_and_personal_route_rejection() {
 }
 
 #[actix_web::test]
+async fn test_team_chunk_upload_endpoint_rejects_oversized_chunk_with_413() {
+    let state = common::setup().await;
+    let db = state.db.clone();
+    set_default_policy_chunk_size(&state, 4).await;
+    let mail_sender = state.mail_sender.clone();
+    let app = create_test_app!(state);
+
+    let _owner_id = register_user!(
+        app,
+        db,
+        mail_sender,
+        "teamchunklimit",
+        "teamchunklimit@example.com",
+        "password123"
+    );
+    let owner_token = login_user!(app, "teamchunklimit", "password123");
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/teams")
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
+        .set_json(serde_json::json!({ "name": "Team Chunk Limit" }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let team_id = body["data"]["id"].as_i64().unwrap();
+
+    let req = test::TestRequest::post()
+        .uri(&format!("/api/v1/teams/{team_id}/files/upload/init"))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
+        .set_json(serde_json::json!({
+            "filename": "team-oversized-chunk.txt",
+            "total_size": 5
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["mode"], "chunked");
+    assert_eq!(body["data"]["chunk_size"], 4);
+    let upload_id = body["data"]["upload_id"].as_str().unwrap();
+
+    let req = test::TestRequest::put()
+        .uri(&format!(
+            "/api/v1/teams/{team_id}/files/upload/{upload_id}/0"
+        ))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
+        .insert_header(("Content-Type", "application/octet-stream"))
+        .set_payload(b"ABCDE".to_vec())
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        actix_web::http::StatusCode::PAYLOAD_TOO_LARGE
+    );
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["error"]["internal_code"], "E024");
+    assert_eq!(body["error"]["subcode"], "upload.chunk_too_large");
+}
+
+#[actix_web::test]
+async fn test_team_chunk_upload_endpoint_keeps_duplicate_size_validation() {
+    let state = common::setup().await;
+    let db = state.db.clone();
+    set_default_policy_chunk_size(&state, 4).await;
+    let mail_sender = state.mail_sender.clone();
+    let app = create_test_app!(state);
+
+    let _owner_id = register_user!(
+        app,
+        db,
+        mail_sender,
+        "teamchunkdup",
+        "teamchunkdup@example.com",
+        "password123"
+    );
+    let owner_token = login_user!(app, "teamchunkdup", "password123");
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/teams")
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
+        .set_json(serde_json::json!({ "name": "Team Chunk Duplicate" }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let team_id = body["data"]["id"].as_i64().unwrap();
+
+    let req = test::TestRequest::post()
+        .uri(&format!("/api/v1/teams/{team_id}/files/upload/init"))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
+        .set_json(serde_json::json!({
+            "filename": "team-duplicate-chunk.txt",
+            "total_size": 5
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let upload_id = body["data"]["upload_id"].as_str().unwrap();
+
+    let req = test::TestRequest::put()
+        .uri(&format!(
+            "/api/v1/teams/{team_id}/files/upload/{upload_id}/0"
+        ))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
+        .insert_header(("Content-Type", "application/octet-stream"))
+        .set_payload(b"ABCD".to_vec())
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let req = test::TestRequest::put()
+        .uri(&format!(
+            "/api/v1/teams/{team_id}/files/upload/{upload_id}/0"
+        ))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
+        .insert_header(("Content-Type", "application/octet-stream"))
+        .set_payload(b"ABC".to_vec())
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert!(resp.status().is_client_error());
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["error"]["internal_code"], "E056");
+    assert_eq!(body["error"]["subcode"], "upload.chunk_size_mismatch");
+}
+
+#[actix_web::test]
 async fn test_team_empty_upload_flow_uses_direct_and_creates_file() {
     let state = common::setup().await;
     let db = state.db.clone();

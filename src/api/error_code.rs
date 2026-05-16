@@ -13,6 +13,7 @@ use serde_repr::{Deserialize_repr, Serialize_repr};
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::ToSchema;
 
+use crate::api::subcode::ApiSubcode;
 use crate::errors::AsterError;
 use crate::storage::StorageErrorKind;
 
@@ -97,14 +98,14 @@ impl From<&AsterError> for ErrorCode {
                 if matches!(
                     err.api_error_subcode(),
                     Some(
-                        "auth.username_exists"
-                            | "auth.email_exists"
-                            | "auth.identifier_exists"
-                            | "file.name_conflict"
-                            | "folder.name_conflict"
-                            | "team.member_exists"
-                            | "webdav.username_exists"
-                            | "remote_node.unique_conflict"
+                        ApiSubcode::AuthUsernameExists
+                            | ApiSubcode::AuthEmailExists
+                            | ApiSubcode::AuthIdentifierExists
+                            | ApiSubcode::FileNameConflict
+                            | ApiSubcode::FolderNameConflict
+                            | ApiSubcode::TeamMemberExists
+                            | ApiSubcode::WebdavUsernameExists
+                            | ApiSubcode::RemoteNodeUniqueConflict
                     )
                 ) {
                     ErrorCode::Conflict
@@ -131,6 +132,7 @@ impl From<&AsterError> for ErrorCode {
             AsterError::FileTooLarge(_) => ErrorCode::FileTooLarge,
             AsterError::FileTypeNotAllowed(_) => ErrorCode::FileTypeNotAllowed,
             AsterError::FileUploadFailed(_) => ErrorCode::FileUploadFailed,
+            AsterError::PayloadTooLarge(_) => ErrorCode::FileTooLarge,
 
             // 存储策略
             AsterError::StoragePolicyNotFound(_) => ErrorCode::StoragePolicyNotFound,
@@ -182,6 +184,45 @@ impl From<&AsterError> for ErrorCode {
 // 穷举性静态检查：AsterError 每新增一个变体，必须同步更新 From 实现，
 // 否则 const 断言会编译失败。
 const _: () = assert!(
-    crate::errors::ASTER_ERROR_VARIANT_COUNT == 37,
+    crate::errors::ASTER_ERROR_VARIANT_COUNT == 38,
     "AsterError variant count mismatch: update the assertion or the From impl"
 );
+
+#[cfg(test)]
+mod tests {
+    use super::ErrorCode;
+    use crate::api::subcode::ApiSubcode;
+    use crate::errors::validation_error_with_subcode;
+
+    #[test]
+    fn validation_conflict_subcodes_map_to_conflict() {
+        for subcode in [
+            ApiSubcode::AuthUsernameExists,
+            ApiSubcode::AuthEmailExists,
+            ApiSubcode::AuthIdentifierExists,
+            ApiSubcode::FileNameConflict,
+            ApiSubcode::FolderNameConflict,
+            ApiSubcode::TeamMemberExists,
+            ApiSubcode::WebdavUsernameExists,
+            ApiSubcode::RemoteNodeUniqueConflict,
+        ] {
+            let error = validation_error_with_subcode(subcode, "already exists");
+
+            assert_eq!(ErrorCode::from(&error), ErrorCode::Conflict);
+        }
+    }
+
+    #[test]
+    fn validation_non_conflict_subcodes_stay_bad_request() {
+        for subcode in [
+            ApiSubcode::UploadEmptyFile,
+            ApiSubcode::ArchivePreviewUnsupportedType,
+            ApiSubcode::ManagedIngressDriverUnsupported,
+            ApiSubcode::PolicyUploadSessionsExist,
+        ] {
+            let error = validation_error_with_subcode(subcode, "invalid request");
+
+            assert_eq!(ErrorCode::from(&error), ErrorCode::BadRequest);
+        }
+    }
+}

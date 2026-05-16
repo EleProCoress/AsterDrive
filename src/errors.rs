@@ -4,6 +4,7 @@ use actix_web::http::StatusCode;
 use std::any::Any;
 
 use crate::api::response::ApiErrorInfo;
+use crate::api::subcode::ApiSubcode;
 use crate::storage::error::{
     StorageErrorKind, storage_driver_error_display_message, storage_driver_error_kind_from_message,
 };
@@ -104,6 +105,7 @@ define_errors! {
     FileTooLarge(         "E021", "File Too Large"),
     FileTypeNotAllowed(   "E022", "File Type Not Allowed"),
     FileUploadFailed(     "E023", "Upload Failed"),
+    PayloadTooLarge(      "E024", "Payload Too Large"),
 
     // ========== E030-E039: 存储策略错误 ==========
     StoragePolicyNotFound("E030", "Storage Policy Not Found"),
@@ -154,26 +156,26 @@ impl AsterError {
     pub fn api_error_info(&self) -> ApiErrorInfo {
         ApiErrorInfo {
             internal_code: self.code().to_string(),
-            subcode: self.api_error_subcode().map(str::to_string),
+            subcode: self.api_error_subcode(),
             retryable: self.api_error_retryable(),
         }
     }
 
-    pub fn api_error_subcode(&self) -> Option<&str> {
+    pub fn api_error_subcode(&self) -> Option<ApiSubcode> {
         if let Some(subcode) = api_error_subcode_from_message(self.raw_message()) {
             return Some(subcode);
         }
 
         match self.storage_error_kind()? {
-            StorageErrorKind::Auth => Some("storage.auth"),
-            StorageErrorKind::Misconfigured => Some("storage.misconfigured"),
-            StorageErrorKind::NotFound => Some("storage.not_found"),
-            StorageErrorKind::Permission => Some("storage.permission"),
-            StorageErrorKind::Precondition => Some("storage.precondition"),
-            StorageErrorKind::RateLimited => Some("storage.rate_limited"),
-            StorageErrorKind::Transient => Some("storage.transient"),
-            StorageErrorKind::Unsupported => Some("storage.unsupported"),
-            StorageErrorKind::Unknown => Some("storage.unknown"),
+            StorageErrorKind::Auth => Some(ApiSubcode::StorageAuth),
+            StorageErrorKind::Misconfigured => Some(ApiSubcode::StorageMisconfigured),
+            StorageErrorKind::NotFound => Some(ApiSubcode::StorageNotFound),
+            StorageErrorKind::Permission => Some(ApiSubcode::StoragePermission),
+            StorageErrorKind::Precondition => Some(ApiSubcode::StoragePrecondition),
+            StorageErrorKind::RateLimited => Some(ApiSubcode::StorageRateLimited),
+            StorageErrorKind::Transient => Some(ApiSubcode::StorageTransient),
+            StorageErrorKind::Unsupported => Some(ApiSubcode::StorageUnsupported),
+            StorageErrorKind::Unknown => Some(ApiSubcode::StorageUnknown),
         }
     }
 
@@ -195,6 +197,12 @@ impl AsterError {
             | Self::FileTooLarge(_)
             | Self::FileTypeNotAllowed(_)
             | Self::UnsupportedDriver(_) => StatusCode::BAD_REQUEST,
+
+            Self::PayloadTooLarge(_) => StatusCode::PAYLOAD_TOO_LARGE,
+
+            Self::ChunkUploadFailed(_) if chunk_upload_failure_is_client_error(self) => {
+                StatusCode::BAD_REQUEST
+            }
 
             Self::ContactVerificationInvalid(_) => StatusCode::BAD_REQUEST,
 
@@ -346,7 +354,7 @@ pub(crate) fn encode_task_error_for_storage(error: &AsterError) -> String {
     error.to_string()
 }
 
-pub(crate) fn task_error_subcode_from_storage(raw_message: &str) -> Option<&str> {
+pub(crate) fn task_error_subcode_from_storage(raw_message: &str) -> Option<ApiSubcode> {
     api_error_subcode_from_message(raw_message)
 }
 
@@ -354,61 +362,91 @@ pub(crate) fn task_error_display_message(raw_message: &str) -> &str {
     api_error_display_message(raw_message)
 }
 
-pub fn validation_error_with_subcode(subcode: &str, message: impl Into<String>) -> AsterError {
+pub fn validation_error_with_subcode(
+    subcode: ApiSubcode,
+    message: impl Into<String>,
+) -> AsterError {
     tag_error_with_subcode(subcode, message, AsterError::validation_error)
 }
 
-pub fn auth_forbidden_with_subcode(subcode: &str, message: impl Into<String>) -> AsterError {
+pub fn auth_forbidden_with_subcode(subcode: ApiSubcode, message: impl Into<String>) -> AsterError {
     tag_error_with_subcode(subcode, message, AsterError::auth_forbidden)
 }
 
-pub fn precondition_failed_with_subcode(subcode: &str, message: impl Into<String>) -> AsterError {
+pub fn precondition_failed_with_subcode(
+    subcode: ApiSubcode,
+    message: impl Into<String>,
+) -> AsterError {
     tag_error_with_subcode(subcode, message, AsterError::precondition_failed)
 }
 
-pub fn file_upload_error_with_subcode(subcode: &str, message: impl Into<String>) -> AsterError {
+pub fn file_upload_error_with_subcode(
+    subcode: ApiSubcode,
+    message: impl Into<String>,
+) -> AsterError {
     tag_error_with_subcode(subcode, message, AsterError::file_upload_failed)
 }
 
-pub fn chunk_upload_error_with_subcode(subcode: &str, message: impl Into<String>) -> AsterError {
+pub fn payload_too_large_with_subcode(
+    subcode: ApiSubcode,
+    message: impl Into<String>,
+) -> AsterError {
+    tag_error_with_subcode(subcode, message, AsterError::payload_too_large)
+}
+
+pub fn chunk_upload_error_with_subcode(
+    subcode: ApiSubcode,
+    message: impl Into<String>,
+) -> AsterError {
     tag_error_with_subcode(subcode, message, AsterError::chunk_upload_failed)
 }
 
-pub fn upload_assembly_error_with_subcode(subcode: &str, message: impl Into<String>) -> AsterError {
+pub fn upload_assembly_error_with_subcode(
+    subcode: ApiSubcode,
+    message: impl Into<String>,
+) -> AsterError {
     tag_error_with_subcode(subcode, message, AsterError::upload_assembly_failed)
 }
 
 pub fn thumbnail_generation_error_with_subcode(
-    subcode: &str,
+    subcode: ApiSubcode,
     message: impl Into<String>,
 ) -> AsterError {
     tag_error_with_subcode(subcode, message, AsterError::thumbnail_generation_failed)
 }
 
 fn tag_error_with_subcode(
-    subcode: &str,
+    subcode: ApiSubcode,
     message: impl Into<String>,
     f: impl FnOnce(String) -> AsterError,
 ) -> AsterError {
     f(encode_api_error_subcode_message(subcode, message.into()))
 }
 
-pub(crate) fn encode_api_error_subcode_message(subcode: &str, message: String) -> String {
-    format!("{API_ERROR_SUBCODE_PREFIX}{subcode}{API_ERROR_SUBCODE_SEPARATOR}{message}")
+pub(crate) fn encode_api_error_subcode_message(subcode: ApiSubcode, message: String) -> String {
+    format!(
+        "{API_ERROR_SUBCODE_PREFIX}{}{API_ERROR_SUBCODE_SEPARATOR}{message}",
+        subcode.as_str()
+    )
 }
 
-fn split_encoded_api_error_subcode_message(raw_message: &str) -> Option<(&str, &str)> {
+fn split_encoded_api_error_message(raw_message: &str) -> Option<(&str, &str)> {
     let encoded = raw_message.strip_prefix(API_ERROR_SUBCODE_PREFIX)?;
     encoded.split_once(API_ERROR_SUBCODE_SEPARATOR)
 }
 
+fn split_encoded_api_error_subcode_message(raw_message: &str) -> Option<(ApiSubcode, &str)> {
+    let (subcode, message) = split_encoded_api_error_message(raw_message)?;
+    Some((subcode.parse::<ApiSubcode>().ok()?, message))
+}
+
 fn api_error_display_message(raw_message: &str) -> &str {
-    split_encoded_api_error_subcode_message(raw_message)
+    split_encoded_api_error_message(raw_message)
         .map(|(_, message)| message)
         .unwrap_or(raw_message)
 }
 
-fn api_error_subcode_from_message(raw_message: &str) -> Option<&str> {
+fn api_error_subcode_from_message(raw_message: &str) -> Option<ApiSubcode> {
     split_encoded_api_error_subcode_message(raw_message)
         .map(|(subcode, _)| subcode)
         .or_else(|| {
@@ -420,6 +458,21 @@ fn api_error_subcode_from_message(raw_message: &str) -> Option<&str> {
                 })
                 .flatten()
         })
+}
+
+fn chunk_upload_failure_is_client_error(error: &AsterError) -> bool {
+    matches!(
+        error.api_error_subcode(),
+        Some(
+            ApiSubcode::UploadChunkNumberOutOfRange
+                | ApiSubcode::UploadChunkSizeMismatch
+                | ApiSubcode::UploadChunkTooLarge
+                | ApiSubcode::UploadChunkSizeOverflow
+                | ApiSubcode::UploadChunkTransportMismatch
+                | ApiSubcode::UploadChunkSessionInvalid
+                | ApiSubcode::UploadRequestBodyReadFailed
+        )
+    )
 }
 
 fn map_display_error<E: std::fmt::Display + 'static>(
@@ -489,6 +542,8 @@ mod tests {
         upload_assembly_error_with_subcode, validation_error_with_subcode,
     };
     use crate::api::error_code::ErrorCode;
+    use crate::api::response::ApiErrorInfo;
+    use crate::api::subcode::ApiSubcode;
     use crate::storage::error::{StorageErrorKind, storage_driver_error};
     use actix_web::body;
     use actix_web::http::StatusCode;
@@ -577,6 +632,43 @@ mod tests {
         assert_eq!(err.message(), "load user: user#42");
     }
 
+    #[test]
+    fn api_error_info_serializes_subcode_as_stable_wire_value() {
+        let info = ApiErrorInfo {
+            internal_code: "E005".to_string(),
+            subcode: Some(ApiSubcode::UploadChunkSizeMismatch),
+            retryable: None,
+        };
+
+        let payload = serde_json::to_value(&info).expect("ApiErrorInfo should serialize");
+
+        assert_eq!(payload["internal_code"], "E005");
+        assert_eq!(payload["subcode"], "upload.chunk_size_mismatch");
+        assert!(payload.get("retryable").is_none());
+    }
+
+    #[test]
+    fn api_error_info_rejects_unknown_subcode_on_deserialize() {
+        let payload = serde_json::json!({
+            "internal_code": "E005",
+            "subcode": "remote.dynamic"
+        });
+
+        let err = serde_json::from_value::<ApiErrorInfo>(payload)
+            .expect_err("unknown ApiErrorInfo subcode should not deserialize");
+
+        assert!(err.is_data());
+    }
+
+    #[test]
+    fn unknown_encoded_subcode_is_not_exposed_as_api_subcode() {
+        let raw = "__ASTER_API_SUBCODE__=remote.dynamic::remote message";
+        let err = AsterError::validation_error(raw);
+
+        assert_eq!(err.api_error_subcode(), None);
+        assert_eq!(err.message(), "remote message");
+    }
+
     #[actix_web::test]
     async fn storage_transient_error_response_includes_specific_code_and_details() {
         let err = storage_driver_error(StorageErrorKind::Transient, "remote timeout");
@@ -622,7 +714,8 @@ mod tests {
 
     #[actix_web::test]
     async fn validation_subcode_response_uses_conflict_code_and_preserves_message() {
-        let err = validation_error_with_subcode("auth.email_exists", "email already exists");
+        let err =
+            validation_error_with_subcode(ApiSubcode::AuthEmailExists, "email already exists");
         let response = actix_web::ResponseError::error_response(&err);
 
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
@@ -645,8 +738,10 @@ mod tests {
 
     #[actix_web::test]
     async fn upload_assembly_response_preserves_subcode_on_server_error() {
-        let err =
-            upload_assembly_error_with_subcode("upload.temp_object_missing", "object missing");
+        let err = upload_assembly_error_with_subcode(
+            ApiSubcode::UploadTempObjectMissing,
+            "object missing",
+        );
         let response = actix_web::ResponseError::error_response(&err);
 
         let body = body::to_bytes(response.into_body())
@@ -666,7 +761,7 @@ mod tests {
     #[actix_web::test]
     async fn thumbnail_generation_response_preserves_subcode_on_server_error() {
         let err = thumbnail_generation_error_with_subcode(
-            "thumbnail.output_invalid",
+            ApiSubcode::ThumbnailOutputInvalid,
             "decode ffmpeg thumbnail output",
         );
         let response = actix_web::ResponseError::error_response(&err);

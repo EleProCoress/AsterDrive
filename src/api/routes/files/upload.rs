@@ -133,14 +133,14 @@ pub async fn upload_chunk(
     state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     path: web::Path<ChunkPath>,
-    body: web::Bytes,
+    payload: web::Payload,
 ) -> Result<HttpResponse> {
-    let resp = upload_service::upload_chunk_bytes(
+    let resp = upload_service::upload_chunk_payload(
         &state,
         &path.upload_id,
         path.chunk_number,
         claims.user_id,
-        body,
+        payload,
     )
     .await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(resp)))
@@ -397,16 +397,16 @@ pub(crate) async fn team_upload_chunk(
     state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
     path: web::Path<(i64, String, i32)>,
-    body: web::Bytes,
+    payload: web::Payload,
 ) -> Result<HttpResponse> {
     let (team_id, upload_id, chunk_number) = path.into_inner();
-    let resp = upload_service::upload_chunk_bytes_for_team(
+    let resp = upload_service::upload_chunk_payload_for_team(
         &state,
         team_id,
         &upload_id,
         chunk_number,
         claims.user_id,
-        body,
+        payload,
     )
     .await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(resp)))

@@ -1,3 +1,4 @@
+use crate::api::subcode::ApiSubcode;
 use crate::config::media_processing as media_processing_config;
 use crate::entities::{file_blob, storage_policy};
 use crate::errors::{
@@ -27,9 +28,8 @@ pub(crate) fn map_thumbnail_request_error(error: AsterError) -> AsterError {
     {
         let subcode = error
             .api_error_subcode()
-            .map(str::to_string)
-            .unwrap_or_else(|| "thumbnail.processor_unavailable".to_string());
-        return validation_error_with_subcode(&subcode, display_message);
+            .unwrap_or(ApiSubcode::ThumbnailProcessorUnavailable);
+        return validation_error_with_subcode(subcode, display_message);
     }
 
     error
@@ -322,12 +322,13 @@ fn thumbnail_precondition_is_user_fixable(message: &str) -> bool {
 }
 
 fn thumbnail_processor_unavailable_error(message: impl Into<String>) -> AsterError {
-    precondition_failed_with_subcode("thumbnail.processor_unavailable", message)
+    precondition_failed_with_subcode(ApiSubcode::ThumbnailProcessorUnavailable, message)
 }
 
 #[cfg(test)]
 mod tests {
     use super::{map_thumbnail_request_error, thumbnail_processor_unavailable_error};
+    use crate::api::subcode::ApiSubcode;
     use crate::errors::AsterError;
 
     #[test]
@@ -338,7 +339,7 @@ mod tests {
         assert!(matches!(error, AsterError::ValidationError(_)));
         assert_eq!(
             error.api_error_subcode(),
-            Some("thumbnail.processor_unavailable")
+            Some(ApiSubcode::ThumbnailProcessorUnavailable)
         );
     }
 
@@ -350,7 +351,7 @@ mod tests {
         assert!(matches!(error, AsterError::PreconditionFailed(_)));
         assert_eq!(
             error.api_error_subcode(),
-            Some("thumbnail.processor_unavailable")
+            Some(ApiSubcode::ThumbnailProcessorUnavailable)
         );
     }
 }

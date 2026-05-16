@@ -551,5 +551,6 @@ pub(super) struct ApiEnvelope<T> {
     pub(super) code: i32,
     pub(super) msg: String,
     pub(super) data: Option<T>,
+    #[allow(dead_code)]
     pub(super) error: Option<ApiErrorInfo>,
 }
