@@ -2,6 +2,7 @@ import { lazy, Suspense } from "react";
 import { useTranslation } from "react-i18next";
 import { normalizeTablePreviewDelimiter } from "@/lib/tablePreview";
 import type {
+	ArchivePreviewManifest,
 	FileInfo,
 	FileListItem,
 	PreviewLinkInfo,
@@ -47,6 +48,11 @@ const TextCodePreview = lazy(async () => {
 	return { default: module.TextCodePreview };
 });
 
+const ArchivePreview = lazy(async () => {
+	const module = await import("./ArchivePreview");
+	return { default: module.ArchivePreview };
+});
+
 type PreviewProfile = ReturnType<typeof detectFilePreviewProfile>;
 
 interface FilePreviewBodyProps {
@@ -57,6 +63,9 @@ interface FilePreviewBodyProps {
 	downloadPath: string;
 	getOptionLabel: (option: OpenWithOption) => string;
 	previewLinkFactory?: () => Promise<PreviewLinkInfo>;
+	archivePreviewFactory?: (options?: {
+		signal?: AbortSignal;
+	}) => Promise<ArchivePreviewManifest>;
 	videoStreamLinkFactory?: () => Promise<ShareStreamSessionInfo>;
 	createWopiSession?: (() => Promise<WopiLaunchSession>) | null;
 	onFileUpdated?: () => void;
@@ -74,6 +83,7 @@ export function FilePreviewBody({
 	downloadPath,
 	getOptionLabel,
 	previewLinkFactory,
+	archivePreviewFactory,
 	videoStreamLinkFactory,
 	createWopiSession,
 	onFileUpdated,
@@ -198,6 +208,14 @@ export function FilePreviewBody({
 					onDirtyChange={onDirtyChange}
 					editable={editable}
 				/>
+			</Suspense>
+		);
+	}
+
+	if (activeOption.mode === "archive") {
+		return (
+			<Suspense fallback={previewLoadingState}>
+				<ArchivePreview loadManifest={archivePreviewFactory} />
 			</Suspense>
 		);
 	}

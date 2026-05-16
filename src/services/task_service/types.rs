@@ -83,6 +83,16 @@ pub struct ArchiveExtractTaskPayload {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+pub struct ArchivePreviewTaskPayload {
+    pub file_id: i64,
+    pub source_file_name: String,
+    pub source_blob_id: i64,
+    pub source_hash: String,
+    pub limit_signature: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct ArchiveCompressTaskResult {
     pub target_file_id: i64,
     pub target_file_name: String,
@@ -98,6 +108,18 @@ pub struct ArchiveExtractTaskResult {
     pub target_path: String,
     pub extracted_file_count: i64,
     pub extracted_folder_count: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+pub struct ArchivePreviewTaskResult {
+    pub file_id: i64,
+    pub source_blob_id: i64,
+    pub source_hash: String,
+    pub entry_count: i64,
+    pub file_count: i64,
+    pub directory_count: i64,
+    pub truncated: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -239,6 +261,7 @@ pub struct StoragePolicyTempCleanupTaskResult {
 pub enum TaskPayload {
     ArchiveCompress(ArchiveCompressTaskPayload),
     ArchiveExtract(ArchiveExtractTaskPayload),
+    ArchivePreviewGenerate(ArchivePreviewTaskPayload),
     ThumbnailGenerate(ThumbnailGenerateTaskPayload),
     StoragePolicyTempCleanup(StoragePolicyTempCleanupTaskPayloadInfo),
     SystemRuntime(RuntimeTaskPayload),
@@ -250,6 +273,7 @@ pub enum TaskPayload {
 pub enum TaskResult {
     ArchiveCompress(ArchiveCompressTaskResult),
     ArchiveExtract(ArchiveExtractTaskResult),
+    ArchivePreviewGenerate(ArchivePreviewTaskResult),
     ThumbnailGenerate(ThumbnailGenerateTaskResult),
     StoragePolicyTempCleanup(StoragePolicyTempCleanupTaskResult),
     SystemRuntime(RuntimeTaskResult),
@@ -311,6 +335,9 @@ pub(super) fn parse_task_payload_info(task: &background_task::Model) -> Result<T
         BackgroundTaskKind::ArchiveExtract => {
             Ok(TaskPayload::ArchiveExtract(parse_task_payload(task)?))
         }
+        BackgroundTaskKind::ArchivePreviewGenerate => Ok(TaskPayload::ArchivePreviewGenerate(
+            parse_task_payload(task)?,
+        )),
         BackgroundTaskKind::ThumbnailGenerate => {
             Ok(TaskPayload::ThumbnailGenerate(parse_task_payload(task)?))
         }
@@ -340,6 +367,15 @@ pub(super) fn parse_task_result_info(task: &background_task::Model) -> Result<Op
             })?,
         ))),
         BackgroundTaskKind::ArchiveExtract => Ok(Some(TaskResult::ArchiveExtract(
+            serde_json::from_str(raw.as_ref()).map_err(|error| {
+                AsterError::internal_error(format!(
+                    "parse result for task #{} ({}): {error}",
+                    task.id,
+                    task.kind.to_value()
+                ))
+            })?,
+        ))),
+        BackgroundTaskKind::ArchivePreviewGenerate => Ok(Some(TaskResult::ArchivePreviewGenerate(
             serde_json::from_str(raw.as_ref()).map_err(|error| {
                 AsterError::internal_error(format!(
                     "parse result for task #{} ({}): {error}",

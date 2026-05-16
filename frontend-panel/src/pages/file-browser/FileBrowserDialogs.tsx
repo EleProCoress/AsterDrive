@@ -132,6 +132,9 @@ export function FileBrowserDialogs({
 					previewLinkFactory={() =>
 						fileService.createPreviewLink(retainedPreviewState.file.id)
 					}
+					archivePreviewFactory={(options) =>
+						fileService.getArchivePreview(retainedPreviewState.file.id, options)
+					}
 					wopiSessionFactory={(appKey) =>
 						fileService.createWopiSession(retainedPreviewState.file.id, appKey)
 					}

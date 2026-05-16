@@ -74,6 +74,13 @@ pub const ARCHIVE_EXTRACT_MAX_COMPRESSION_RATIO_KEY: &str = "archive_extract_max
 pub const ARCHIVE_EXTRACT_MAX_ENTRY_COMPRESSION_RATIO_KEY: &str =
     "archive_extract_max_entry_compression_ratio";
 pub const ARCHIVE_EXTRACT_MAX_DURATION_SECS_KEY: &str = "archive_extract_max_duration_secs";
+pub const ARCHIVE_PREVIEW_ENABLED_KEY: &str = "archive_preview_enabled";
+pub const ARCHIVE_PREVIEW_USER_ENABLED_KEY: &str = "archive_preview_user_enabled";
+pub const ARCHIVE_PREVIEW_SHARE_ENABLED_KEY: &str = "archive_preview_share_enabled";
+pub const ARCHIVE_PREVIEW_MAX_SOURCE_BYTES_KEY: &str = "archive_preview_max_source_bytes";
+pub const ARCHIVE_PREVIEW_MAX_ENTRIES_KEY: &str = "archive_preview_max_entries";
+pub const ARCHIVE_PREVIEW_MAX_MANIFEST_BYTES_KEY: &str = "archive_preview_max_manifest_bytes";
+pub const ARCHIVE_PREVIEW_MAX_DURATION_SECS_KEY: &str = "archive_preview_max_duration_secs";
 pub const ARCHIVE_BUILD_MAX_ENTRIES_KEY: &str = "archive_build_max_entries";
 pub const ARCHIVE_BUILD_MAX_TOTAL_SOURCE_BYTES_KEY: &str = "archive_build_max_total_source_bytes";
 pub const ARCHIVE_BUILD_MAX_TEMP_BYTES_KEY: &str = "archive_build_max_temp_bytes";
@@ -658,6 +665,89 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: "storage.archive_extract",
         description: "Maximum wall-clock seconds allowed for one online archive extraction task",
+    },
+    ConfigDef {
+        key: ARCHIVE_PREVIEW_ENABLED_KEY,
+        label_i18n_key: "settings_item_archive_preview_enabled_label",
+        description_i18n_key: "settings_item_archive_preview_enabled_desc",
+        value_type: SystemConfigValueType::Boolean,
+        default_fn: || "false".to_string(),
+        requires_restart: false,
+        is_sensitive: false,
+        category: "storage.archive_preview",
+        description: "Master switch for read-only ZIP archive preview",
+    },
+    ConfigDef {
+        key: ARCHIVE_PREVIEW_USER_ENABLED_KEY,
+        label_i18n_key: "settings_item_archive_preview_user_enabled_label",
+        description_i18n_key: "settings_item_archive_preview_user_enabled_desc",
+        value_type: SystemConfigValueType::Boolean,
+        default_fn: || "false".to_string(),
+        requires_restart: false,
+        is_sensitive: false,
+        category: "storage.archive_preview",
+        description: "Allow signed-in users to preview ZIP manifests for personal and team files",
+    },
+    ConfigDef {
+        key: ARCHIVE_PREVIEW_SHARE_ENABLED_KEY,
+        label_i18n_key: "settings_item_archive_preview_share_enabled_label",
+        description_i18n_key: "settings_item_archive_preview_share_enabled_desc",
+        value_type: SystemConfigValueType::Boolean,
+        default_fn: || "false".to_string(),
+        requires_restart: false,
+        is_sensitive: false,
+        category: "storage.archive_preview",
+        description: "Allow public share pages to preview ZIP manifests after share access checks",
+    },
+    ConfigDef {
+        key: ARCHIVE_PREVIEW_MAX_SOURCE_BYTES_KEY,
+        label_i18n_key: "settings_item_archive_preview_max_source_bytes_label",
+        description_i18n_key: "settings_item_archive_preview_max_source_bytes_desc",
+        value_type: SystemConfigValueType::Number,
+        default_fn: || {
+            crate::config::operations::DEFAULT_ARCHIVE_PREVIEW_MAX_SOURCE_BYTES.to_string()
+        },
+        requires_restart: false,
+        is_sensitive: false,
+        category: "storage.archive_preview",
+        description: "Maximum source ZIP file bytes accepted for read-only archive preview",
+    },
+    ConfigDef {
+        key: ARCHIVE_PREVIEW_MAX_ENTRIES_KEY,
+        label_i18n_key: "settings_item_archive_preview_max_entries_label",
+        description_i18n_key: "settings_item_archive_preview_max_entries_desc",
+        value_type: SystemConfigValueType::Number,
+        default_fn: || crate::config::operations::DEFAULT_ARCHIVE_PREVIEW_MAX_ENTRIES.to_string(),
+        requires_restart: false,
+        is_sensitive: false,
+        category: "storage.archive_preview",
+        description: "Maximum number of ZIP central-directory entries accepted for archive preview",
+    },
+    ConfigDef {
+        key: ARCHIVE_PREVIEW_MAX_MANIFEST_BYTES_KEY,
+        label_i18n_key: "settings_item_archive_preview_max_manifest_bytes_label",
+        description_i18n_key: "settings_item_archive_preview_max_manifest_bytes_desc",
+        value_type: SystemConfigValueType::Number,
+        default_fn: || {
+            crate::config::operations::DEFAULT_ARCHIVE_PREVIEW_MAX_MANIFEST_BYTES.to_string()
+        },
+        requires_restart: false,
+        is_sensitive: false,
+        category: "storage.archive_preview",
+        description: "Maximum serialized ZIP preview manifest bytes returned to clients",
+    },
+    ConfigDef {
+        key: ARCHIVE_PREVIEW_MAX_DURATION_SECS_KEY,
+        label_i18n_key: "settings_item_archive_preview_max_duration_secs_label",
+        description_i18n_key: "settings_item_archive_preview_max_duration_secs_desc",
+        value_type: SystemConfigValueType::Number,
+        default_fn: || {
+            crate::config::operations::DEFAULT_ARCHIVE_PREVIEW_MAX_DURATION_SECS.to_string()
+        },
+        requires_restart: false,
+        is_sensitive: false,
+        category: "storage.archive_preview",
+        description: "Maximum wall-clock seconds allowed for one ZIP preview scan",
     },
     ConfigDef {
         key: ARCHIVE_BUILD_MAX_ENTRIES_KEY,

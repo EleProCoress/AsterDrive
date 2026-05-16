@@ -5,6 +5,8 @@ mod common;
 
 use actix_web::test;
 use actix_web::{App, web};
+use aster_drive::db::repository::{file_repo, property_repo};
+use aster_drive::types::EntityType;
 use base64::Engine;
 
 fn basic_auth_header(username: &str, password: &str) -> String {
@@ -886,6 +888,140 @@ async fn test_webdav_proppatch_rejects_dav_namespace_changes() {
     assert!(
         xml.contains("403") || xml.contains("Forbidden"),
         "DAV namespace writes should be rejected: {xml}"
+    );
+
+    let propfind_body = r#"<?xml version="1.0" encoding="utf-8" ?>
+<D:propfind xmlns:D="DAV:">
+  <D:prop>
+    <D:displayname />
+  </D:prop>
+</D:propfind>"#;
+    let req = test::TestRequest::with_uri("/webdav/dav-props.txt")
+        .method(actix_web::http::Method::from_bytes(b"PROPFIND").unwrap())
+        .insert_header(("Authorization", auth.clone()))
+        .insert_header(("Depth", "0"))
+        .insert_header(("Content-Type", "application/xml"))
+        .set_payload(propfind_body)
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 207);
+    let body = test::read_body(resp).await;
+    let xml = String::from_utf8_lossy(&body);
+    assert!(
+        !xml.contains("blocked"),
+        "rejected DAV: property should not be persisted: {xml}"
+    );
+}
+
+#[actix_web::test]
+async fn test_webdav_hides_and_rejects_system_property_namespace() {
+    use aster_drive::services::auth_service;
+
+    let state = common::setup().await;
+    let db1 = state.db.clone();
+    let db2 = state.db.clone();
+    let webdav_config = aster_drive::config::WebDavConfig::default();
+    let app = test::init_service(
+        App::new()
+            .wrap(aster_drive::api::middleware::security_headers::default_headers())
+            .app_data(web::PayloadConfig::new(10 * 1024 * 1024))
+            .app_data(web::JsonConfig::default().limit(1024 * 1024))
+            .app_data(web::Data::new(state.clone()))
+            .configure(move |cfg| {
+                aster_drive::webdav::configure(cfg, &webdav_config, &db2);
+                aster_drive::api::configure_primary(cfg, &db1);
+            }),
+    )
+    .await;
+
+    let (token, _) = register_and_login!(app);
+    let claims = auth_service::verify_token(&token, &state.config.auth.jwt_secret)
+        .expect("access token should verify");
+    let auth = create_webdav_basic_auth!(app, token);
+
+    let req = test::TestRequest::put()
+        .uri("/webdav/system-props.zip")
+        .insert_header(("Authorization", auth.clone()))
+        .set_payload("zip")
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert!(resp.status() == 201 || resp.status() == 204);
+
+    let file =
+        file_repo::find_by_name_in_folder(&state.db, claims.user_id, None, "system-props.zip")
+            .await
+            .expect("file lookup should succeed")
+            .expect("uploaded file should exist");
+    property_repo::upsert(
+        &state.db,
+        EntityType::File,
+        file.id,
+        "system.archive_preview",
+        "zip_manifest.v1",
+        Some("cached"),
+    )
+    .await
+    .expect("internal system property should be writable through repo");
+
+    let propfind_body = r#"<?xml version="1.0" encoding="utf-8" ?>
+<D:propfind xmlns:D="DAV:" xmlns:S="system.archive_preview">
+  <D:prop>
+    <S:zip_manifest.v1 />
+  </D:prop>
+</D:propfind>"#;
+    let req = test::TestRequest::with_uri("/webdav/system-props.zip")
+        .method(actix_web::http::Method::from_bytes(b"PROPFIND").unwrap())
+        .insert_header(("Authorization", auth.clone()))
+        .insert_header(("Depth", "0"))
+        .insert_header(("Content-Type", "application/xml"))
+        .set_payload(propfind_body)
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 207);
+    let body = test::read_body(resp).await;
+    let xml = String::from_utf8_lossy(&body);
+    assert!(
+        !xml.contains("cached") && xml.contains("zip_manifest.v1") && xml.contains("404"),
+        "requested system properties must be reported as missing without exposing values: {xml}"
+    );
+
+    let proppatch_body = r#"<?xml version="1.0" encoding="utf-8" ?>
+<D:propertyupdate xmlns:D="DAV:" xmlns:S="system.archive_preview">
+  <D:set>
+    <D:prop>
+      <S:zip_manifest.v1>tampered</S:zip_manifest.v1>
+    </D:prop>
+  </D:set>
+</D:propertyupdate>"#;
+    let req = test::TestRequest::with_uri("/webdav/system-props.zip")
+        .method(actix_web::http::Method::from_bytes(b"PROPPATCH").unwrap())
+        .insert_header(("Authorization", auth))
+        .insert_header(("Content-Type", "application/xml"))
+        .set_payload(proppatch_body)
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 207);
+    let body = test::read_body(resp).await;
+    let xml = String::from_utf8_lossy(&body);
+    assert!(
+        xml.contains("403") || xml.contains("Forbidden"),
+        "system namespace writes should be rejected: {xml}"
+    );
+
+    let cached = property_repo::find_by_key(
+        &state.db,
+        EntityType::File,
+        file.id,
+        "system.archive_preview",
+        "zip_manifest.v1",
+    )
+    .await
+    .expect("system property lookup should succeed")
+    .expect("system property should still exist");
+    assert_eq!(
+        cached.value.as_deref(),
+        Some("cached"),
+        "rejected PROPPATCH must not overwrite system property"
     );
 }
 

@@ -4,6 +4,7 @@ import { absoluteAppUrl } from "@/lib/publicSiteUrl";
 import { buildWorkspacePath, type Workspace } from "@/lib/workspace";
 import { bindWorkspaceService } from "@/stores/workspaceStore";
 import type {
+	ArchivePreviewManifest,
 	DirectLinkTokenInfo,
 	ErrorCode,
 	FileInfo,
@@ -71,6 +72,12 @@ export function createFileService(workspace: Workspace) {
 		getDirectLinkToken: (id: number) =>
 			api.get<DirectLinkTokenInfo>(
 				buildWorkspacePath(workspace, `/files/${id}/direct-link`),
+			),
+
+		getArchivePreview: (id: number, options?: ServiceRequestOptions) =>
+			api.get<ArchivePreviewManifest>(
+				buildWorkspacePath(workspace, `/files/${id}/archive-preview`),
+				options,
 			),
 
 		createPreviewLink: (id: number) =>

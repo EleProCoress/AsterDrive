@@ -314,6 +314,10 @@ export const PREFIX_TYPE_INFO: Array<
 		{ category: "archive", icon: "FileZip", color: "text-yellow-600" },
 	],
 	[
+		"application/x-zip-compressed",
+		{ category: "archive", icon: "FileZip", color: "text-yellow-600" },
+	],
+	[
 		"application/x-tar",
 		{ category: "archive", icon: "FileZip", color: "text-yellow-600" },
 	],
@@ -510,6 +514,14 @@ export const BUILTIN_PREVIEW_OPTIONS: Record<string, OpenWithOption[]> = {
 			mode: "code",
 			labelKey: "open_with_code",
 			icon: PREVIEW_APP_ICON_URLS.code,
+		},
+	],
+	archive: [
+		{
+			key: "builtin.archive",
+			mode: "archive",
+			labelKey: "open_with_archive",
+			icon: PREVIEW_APP_ICON_URLS.archive,
 		},
 	],
 	svg: [

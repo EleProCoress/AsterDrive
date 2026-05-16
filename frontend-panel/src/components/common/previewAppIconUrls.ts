@@ -2,6 +2,7 @@ const PREVIEW_APP_ICON_BASE = "/static/preview-apps";
 
 export const PREVIEW_APP_ICON_URLS = {
 	audio: `${PREVIEW_APP_ICON_BASE}/audio.svg`,
+	archive: `${PREVIEW_APP_ICON_BASE}/archive.svg`,
 	code: `${PREVIEW_APP_ICON_BASE}/code.svg`,
 	file: `${PREVIEW_APP_ICON_BASE}/file.svg`,
 	googleDrive: `${PREVIEW_APP_ICON_BASE}/google-drive.svg`,
@@ -20,6 +21,8 @@ export function getBuiltinPreviewAppIconUrl(key: string) {
 	switch (key.trim()) {
 		case "builtin.audio":
 			return PREVIEW_APP_ICON_URLS.audio;
+		case "builtin.archive":
+			return PREVIEW_APP_ICON_URLS.archive;
 		case "builtin.code":
 			return PREVIEW_APP_ICON_URLS.code;
 		case "builtin.try_text":

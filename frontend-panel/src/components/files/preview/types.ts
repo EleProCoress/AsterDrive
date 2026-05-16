@@ -28,6 +28,7 @@ export type PreviewProviderKind =
 	| "table"
 	| "formatted"
 	| "code"
+	| "archive"
 	| "wopi"
 	| "url_template";
 

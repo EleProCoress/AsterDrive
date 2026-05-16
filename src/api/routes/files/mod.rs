@@ -13,7 +13,8 @@ pub mod upload;
 pub mod versions;
 
 pub use self::access::{
-    download, get_direct_link, get_file, get_preview_link, get_thumbnail, open_wopi,
+    download, get_archive_preview, get_direct_link, get_file, get_preview_link, get_thumbnail,
+    open_wopi,
 };
 pub use self::mutations::{
     CopyFileReq, CreateEmptyRequest, ExtractArchiveRequest, PatchFileReq, SetLockReq, copy_file,
@@ -29,8 +30,9 @@ pub use self::versions::{delete_version, list_versions, restore_version};
 pub use crate::api::dto::files::{OpenWopiRequest, VersionPath};
 
 pub(crate) use self::access::{
-    team_download, team_get_direct_link, team_get_file, team_get_preview_link, team_get_thumbnail,
-    team_open_wopi, thumbnail_response,
+    archive_preview_manifest_response, archive_preview_pending_response, team_download,
+    team_get_archive_preview, team_get_direct_link, team_get_file, team_get_preview_link,
+    team_get_thumbnail, team_open_wopi, thumbnail_response,
 };
 pub(crate) use self::mutations::{
     team_copy_file, team_create_empty, team_delete_file, team_extract_archive, team_patch_file,
@@ -71,6 +73,7 @@ pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory +
         .route("/upload/{upload_id}", web::get().to(get_upload_progress))
         .route("/upload/{upload_id}", web::delete().to(cancel_upload))
         .route("/{id}", web::get().to(get_file))
+        .route("/{id}/archive-preview", web::get().to(get_archive_preview))
         .route("/{id}/direct-link", web::get().to(get_direct_link))
         .route("/{id}/preview-link", web::post().to(get_preview_link))
         .route("/{id}/wopi/open", web::post().to(open_wopi))
@@ -120,6 +123,10 @@ pub fn team_routes() -> actix_web::Scope {
         .route("/upload/{upload_id}", web::delete().to(team_cancel_upload))
         .route("/new", web::post().to(team_create_empty))
         .route("/{id}", web::get().to(team_get_file))
+        .route(
+            "/{id}/archive-preview",
+            web::get().to(team_get_archive_preview),
+        )
         .route("/{id}/direct-link", web::get().to(team_get_direct_link))
         .route("/{id}/preview-link", web::post().to(team_get_preview_link))
         .route("/{id}/wopi/open", web::post().to(team_open_wopi))

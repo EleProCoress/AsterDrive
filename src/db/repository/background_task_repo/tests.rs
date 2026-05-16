@@ -35,6 +35,7 @@ async fn insert_task(
     let task_name = match kind {
         BackgroundTaskKind::ArchiveCompress => "archive-compress",
         BackgroundTaskKind::ArchiveExtract => "archive-extract",
+        BackgroundTaskKind::ArchivePreviewGenerate => "archive-preview-generate",
         BackgroundTaskKind::ThumbnailGenerate => "thumbnail-generate",
         BackgroundTaskKind::StoragePolicyTempCleanup => "storage-policy-temp-cleanup",
         BackgroundTaskKind::SystemRuntime => "task-cleanup",
@@ -51,6 +52,13 @@ async fn insert_task(
             "source_file_name": "repo-test.zip",
             "target_folder_id": null,
             "output_folder_name": "repo-test",
+        }),
+        BackgroundTaskKind::ArchivePreviewGenerate => serde_json::json!({
+            "file_id": 1,
+            "source_file_name": "repo-test.zip",
+            "source_blob_id": 1,
+            "source_hash": "hash",
+            "limit_signature": "source=1",
         }),
         BackgroundTaskKind::ThumbnailGenerate => serde_json::json!({
             "blob_id": 1,

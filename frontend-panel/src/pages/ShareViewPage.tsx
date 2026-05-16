@@ -273,6 +273,15 @@ export default function ShareViewPage() {
 									retainedPreviewFile.id,
 								)
 					}
+					archivePreviewFactory={(options) =>
+						info?.share_type === "file"
+							? shareService.getArchivePreview(token, options)
+							: shareService.getFolderFileArchivePreview(
+									token,
+									retainedPreviewFile.id,
+									options,
+								)
+					}
 					videoStreamLinkFactory={createVideoStreamLink}
 				/>
 			) : null}

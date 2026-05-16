@@ -58,6 +58,7 @@ describe("fileService", () => {
 		fileService.renameFolder(7, "Renamed");
 		fileService.getFile(8);
 		fileService.getDirectLinkToken(8);
+		fileService.getArchivePreview(8);
 		fileService.createWopiSession(8, "custom.onlyoffice");
 		fileService.deleteFile(8);
 		fileService.renameFile(8, "notes.md");
@@ -92,6 +93,11 @@ describe("fileService", () => {
 		});
 		expect(mockState.get).toHaveBeenNthCalledWith(5, "/files/8");
 		expect(mockState.get).toHaveBeenNthCalledWith(6, "/files/8/direct-link");
+		expect(mockState.get).toHaveBeenNthCalledWith(
+			7,
+			"/files/8/archive-preview",
+			undefined,
+		);
 		expect(mockState.post).toHaveBeenNthCalledWith(2, "/files/8/wopi/open", {
 			app_key: "custom.onlyoffice",
 		});
@@ -119,7 +125,7 @@ describe("fileService", () => {
 		expect(mockState.post).toHaveBeenNthCalledWith(8, "/folders/7/copy", {
 			parent_id: 3,
 		});
-		expect(mockState.get).toHaveBeenNthCalledWith(7, "/files/8/versions");
+		expect(mockState.get).toHaveBeenNthCalledWith(8, "/files/8/versions");
 		expect(mockState.post).toHaveBeenNthCalledWith(
 			9,
 			"/files/8/versions/2/restore",
@@ -148,6 +154,7 @@ describe("fileService", () => {
 		teamFileService.listRoot();
 		teamFileService.getFile(8);
 		teamFileService.getDirectLinkToken(8);
+		teamFileService.getArchivePreview(8);
 		teamFileService.createArchiveExtractTask(8);
 		teamFileService.listVersions(8);
 
@@ -156,6 +163,10 @@ describe("fileService", () => {
 		});
 		expect(mockState.get).toHaveBeenCalledWith("/teams/9/files/8");
 		expect(mockState.get).toHaveBeenCalledWith("/teams/9/files/8/direct-link");
+		expect(mockState.get).toHaveBeenCalledWith(
+			"/teams/9/files/8/archive-preview",
+			undefined,
+		);
 		expect(mockState.post).toHaveBeenCalledWith("/teams/9/files/8/extract", {});
 		expect(mockState.get).toHaveBeenCalledWith("/teams/9/files/8/versions");
 		expect(teamFileService.downloadPath(8)).toBe("/teams/9/files/8/download");
@@ -188,6 +199,29 @@ describe("fileService", () => {
 		expect(mockState.get).toHaveBeenNthCalledWith(3, "/folders/7/ancestors", {
 			signal: controller.signal,
 		});
+	});
+
+	it("forwards abort signals for archive preview requests", async () => {
+		const controller = new AbortController();
+		const { createFileService, fileService } = await import(
+			"@/services/fileService"
+		);
+
+		fileService.getArchivePreview(8, { signal: controller.signal });
+		createFileService({ kind: "team", teamId: 9 }).getArchivePreview(8, {
+			signal: controller.signal,
+		});
+
+		expect(mockState.get).toHaveBeenNthCalledWith(
+			1,
+			"/files/8/archive-preview",
+			{ signal: controller.signal },
+		);
+		expect(mockState.get).toHaveBeenNthCalledWith(
+			2,
+			"/teams/9/files/8/archive-preview",
+			{ signal: controller.signal },
+		);
 	});
 
 	it("updates file content with optimistic concurrency headers", async () => {

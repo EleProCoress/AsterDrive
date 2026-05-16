@@ -213,6 +213,32 @@ describe("http api helpers", () => {
 		await expect(api.get("/files")).rejects.toBeInstanceOf(ApiError);
 	});
 
+	it("throws ApiPendingError for accepted processing responses", async () => {
+		mockState.client.get.mockResolvedValue({
+			status: 202,
+			headers: {
+				"retry-after": "3",
+			},
+			data: {
+				code: ErrorCode.Success,
+				msg: "",
+				data: null,
+			},
+		});
+
+		const { ApiPendingError, api } = await loadHttpModule();
+
+		await expect(api.get("/files/1/archive-preview")).rejects.toEqual(
+			expect.objectContaining({
+				message: "Request is still processing",
+				retryAfterSeconds: 3,
+			}),
+		);
+		await expect(api.get("/files/1/archive-preview")).rejects.toBeInstanceOf(
+			ApiPendingError,
+		);
+	});
+
 	it("preserves backend error details on ApiError", async () => {
 		mockState.client.get.mockResolvedValue({
 			data: {

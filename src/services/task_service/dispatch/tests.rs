@@ -145,6 +145,10 @@ fn task_lane_keeps_archive_and_thumbnail_separate() {
         TaskLane::Archive
     );
     assert_eq!(
+        task_lane(BackgroundTaskKind::ArchivePreviewGenerate),
+        TaskLane::Archive
+    );
+    assert_eq!(
         task_lane(BackgroundTaskKind::ThumbnailGenerate),
         TaskLane::Thumbnail
     );

@@ -186,6 +186,23 @@ export class ApiError extends Error {
 	}
 }
 
+export class ApiPendingError extends Error {
+	retryAfterSeconds: number;
+
+	constructor(message = "Request is still processing", retryAfterSeconds = 2) {
+		super(message);
+		this.retryAfterSeconds = retryAfterSeconds;
+	}
+}
+
+function parseRetryAfterSeconds(value: string | null | undefined): number {
+	if (!value) {
+		return 2;
+	}
+	const seconds = Number.parseInt(value, 10);
+	return Number.isFinite(seconds) && seconds > 0 ? seconds : 2;
+}
+
 function normalizeApiErrorInfo(
 	value: ApiErrorInfoPayload | null | undefined,
 ): ApiErrorDetails {
@@ -237,9 +254,23 @@ function extractApiError(error: unknown): ApiError | null {
 }
 
 async function unwrap<T>(
-	promise: Promise<{ data: ApiResponse<T> }>,
+	promise: Promise<{
+		status: number;
+		headers?: { [key: string]: unknown };
+		data: ApiResponse<T>;
+	}>,
 ): Promise<T> {
-	const { data: resp } = await promise;
+	const { status, headers, data: resp } = await promise;
+	if (status === 202) {
+		const retryAfter =
+			typeof headers?.["retry-after"] === "string"
+				? headers["retry-after"]
+				: undefined;
+		throw new ApiPendingError(
+			"Request is still processing",
+			parseRetryAfterSeconds(retryAfter),
+		);
+	}
 	if (resp.code !== ErrorCode.Success) {
 		throw new ApiError(resp.code, resp.msg, normalizeApiErrorInfo(resp.error));
 	}

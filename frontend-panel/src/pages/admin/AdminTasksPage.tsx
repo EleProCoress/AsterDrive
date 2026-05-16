@@ -64,6 +64,7 @@ const DEFAULT_TASK_SORT_ORDER = "desc" as const satisfies SortOrder;
 const TASK_KIND_FILTER_VALUES = [
 	"archive_extract",
 	"archive_compress",
+	"archive_preview_generate",
 	"thumbnail_generate",
 	"system_runtime",
 ] as const;
@@ -354,6 +355,8 @@ export default function AdminTasksPage() {
 				return t("tasks:kind_archive_extract");
 			case "archive_compress":
 				return t("tasks:kind_archive_compress");
+			case "archive_preview_generate":
+				return t("tasks:kind_archive_preview_generate");
 			case "thumbnail_generate":
 				return t("tasks:kind_thumbnail_generate");
 			case "system_runtime":

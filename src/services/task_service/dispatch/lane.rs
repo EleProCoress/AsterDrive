@@ -16,9 +16,10 @@ pub(super) struct TaskLaneConfig {
     pub(super) fast_continue: bool,
 }
 
-const ARCHIVE_TASK_KINDS: [BackgroundTaskKind; 2] = [
+const ARCHIVE_TASK_KINDS: [BackgroundTaskKind; 3] = [
     BackgroundTaskKind::ArchiveCompress,
     BackgroundTaskKind::ArchiveExtract,
+    BackgroundTaskKind::ArchivePreviewGenerate,
 ];
 const THUMBNAIL_TASK_KINDS: [BackgroundTaskKind; 1] = [BackgroundTaskKind::ThumbnailGenerate];
 const FALLBACK_TASK_KINDS: [BackgroundTaskKind; 2] = [
@@ -64,9 +65,9 @@ impl TaskLaneConfig {
 
 pub(super) fn task_lane(kind: BackgroundTaskKind) -> TaskLane {
     match kind {
-        BackgroundTaskKind::ArchiveCompress | BackgroundTaskKind::ArchiveExtract => {
-            TaskLane::Archive
-        }
+        BackgroundTaskKind::ArchiveCompress
+        | BackgroundTaskKind::ArchiveExtract
+        | BackgroundTaskKind::ArchivePreviewGenerate => TaskLane::Archive,
         BackgroundTaskKind::ThumbnailGenerate => TaskLane::Thumbnail,
         BackgroundTaskKind::StoragePolicyTempCleanup | BackgroundTaskKind::SystemRuntime => {
             TaskLane::Fallback

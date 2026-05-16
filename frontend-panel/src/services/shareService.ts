@@ -4,6 +4,7 @@ import { absoluteAppUrl } from "@/lib/publicSiteUrl";
 import { buildWorkspacePath, type Workspace } from "@/lib/workspace";
 import { bindWorkspaceService } from "@/stores/workspaceStore";
 import type {
+	ArchivePreviewManifest,
 	BatchResult,
 	FolderContents,
 	FolderListParams,
@@ -15,7 +16,9 @@ import type {
 	ShareStreamSessionInfo,
 	ShareTarget,
 } from "@/types/api";
-import { api } from "./http";
+import { type ApiRequestConfig, api } from "./http";
+
+type ServiceRequestOptions = Pick<ApiRequestConfig, "signal">;
 
 function workspaceSharesPrefix(workspace: Workspace) {
 	return buildWorkspacePath(workspace, "/shares");
@@ -72,6 +75,9 @@ export function createShareService(workspace: Workspace) {
 		createPreviewLink: (token: string) =>
 			api.post<PreviewLinkInfo>(`/s/${token}/preview-link`),
 
+		getArchivePreview: (token: string, options?: ServiceRequestOptions) =>
+			api.get<ArchivePreviewManifest>(`/s/${token}/archive-preview`, options),
+
 		createStreamSession: (token: string) =>
 			api.post<ShareStreamSessionInfo>(`/s/${token}/stream-session`),
 
@@ -82,6 +88,16 @@ export function createShareService(workspace: Workspace) {
 
 		createFolderFilePreviewLink: (token: string, fileId: number) =>
 			api.post<PreviewLinkInfo>(`/s/${token}/files/${fileId}/preview-link`),
+
+		getFolderFileArchivePreview: (
+			token: string,
+			fileId: number,
+			options?: ServiceRequestOptions,
+		) =>
+			api.get<ArchivePreviewManifest>(
+				`/s/${token}/files/${fileId}/archive-preview`,
+				options,
+			),
 
 		createFolderFileStreamSession: (token: string, fileId: number) =>
 			api.post<ShareStreamSessionInfo>(

@@ -46,6 +46,11 @@ async fn test_public_preview_apps_returns_default_registry() {
             && app["extensions"] == json!(["json", "xml"])
             && app["labels"]["zh"] == "格式化视图"
     }));
+    assert!(body["data"]["apps"].as_array().unwrap().iter().any(|app| {
+        app["key"] == "builtin.archive"
+            && app["extensions"] == json!(["zip"])
+            && app["labels"]["zh"] == "压缩包预览"
+    }));
 }
 
 #[actix_web::test]
@@ -134,7 +139,7 @@ async fn test_admin_preview_apps_config_rejects_invalid_json() {
 }
 
 #[actix_web::test]
-async fn test_admin_preview_apps_config_rejects_builtin_removal() {
+async fn test_admin_preview_apps_config_restores_missing_builtins() {
     let state = common::setup().await;
     let app = create_test_app!(state);
     let (token, _) = register_and_login!(app);
@@ -165,12 +170,34 @@ async fn test_admin_preview_apps_config_rejects_builtin_removal() {
         }))
         .to_request();
     let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), 400);
+    assert_eq!(resp.status(), 200);
 
     let body: Value = test::read_body_json(resp).await;
+    let value = body["data"]["value"]
+        .as_str()
+        .expect("saved preview apps config value should be a string");
+    let stored: Value = serde_json::from_str(value).expect("saved config should be JSON");
+    let stored_apps = stored["apps"]
+        .as_array()
+        .expect("stored apps should be an array");
+    assert!(stored_apps.iter().any(|app| app["key"] == "custom.viewer"));
+    assert!(stored_apps.iter().any(|app| app["key"] == "builtin.code"));
     assert!(
-        body["msg"]
-            .as_str()
-            .is_some_and(|msg| msg.contains("cannot be removed"))
+        stored_apps
+            .iter()
+            .any(|app| app["key"] == "builtin.archive")
     );
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/public/preview-apps")
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    let apps = body["data"]["apps"]
+        .as_array()
+        .expect("public apps should be an array");
+    assert!(apps.iter().any(|app| app["key"] == "custom.viewer"));
+    assert!(apps.iter().any(|app| app["key"] == "builtin.code"));
+    assert!(apps.iter().any(|app| app["key"] == "builtin.archive"));
 }

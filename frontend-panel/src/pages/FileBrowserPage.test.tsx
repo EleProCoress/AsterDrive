@@ -21,6 +21,7 @@ const mockState = vi.hoisted(() => ({
 	createArchiveExtractTask: vi.fn(),
 	copyFile: vi.fn(),
 	copyFolder: vi.fn(),
+	getArchivePreview: vi.fn(),
 	createPreviewLink: vi.fn(),
 	createWopiSession: vi.fn(),
 	streamArchiveDownload: vi.fn(),
@@ -507,6 +508,7 @@ vi.mock("@/components/files/FilePreview", () => ({
 		onClose,
 		onFileUpdated,
 		previewLinkFactory,
+		archivePreviewFactory,
 		wopiSessionFactory,
 	}: {
 		file: { name: string };
@@ -515,6 +517,7 @@ vi.mock("@/components/files/FilePreview", () => ({
 		onClose: () => void;
 		onFileUpdated?: () => void;
 		previewLinkFactory?: () => unknown;
+		archivePreviewFactory?: () => unknown;
 		wopiSessionFactory?: (appKey: string) => unknown;
 	}) =>
 		open ? (
@@ -528,6 +531,9 @@ vi.mock("@/components/files/FilePreview", () => ({
 				</button>
 				<button type="button" onClick={() => previewLinkFactory?.()}>
 					create-preview-link
+				</button>
+				<button type="button" onClick={() => archivePreviewFactory?.()}>
+					get-archive-preview
 				</button>
 				<button type="button" onClick={() => wopiSessionFactory?.("office")}>
 					create-wopi-session
@@ -807,6 +813,8 @@ vi.mock("@/services/fileService", () => ({
 			mockState.createArchiveExtractTask(...args),
 		createPreviewLink: (...args: unknown[]) =>
 			mockState.createPreviewLink(...args),
+		getArchivePreview: (...args: unknown[]) =>
+			mockState.getArchivePreview(...args),
 		createWopiSession: (...args: unknown[]) =>
 			mockState.createWopiSession(...args),
 		downloadUrl: (id: number) => `https://download/${id}`,
@@ -915,6 +923,7 @@ describe("FileBrowserPage", () => {
 		mockState.createArchiveExtractTask.mockReset();
 		mockState.copyFile.mockReset();
 		mockState.copyFolder.mockReset();
+		mockState.getArchivePreview.mockReset();
 		mockState.createPreviewLink.mockReset();
 		mockState.createWopiSession.mockReset();
 		mockState.streamArchiveDownload.mockReset();
@@ -986,6 +995,7 @@ describe("FileBrowserPage", () => {
 		});
 		mockState.copyFile.mockResolvedValue(undefined);
 		mockState.copyFolder.mockResolvedValue(undefined);
+		mockState.getArchivePreview.mockResolvedValue({ entries: [] });
 		mockState.createPreviewLink.mockResolvedValue("preview-link");
 		mockState.createWopiSession.mockResolvedValue({ session: "wopi" });
 		mockState.formatBatchToast.mockImplementation((_t, action: string) => ({
@@ -1413,11 +1423,15 @@ describe("FileBrowserPage", () => {
 			screen.getByRole("button", { name: "create-preview-link" }),
 		);
 		fireEvent.click(
+			screen.getByRole("button", { name: "get-archive-preview" }),
+		);
+		fireEvent.click(
 			screen.getByRole("button", { name: "create-wopi-session" }),
 		);
 
 		expect(mockState.store.refresh).toHaveBeenCalledTimes(1);
 		expect(mockState.createPreviewLink).toHaveBeenCalledWith(31);
+		expect(mockState.getArchivePreview).toHaveBeenCalledWith(31, undefined);
 		expect(mockState.createWopiSession).toHaveBeenCalledWith(31, "office");
 
 		fireEvent.click(screen.getByRole("button", { name: "close-preview" }));

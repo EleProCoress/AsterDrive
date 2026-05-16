@@ -172,6 +172,13 @@ async fn test_admin_scope_allows_admin_users() {
     assert!(keys.contains(&"task_list_max_limit"));
     assert!(keys.contains(&"avatar_max_upload_size_bytes"));
     assert!(keys.contains(&"archive_extract_max_staging_bytes"));
+    assert!(keys.contains(&"archive_preview_enabled"));
+    assert!(keys.contains(&"archive_preview_user_enabled"));
+    assert!(keys.contains(&"archive_preview_share_enabled"));
+    assert!(keys.contains(&"archive_preview_max_source_bytes"));
+    assert!(keys.contains(&"archive_preview_max_entries"));
+    assert!(keys.contains(&"archive_preview_max_manifest_bytes"));
+    assert!(keys.contains(&"archive_preview_max_duration_secs"));
     assert!(keys.contains(&"thumbnail_max_source_bytes"));
     assert!(keys.contains(&"media_processing_registry_json"));
     assert!(keys.contains(&"branding_title"));
@@ -261,6 +268,21 @@ async fn test_admin_scope_allows_admin_users() {
         "settings_item_task_list_max_limit_label"
     );
     assert_eq!(task_limit["category"], "operations");
+
+    let archive_preview_enabled = body["data"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|item| item["key"] == "archive_preview_enabled")
+        .unwrap();
+    assert_eq!(
+        archive_preview_enabled["label_i18n_key"],
+        "settings_item_archive_preview_enabled_label"
+    );
+    assert_eq!(
+        archive_preview_enabled["category"],
+        "storage.archive_preview"
+    );
 }
 
 #[actix_web::test]
@@ -1819,6 +1841,10 @@ async fn test_admin_tasks_cleanup_uses_explicit_finished_before() {
             ),
             BackgroundTaskKind::ArchiveCompress => StoredTaskPayload(
                 r#"{"file_ids":[],"folder_ids":[1],"archive_name":"archive.zip","target_folder_id":null}"#
+                    .to_string(),
+            ),
+            BackgroundTaskKind::ArchivePreviewGenerate => StoredTaskPayload(
+                r#"{"file_id":1,"source_file_name":"archive.zip","source_blob_id":1,"source_hash":"hash","limit_signature":"source=1"}"#
                     .to_string(),
             ),
             BackgroundTaskKind::ThumbnailGenerate => StoredTaskPayload(

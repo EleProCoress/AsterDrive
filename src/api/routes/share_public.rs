@@ -12,8 +12,8 @@ use crate::errors::Result;
 use crate::runtime::PrimaryAppState;
 use crate::services::file_service::ResolvedDownloadRange;
 use crate::services::{
-    direct_link_service, file_service, preview_link_service, profile_service, share_service,
-    share_stream_service,
+    archive_preview_service, direct_link_service, file_service, preview_link_service,
+    profile_service, share_service, share_stream_service,
 };
 use actix_governor::Governor;
 use actix_web::http::header;
@@ -108,6 +108,7 @@ pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory +
                 .route(web::post().to(verify_password)),
         )
         .route("/{token}/preview-link", web::post().to(create_preview_link))
+        .route("/{token}/archive-preview", web::get().to(archive_preview))
         .route("/{token}/download", web::get().to(download_shared))
         .route(
             "/{token}/files/{file_id}/download",
@@ -116,6 +117,10 @@ pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory +
         .route(
             "/{token}/files/{file_id}/preview-link",
             web::post().to(create_folder_file_preview_link),
+        )
+        .route(
+            "/{token}/files/{file_id}/archive-preview",
+            web::get().to(folder_file_archive_preview),
         )
         .route(
             "/{token}/stream-session",
@@ -237,6 +242,46 @@ pub async fn create_preview_link(
     )
     .await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(link)))
+}
+
+#[api_docs_macros::path(
+    get,
+    path = "/api/v1/s/{token}/archive-preview",
+    tag = "shares",
+    operation_id = "get_shared_file_archive_preview",
+    params(("token" = String, Path, description = "Share token")),
+    responses(
+        (status = 200, description = "ZIP archive preview manifest", body = inline(ApiResponse<archive_preview_service::ArchivePreviewManifest>)),
+        (status = 202, description = "ZIP archive preview generation has been queued"),
+        (status = 304, description = "Archive preview not modified"),
+        (status = 400, description = "Not a supported archive or archive rejected by limits"),
+        (status = 403, description = "Password required or archive preview disabled"),
+        (status = 404, description = "Share not found"),
+    ),
+)]
+pub async fn archive_preview(
+    state: web::Data<PrimaryAppState>,
+    path: web::Path<String>,
+    req: actix_web::HttpRequest,
+) -> Result<HttpResponse> {
+    let token = path.into_inner();
+    let cookie_value = share_cookie_value(&req, &token);
+    share_service::check_share_password_cookie(&state, &token, cookie_value.as_deref()).await?;
+
+    match archive_preview_service::preview_shared_file(&state, &token).await? {
+        archive_preview_service::ArchivePreviewManifestLookup::Ready(manifest) => {
+            files::archive_preview_manifest_response(
+                manifest,
+                req.headers()
+                    .get(header::IF_NONE_MATCH)
+                    .and_then(|value| value.to_str().ok()),
+                "public, max-age=0, must-revalidate",
+            )
+        }
+        archive_preview_service::ArchivePreviewManifestLookup::Pending => {
+            Ok(files::archive_preview_pending_response())
+        }
+    }
 }
 
 #[api_docs_macros::path(
@@ -465,6 +510,49 @@ pub async fn create_folder_file_preview_link(
     )
     .await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(link)))
+}
+
+#[api_docs_macros::path(
+    get,
+    path = "/api/v1/s/{token}/files/{file_id}/archive-preview",
+    tag = "shares",
+    operation_id = "get_shared_folder_file_archive_preview",
+    params(
+        ("token" = String, Path, description = "Share token"),
+        ("file_id" = i64, Path, description = "File ID inside shared folder")
+    ),
+    responses(
+        (status = 200, description = "ZIP archive preview manifest", body = inline(ApiResponse<archive_preview_service::ArchivePreviewManifest>)),
+        (status = 202, description = "ZIP archive preview generation has been queued"),
+        (status = 304, description = "Archive preview not modified"),
+        (status = 400, description = "Not a supported archive or archive rejected by limits"),
+        (status = 403, description = "Password required, file outside shared folder, or archive preview disabled"),
+        (status = 404, description = "Share or file not found"),
+    )
+)]
+pub async fn folder_file_archive_preview(
+    state: web::Data<PrimaryAppState>,
+    path: web::Path<(String, i64)>,
+    req: actix_web::HttpRequest,
+) -> Result<HttpResponse> {
+    let (token, file_id) = path.into_inner();
+    let cookie_value = share_cookie_value(&req, &token);
+    share_service::check_share_password_cookie(&state, &token, cookie_value.as_deref()).await?;
+
+    match archive_preview_service::preview_shared_folder_file(&state, &token, file_id).await? {
+        archive_preview_service::ArchivePreviewManifestLookup::Ready(manifest) => {
+            files::archive_preview_manifest_response(
+                manifest,
+                req.headers()
+                    .get(header::IF_NONE_MATCH)
+                    .and_then(|value| value.to_str().ok()),
+                "public, max-age=0, must-revalidate",
+            )
+        }
+        archive_preview_service::ArchivePreviewManifestLookup::Pending => {
+            Ok(files::archive_preview_pending_response())
+        }
+    }
 }
 
 #[api_docs_macros::path(

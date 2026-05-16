@@ -10,6 +10,8 @@ use serde::Serialize;
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::ToSchema;
 
+pub const SYSTEM_PROPERTY_NAMESPACE_PREFIX: &str = "system.";
+
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct EntityProperty {
@@ -32,6 +34,28 @@ impl From<entity_property::Model> for EntityProperty {
             value: model.value,
         }
     }
+}
+
+pub fn is_system_namespace(namespace: &str) -> bool {
+    namespace.starts_with(SYSTEM_PROPERTY_NAMESPACE_PREFIX)
+}
+
+pub fn is_dav_namespace(namespace: &str) -> bool {
+    namespace == "DAV:"
+}
+
+pub fn is_protected_namespace(namespace: &str) -> bool {
+    is_dav_namespace(namespace) || is_system_namespace(namespace)
+}
+
+fn ensure_user_namespace_mutable(namespace: &str) -> Result<()> {
+    if is_dav_namespace(namespace) {
+        return Err(AsterError::auth_forbidden("DAV: namespace is read-only"));
+    }
+    if is_system_namespace(namespace) {
+        return Err(AsterError::auth_forbidden("system namespace is read-only"));
+    }
+    Ok(())
 }
 
 /// 验证实体归属并返回
@@ -72,6 +96,7 @@ pub async fn list(
         property_repo::find_by_entity(&state.db, entity_type, entity_id)
             .await?
             .into_iter()
+            .filter(|prop| !is_protected_namespace(&prop.namespace))
             .map(Into::into)
             .collect(),
     )
@@ -89,9 +114,7 @@ pub async fn set(
 ) -> Result<EntityProperty> {
     verify_ownership(state, entity_type, entity_id, user_id).await?;
 
-    if namespace == "DAV:" {
-        return Err(AsterError::auth_forbidden("DAV: namespace is read-only"));
-    }
+    ensure_user_namespace_mutable(namespace)?;
 
     // 输入长度限制
     if namespace.len() > 256 {
@@ -126,9 +149,7 @@ pub async fn delete(
 ) -> Result<()> {
     verify_ownership(state, entity_type, entity_id, user_id).await?;
 
-    if namespace == "DAV:" {
-        return Err(AsterError::auth_forbidden("DAV: namespace is read-only"));
-    }
+    ensure_user_namespace_mutable(namespace)?;
 
     property_repo::delete_prop(&state.db, entity_type, entity_id, namespace, name).await?;
     tracing::debug!(

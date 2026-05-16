@@ -62,6 +62,8 @@ export function OverviewBackgroundTasksSection({
 				return t("tasks:kind_archive_extract");
 			case "archive_compress":
 				return t("tasks:kind_archive_compress");
+			case "archive_preview_generate":
+				return t("tasks:kind_archive_preview_generate");
 			case "thumbnail_generate":
 				return t("tasks:kind_thumbnail_generate");
 			case "system_runtime":

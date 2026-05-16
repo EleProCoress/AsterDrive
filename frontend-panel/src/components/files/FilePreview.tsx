@@ -1,5 +1,6 @@
 import { FilePreviewDialog } from "@/components/files/preview/FilePreviewDialog";
 import type {
+	ArchivePreviewManifest,
 	FileInfo,
 	FileListItem,
 	PreviewLinkInfo,
@@ -15,6 +16,9 @@ interface FilePreviewProps {
 	downloadPath?: string;
 	editable?: boolean;
 	previewLinkFactory?: () => Promise<PreviewLinkInfo>;
+	archivePreviewFactory?: (options?: {
+		signal?: AbortSignal;
+	}) => Promise<ArchivePreviewManifest>;
 	videoStreamLinkFactory?: () => Promise<ShareStreamSessionInfo>;
 	wopiSessionFactory?: (appKey: string) => Promise<WopiLaunchSession>;
 	open?: boolean;
@@ -29,6 +33,7 @@ export function FilePreview({
 	downloadPath,
 	editable,
 	previewLinkFactory,
+	archivePreviewFactory,
 	videoStreamLinkFactory,
 	wopiSessionFactory,
 	open = true,
@@ -44,6 +49,7 @@ export function FilePreview({
 			downloadPath={downloadPath}
 			editable={editable}
 			previewLinkFactory={previewLinkFactory}
+			archivePreviewFactory={archivePreviewFactory}
 			videoStreamLinkFactory={videoStreamLinkFactory}
 			wopiSessionFactory={wopiSessionFactory}
 			openMode={openMode}
