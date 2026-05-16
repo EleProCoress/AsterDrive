@@ -466,7 +466,7 @@ async fn test_archive_preview_reuses_pending_task_for_repeated_requests() {
 }
 
 #[actix_web::test]
-async fn test_archive_preview_config_change_invalidates_cache_and_queues_new_task() {
+async fn test_archive_preview_limit_reduction_keeps_generated_cache() {
     let state = common::setup().await;
     enable_archive_preview(&state, true, false).await;
     let app = create_test_app!(state.clone());
@@ -476,7 +476,10 @@ async fn test_archive_preview_config_change_invalidates_cache_and_queues_new_tas
         &token,
         "config-sensitive.zip",
         "application/zip",
-        create_stored_zip_bytes(&[("config.txt", Some(b"config".as_slice()))]),
+        create_stored_zip_bytes(&[
+            ("config-a.txt", Some(b"config-a".as_slice())),
+            ("config-b.txt", Some(b"config-b".as_slice())),
+        ]),
     )
     .await;
 
@@ -489,37 +492,25 @@ async fn test_archive_preview_config_change_invalidates_cache_and_queues_new_tas
     assert_eq!(resp.status(), StatusCode::OK);
     assert_eq!(archive_preview_tasks(&state).await.len(), 1);
 
-    aster_drive::services::config_service::set(&state, "archive_preview_max_entries", "2001", 1)
+    aster_drive::services::config_service::set(&state, "archive_preview_max_entries", "1", 1)
         .await
-        .expect("archive preview entry limit should update");
+        .expect("archive preview entry limit should be reduced");
 
     let resp = request_personal_archive_preview(&app, &token, file_id).await;
     assert_eq!(
         resp.status(),
-        StatusCode::ACCEPTED,
-        "changed preview limits should make the cached manifest stale"
+        StatusCode::OK,
+        "reduced preview limits should not invalidate an already generated manifest"
     );
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["entry_count"], 2);
     let tasks = archive_preview_tasks(&state).await;
     assert_eq!(
         tasks.len(),
-        2,
-        "stale cache should enqueue exactly one replacement task"
+        1,
+        "cache hit should not enqueue a replacement task after limits are reduced"
     );
     assert_eq!(tasks[0].status, BackgroundTaskStatus::Succeeded);
-    assert_eq!(tasks[1].status, BackgroundTaskStatus::Pending);
-
-    aster_drive::services::task_service::drain(&state)
-        .await
-        .expect("second archive preview task should drain");
-    let resp = request_personal_archive_preview(&app, &token, file_id).await;
-    assert_eq!(resp.status(), StatusCode::OK);
-    let tasks = archive_preview_tasks(&state).await;
-    assert_eq!(tasks.len(), 2);
-    assert!(
-        tasks
-            .iter()
-            .all(|task| task.status == BackgroundTaskStatus::Succeeded)
-    );
 }
 
 #[actix_web::test]

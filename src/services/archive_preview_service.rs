@@ -178,6 +178,11 @@ async fn preview_verified_file(
     source_file: &file::Model,
 ) -> Result<ArchivePreviewManifestLookup> {
     ensure_archive_preview_source_supported(source_file)?;
+    let blob = file_repo::find_blob_by_id(&state.db, source_file.blob_id).await?;
+    if let Some(cached) = load_cached_manifest(state, source_file, &blob).await? {
+        return Ok(ArchivePreviewManifestLookup::Ready(cached));
+    }
+
     let limits = ArchivePreviewLimits::from_runtime_config(&state.runtime_config)?;
     if source_file.size > limits.max_source_bytes {
         return Err(archive_preview_validation_error(
@@ -187,11 +192,6 @@ async fn preview_verified_file(
                 source_file.size, limits.max_source_bytes
             ),
         ));
-    }
-
-    let blob = file_repo::find_blob_by_id(&state.db, source_file.blob_id).await?;
-    if let Some(cached) = load_cached_manifest(state, source_file, &blob, &limits).await? {
-        return Ok(ArchivePreviewManifestLookup::Ready(cached));
     }
 
     task_service::ensure_archive_preview_task(state, source_file, &blob, &limits.signature).await?;
@@ -255,7 +255,6 @@ async fn load_cached_manifest(
     state: &PrimaryAppState,
     source_file: &file::Model,
     blob: &file_blob::Model,
-    limits: &ArchivePreviewLimits,
 ) -> Result<Option<ArchivePreviewManifest>> {
     let Some(prop) = property_repo::find_by_key(
         &state.db,
@@ -287,7 +286,6 @@ async fn load_cached_manifest(
     if cached.schema_version == CACHE_SCHEMA_VERSION
         && cached.source_blob_id == blob.id
         && cached.source_hash == blob.hash
-        && cached.limit_signature == limits.signature
         && cached.manifest.schema_version == CACHE_SCHEMA_VERSION
         && cached.manifest.format == FORMAT_ZIP
     {
