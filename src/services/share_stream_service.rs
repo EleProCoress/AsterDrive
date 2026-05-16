@@ -4,7 +4,6 @@ use base64::Engine;
 use chrono::{DateTime, Duration, Utc};
 use moka::future::Cache;
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 use std::sync::LazyLock;
 use std::time::Duration as StdDuration;
 #[cfg(all(debug_assertions, feature = "openapi"))]
@@ -266,13 +265,13 @@ async fn resolve_session_target(
     ensure_payload_share_token(&payload, share_token)?;
     let marker_state = count_marker_state(state, session_token).await;
     let (share, file) = load_target(state, &payload, marker_state.is_some()).await?;
-    let expected = sign_shared_payload(
+    if !verify_shared_payload(
         &share,
         &file,
         payload_segment,
+        signature,
         &state.config.auth.jwt_secret,
-    );
-    if signature != expected {
+    ) {
         return Err(AsterError::share_not_found(
             "share stream session token signature mismatch",
         ));
@@ -364,15 +363,47 @@ fn sign_shared_payload(
     payload_segment: &str,
     secret: &str,
 ) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(
-        format!(
-            "share_stream_session:{secret}:{}:{}:{}:{payload_segment}",
-            share.token, share.id, file.id
-        )
-        .as_bytes(),
-    );
-    base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(hasher.finalize())
+    use hmac::Mac;
+    let digest = shared_payload_mac(share, file, payload_segment, secret)
+        .finalize()
+        .into_bytes();
+    base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(digest)
+}
+
+fn shared_payload_mac(
+    share: &share::Model,
+    file: &file::Model,
+    payload_segment: &str,
+    secret: &str,
+) -> hmac::Hmac<sha2::Sha256> {
+    use hmac::{Hmac, KeyInit, Mac};
+    let mut mac = <Hmac<sha2::Sha256> as KeyInit>::new_from_slice(secret.as_bytes())
+        .expect("HMAC accepts any key length");
+    mac.update(b"share_stream_session:");
+    mac.update(share.token.as_bytes());
+    mac.update(b":");
+    mac.update(share.id.to_string().as_bytes());
+    mac.update(b":");
+    mac.update(file.id.to_string().as_bytes());
+    mac.update(b":");
+    mac.update(payload_segment.as_bytes());
+    mac
+}
+
+fn verify_shared_payload(
+    share: &share::Model,
+    file: &file::Model,
+    payload_segment: &str,
+    signature: &str,
+    secret: &str,
+) -> bool {
+    use hmac::Mac;
+    let Ok(decoded) = base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(signature) else {
+        return false;
+    };
+    shared_payload_mac(share, file, payload_segment, secret)
+        .verify_slice(&decoded)
+        .is_ok()
 }
 
 async fn ensure_counted_once(

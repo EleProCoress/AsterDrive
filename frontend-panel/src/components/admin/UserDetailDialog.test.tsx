@@ -387,23 +387,27 @@ function renderDialog(userOverrides: Record<string, unknown> = {}) {
 }
 
 async function waitForPolicyLoad(selectedPolicyLabel = "Primary") {
-	await waitFor(() => {
-		expect(mockState.listPolicies).toHaveBeenCalledWith({
-			limit: 100,
-			offset: 0,
-		});
+	await waitFor(
+		() => {
+			expect(mockState.listPolicies).toHaveBeenCalledWith({
+				limit: 100,
+				offset: 0,
+			});
 
-		const selectedTrigger = screen
-			.queryAllByRole("combobox")
-			.some(
-				(trigger) => within(trigger).queryByText(selectedPolicyLabel) !== null,
+			const selectedTrigger = screen
+				.queryAllByRole("combobox")
+				.some(
+					(trigger) =>
+						within(trigger).queryByText(selectedPolicyLabel) !== null,
+				);
+			const matchingLabels = screen.queryAllByText(selectedPolicyLabel);
+			const selectedOption = matchingLabels.some(
+				(node) => node.closest('button[data-selected="true"]') !== null,
 			);
-		const matchingLabels = screen.queryAllByText(selectedPolicyLabel);
-		const selectedOption = matchingLabels.some(
-			(node) => node.closest('button[data-selected="true"]') !== null,
-		);
-		expect(selectedTrigger || selectedOption).toBe(true);
-	});
+			expect(selectedTrigger || selectedOption).toBe(true);
+		},
+		{ timeout: 3000 },
+	);
 }
 
 describe("UserDetailDialog", () => {

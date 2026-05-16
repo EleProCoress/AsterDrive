@@ -2,15 +2,10 @@
 
 use base64::Engine;
 use chrono::{DateTime, Duration, Utc};
-use moka::future::Cache;
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
-use std::sync::LazyLock;
-use std::time::Duration as StdDuration;
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::ToSchema;
 
-use crate::cache::CacheExt;
 use crate::config::site_url;
 use crate::db::repository::file_repo;
 use crate::entities::{file, share};
@@ -25,14 +20,6 @@ use crate::services::{
 const PREVIEW_LINK_TTL_SECS: i64 = 5 * 60;
 const PREVIEW_LINK_MAX_USES: u32 = 5;
 const PREVIEW_LINK_CACHE_PREFIX: &str = "preview_link:";
-static FALLBACK_PREVIEW_USAGE: LazyLock<Cache<String, PreviewUsageState>> = LazyLock::new(|| {
-    Cache::builder()
-        .max_capacity(10_000)
-        .time_to_live(StdDuration::from_secs(
-            u64::try_from(PREVIEW_LINK_TTL_SECS).unwrap_or(300),
-        ))
-        .build()
-});
 
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
@@ -60,15 +47,8 @@ struct PreviewTokenPayload {
     nonce: Option<String>,
 }
 
-#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
-struct PreviewUsageState {
-    used: u32,
-}
-
 struct ReservedUse {
     cache_key: String,
-    previous_used: u32,
-    ttl_secs: u64,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -283,7 +263,7 @@ fn encode_shared_token(
     secret: &str,
 ) -> Result<String> {
     let payload_segment = encode_payload(payload)?;
-    let signature = sign_shared_payload(share, file, &payload_segment, secret);
+    let signature = sign_shared_payload(share, file, &payload_segment, secret)?;
     Ok(format!("{payload_segment}.{signature}"))
 }
 
@@ -304,9 +284,12 @@ async fn resolve_token(state: &PrimaryAppState, token: &str) -> Result<ResolvedP
     match &payload.subject {
         PreviewSubject::File { file_id } => {
             let file = direct_link_service::load_public_file(state, *file_id).await?;
-            let expected =
-                sign_file_payload(&file, payload_segment, &state.config.auth.jwt_secret)?;
-            if signature != expected {
+            if !verify_file_payload(
+                &file,
+                payload_segment,
+                signature,
+                &state.config.auth.jwt_secret,
+            )? {
                 return Err(AsterError::share_not_found(
                     "preview link token signature mismatch",
                 ));
@@ -315,13 +298,13 @@ async fn resolve_token(state: &PrimaryAppState, token: &str) -> Result<ResolvedP
         }
         PreviewSubject::ShareFile { share_token } => {
             let (share, file) = share_service::load_preview_shared_file(state, share_token).await?;
-            let expected = sign_shared_payload(
+            if !verify_shared_payload(
                 &share,
                 &file,
                 payload_segment,
+                signature,
                 &state.config.auth.jwt_secret,
-            );
-            if signature != expected {
+            )? {
                 return Err(AsterError::share_not_found(
                     "preview link token signature mismatch",
                 ));
@@ -335,13 +318,13 @@ async fn resolve_token(state: &PrimaryAppState, token: &str) -> Result<ResolvedP
             let (share, file) =
                 share_service::load_preview_shared_folder_file(state, share_token, *file_id)
                     .await?;
-            let expected = sign_shared_payload(
+            if !verify_shared_payload(
                 &share,
                 &file,
                 payload_segment,
+                signature,
                 &state.config.auth.jwt_secret,
-            );
-            if signature != expected {
+            )? {
                 return Err(AsterError::share_not_found(
                     "preview link token signature mismatch",
                 ));
@@ -387,16 +370,11 @@ fn file_scope_signature(file: &file::Model) -> Result<String> {
 }
 
 fn sign_file_payload(file: &file::Model, payload_segment: &str, secret: &str) -> Result<String> {
-    let mut hasher = Sha256::new();
-    hasher.update(
-        format!(
-            "preview_link:file:{secret}:{}:{}:{payload_segment}",
-            file_scope_signature(file)?,
-            file.id
-        )
-        .as_bytes(),
-    );
-    Ok(base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(hasher.finalize()))
+    use hmac::Mac;
+    let digest = file_payload_mac(file, payload_segment, secret)?
+        .finalize()
+        .into_bytes();
+    Ok(base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(digest))
 }
 
 fn sign_shared_payload(
@@ -404,16 +382,80 @@ fn sign_shared_payload(
     file: &file::Model,
     payload_segment: &str,
     secret: &str,
-) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(
-        format!(
-            "preview_link:share:{secret}:{}:{}:{}:{payload_segment}",
-            share.token, share.id, file.id
-        )
-        .as_bytes(),
-    );
-    base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(hasher.finalize())
+) -> Result<String> {
+    use hmac::Mac;
+    let digest = shared_payload_mac(share, file, payload_segment, secret)
+        .finalize()
+        .into_bytes();
+    Ok(base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(digest))
+}
+
+fn file_payload_mac(
+    file: &file::Model,
+    payload_segment: &str,
+    secret: &str,
+) -> Result<hmac::Hmac<sha2::Sha256>> {
+    use hmac::{Hmac, KeyInit, Mac};
+    let mut mac = <Hmac<sha2::Sha256> as KeyInit>::new_from_slice(secret.as_bytes())
+        .expect("HMAC accepts any key length");
+    mac.update(b"preview_link:file:");
+    mac.update(file_scope_signature(file)?.as_bytes());
+    mac.update(b":");
+    mac.update(file.id.to_string().as_bytes());
+    mac.update(b":");
+    mac.update(payload_segment.as_bytes());
+    Ok(mac)
+}
+
+fn shared_payload_mac(
+    share: &share::Model,
+    file: &file::Model,
+    payload_segment: &str,
+    secret: &str,
+) -> hmac::Hmac<sha2::Sha256> {
+    use hmac::{Hmac, KeyInit, Mac};
+    let mut mac = <Hmac<sha2::Sha256> as KeyInit>::new_from_slice(secret.as_bytes())
+        .expect("HMAC accepts any key length");
+    mac.update(b"preview_link:share:");
+    mac.update(share.token.as_bytes());
+    mac.update(b":");
+    mac.update(share.id.to_string().as_bytes());
+    mac.update(b":");
+    mac.update(file.id.to_string().as_bytes());
+    mac.update(b":");
+    mac.update(payload_segment.as_bytes());
+    mac
+}
+
+fn verify_file_payload(
+    file: &file::Model,
+    payload_segment: &str,
+    signature: &str,
+    secret: &str,
+) -> Result<bool> {
+    use hmac::Mac;
+    let decoded = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(signature)
+        .map_aster_err_with(|| AsterError::share_not_found("invalid preview link token"))?;
+    Ok(file_payload_mac(file, payload_segment, secret)?
+        .verify_slice(&decoded)
+        .is_ok())
+}
+
+fn verify_shared_payload(
+    share: &share::Model,
+    file: &file::Model,
+    payload_segment: &str,
+    signature: &str,
+    secret: &str,
+) -> Result<bool> {
+    use hmac::Mac;
+    let decoded = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(signature)
+        .map_aster_err_with(|| AsterError::share_not_found("invalid preview link token"))?;
+    Ok(shared_payload_mac(share, file, payload_segment, secret)
+        .verify_slice(&decoded)
+        .is_ok())
 }
 
 async fn reserve_usage(
@@ -421,102 +463,26 @@ async fn reserve_usage(
     token: &str,
     payload: &PreviewTokenPayload,
 ) -> Result<ReservedUse> {
-    let cache_key = preview_cache_key(token);
     let ttl_secs = ttl_seconds(payload)?;
-    let usage = load_usage(state, &cache_key).await;
-    if usage.used >= payload.max_uses {
-        return Err(AsterError::share_download_limit(
-            "preview link usage limit reached",
-        ));
+    let marker = Vec::new();
+    for slot in 0..payload.max_uses {
+        let cache_key = preview_usage_slot_key(token, slot);
+        if state
+            .cache
+            .set_bytes_if_absent(&cache_key, marker.clone(), Some(ttl_secs))
+            .await
+        {
+            return Ok(ReservedUse { cache_key });
+        }
     }
 
-    let next_used = usage.used.saturating_add(1);
-    store_usage(
-        state,
-        &cache_key,
-        PreviewUsageState { used: next_used },
-        ttl_secs,
-    )
-    .await;
-
-    Ok(ReservedUse {
-        cache_key,
-        previous_used: usage.used,
-        ttl_secs,
-    })
+    Err(AsterError::share_download_limit(
+        "preview link usage limit reached",
+    ))
 }
 
 async fn rollback_usage(state: &PrimaryAppState, reserved: &ReservedUse) {
-    if reserved.previous_used == 0 {
-        delete_usage(state, &reserved.cache_key).await;
-        return;
-    }
-
-    store_usage(
-        state,
-        &reserved.cache_key,
-        PreviewUsageState {
-            used: reserved.previous_used,
-        },
-        reserved.ttl_secs,
-    )
-    .await;
-}
-
-async fn load_usage(state: &PrimaryAppState, cache_key: &str) -> PreviewUsageState {
-    let primary = if state.config.cache.enabled {
-        state.cache.get::<PreviewUsageState>(cache_key).await
-    } else {
-        None
-    };
-    let fallback = FALLBACK_PREVIEW_USAGE.get(cache_key).await;
-
-    match (primary, fallback) {
-        (Some(primary), Some(fallback)) => {
-            if primary.used >= fallback.used {
-                primary
-            } else {
-                fallback
-            }
-        }
-        (Some(primary), None) => primary,
-        (None, Some(fallback)) => fallback,
-        (None, None) => PreviewUsageState::default(),
-    }
-}
-
-async fn store_usage(
-    state: &PrimaryAppState,
-    cache_key: &str,
-    usage: PreviewUsageState,
-    ttl_secs: u64,
-) {
-    FALLBACK_PREVIEW_USAGE
-        .insert(cache_key.to_string(), usage)
-        .await;
-
-    if !state.config.cache.enabled {
-        return;
-    }
-
-    state.cache.set(cache_key, &usage, Some(ttl_secs)).await;
-    if let Some(stored) = state.cache.get::<PreviewUsageState>(cache_key).await
-        && stored.used >= usage.used
-    {
-        return;
-    }
-
-    tracing::warn!(
-        key = %cache_key,
-        "preview link usage cache backend did not persist entry; using local fallback cache"
-    );
-}
-
-async fn delete_usage(state: &PrimaryAppState, cache_key: &str) {
-    if state.config.cache.enabled {
-        state.cache.delete(cache_key).await;
-    }
-    FALLBACK_PREVIEW_USAGE.remove(cache_key).await;
+    state.cache.delete(&reserved.cache_key).await;
 }
 
 fn ttl_seconds(payload: &PreviewTokenPayload) -> Result<u64> {
@@ -530,8 +496,8 @@ fn ttl_seconds(payload: &PreviewTokenPayload) -> Result<u64> {
     )
 }
 
-fn preview_cache_key(token: &str) -> String {
-    format!("{PREVIEW_LINK_CACHE_PREFIX}{token}")
+fn preview_usage_slot_key(token: &str, slot: u32) -> String {
+    format!("{PREVIEW_LINK_CACHE_PREFIX}{token}:use:{slot}")
 }
 
 #[cfg(test)]
