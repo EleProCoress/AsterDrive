@@ -1,6 +1,6 @@
 //! ZIP 文件只读预览服务。
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::time::Instant;
 
 use chrono::Utc;
@@ -20,9 +20,8 @@ use crate::services::archive_service::zip_scan::{
     ZipScanEntryKind, ZipScanLimits, scan_zip_archive,
 };
 use crate::services::workspace_storage_service::WorkspaceStorageScope;
-use crate::services::{share_service, workspace_storage_service};
+use crate::services::{share_service, task_service, workspace_storage_service};
 use crate::types::EntityType;
-use crate::utils::raii::TempFileGuard;
 
 const CACHE_SCHEMA_VERSION: u32 = 1;
 const FORMAT_ZIP: &str = "zip";
@@ -96,19 +95,25 @@ struct CachedArchivePreviewManifest {
 }
 
 #[derive(Debug, Clone)]
-struct ArchivePreviewLimits {
-    max_source_bytes: i64,
-    max_manifest_bytes: usize,
-    max_duration_secs: u64,
-    scan_limits: ZipScanLimits,
-    signature: String,
+pub(crate) struct ArchivePreviewLimits {
+    pub(crate) max_source_bytes: i64,
+    pub(crate) max_manifest_bytes: usize,
+    pub(crate) max_duration_secs: u64,
+    pub(crate) scan_limits: ZipScanLimits,
+    pub(crate) signature: String,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) enum ArchivePreviewManifestLookup {
+    Ready(ArchivePreviewManifest),
+    Pending,
 }
 
 pub(crate) async fn preview_file_in_scope(
     state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     file_id: i64,
-) -> Result<ArchivePreviewManifest> {
+) -> Result<ArchivePreviewManifestLookup> {
     ensure_user_preview_enabled(state)?;
     workspace_storage_service::require_scope_access(state, scope).await?;
     let source_file = workspace_storage_service::verify_file_access(state, scope, file_id).await?;
@@ -119,7 +124,7 @@ pub(crate) async fn preview_file_in_scope(
 pub(crate) async fn preview_shared_file(
     state: &PrimaryAppState,
     token: &str,
-) -> Result<ArchivePreviewManifest> {
+) -> Result<ArchivePreviewManifestLookup> {
     ensure_share_preview_enabled(state)?;
     let (_, source_file) = share_service::load_preview_shared_file(state, token).await?;
     preview_verified_file(state, &source_file).await
@@ -129,7 +134,7 @@ pub(crate) async fn preview_shared_folder_file(
     state: &PrimaryAppState,
     token: &str,
     file_id: i64,
-) -> Result<ArchivePreviewManifest> {
+) -> Result<ArchivePreviewManifestLookup> {
     ensure_share_preview_enabled(state)?;
     let (_, source_file) =
         share_service::load_preview_shared_folder_file(state, token, file_id).await?;
@@ -171,7 +176,7 @@ fn ensure_preview_master_enabled(state: &PrimaryAppState) -> Result<()> {
 async fn preview_verified_file(
     state: &PrimaryAppState,
     source_file: &file::Model,
-) -> Result<ArchivePreviewManifest> {
+) -> Result<ArchivePreviewManifestLookup> {
     ensure_archive_preview_source_supported(source_file)?;
     let limits = ArchivePreviewLimits::from_runtime_config(&state.runtime_config)?;
     if source_file.size > limits.max_source_bytes {
@@ -186,19 +191,17 @@ async fn preview_verified_file(
 
     let blob = file_repo::find_blob_by_id(&state.db, source_file.blob_id).await?;
     if let Some(cached) = load_cached_manifest(state, source_file, &blob, &limits).await? {
-        return Ok(cached);
+        return Ok(ArchivePreviewManifestLookup::Ready(cached));
     }
 
-    let temp_path = prepare_archive_preview_temp_path(state).await?;
-    let temp_guard = TempFileGuard::new(temp_path, "archive preview source temp file");
-    download_blob_to_temp(state, source_file, &blob, temp_guard.path()).await?;
-    let manifest = scan_manifest_from_temp(source_file, &blob, temp_guard.path(), &limits).await?;
-    store_cached_manifest(state, source_file, &blob, &limits, &manifest).await;
-    Ok(manifest)
+    task_service::ensure_archive_preview_task(state, source_file, &blob, &limits.signature).await?;
+    Ok(ArchivePreviewManifestLookup::Pending)
 }
 
 impl ArchivePreviewLimits {
-    fn from_runtime_config(runtime_config: &crate::config::RuntimeConfig) -> Result<Self> {
+    pub(crate) fn from_runtime_config(
+        runtime_config: &crate::config::RuntimeConfig,
+    ) -> Result<Self> {
         let preview_max_entries = operations::archive_preview_max_entries(runtime_config);
         let scan_limits = ZipScanLimits {
             max_uncompressed_bytes: operations::archive_extract_max_uncompressed_bytes(
@@ -294,13 +297,13 @@ async fn load_cached_manifest(
     Ok(None)
 }
 
-async fn store_cached_manifest(
+pub(crate) async fn store_cached_manifest(
     state: &PrimaryAppState,
     source_file: &file::Model,
     blob: &file_blob::Model,
     limits: &ArchivePreviewLimits,
     manifest: &ArchivePreviewManifest,
-) {
+) -> Result<()> {
     let cached = CachedArchivePreviewManifest {
         schema_version: CACHE_SCHEMA_VERSION,
         source_blob_id: blob.id,
@@ -311,23 +314,22 @@ async fn store_cached_manifest(
     let serialized = match serde_json::to_string(&cached) {
         Ok(serialized) => serialized,
         Err(error) => {
-            tracing::warn!(
-                file_id = source_file.id,
-                "failed to serialize archive preview cache: {error}"
-            );
-            return;
+            return Err(AsterError::internal_error(format!(
+                "serialize archive preview cache: {error}"
+            )));
         }
     };
     if serialized.len() > ENTITY_PROPERTY_VALUE_MAX_BYTES {
-        tracing::debug!(
-            file_id = source_file.id,
-            bytes = serialized.len(),
-            "archive preview cache exceeds entity property value limit; skipping cache write"
-        );
-        return;
+        return Err(archive_preview_validation_error(
+            "archive_preview.manifest_too_large",
+            format!(
+                "archive preview manifest for file #{} exceeds entity property limit {} bytes",
+                source_file.id, ENTITY_PROPERTY_VALUE_MAX_BYTES
+            ),
+        ));
     }
 
-    if let Err(error) = property_repo::upsert(
+    property_repo::upsert(
         &state.db,
         EntityType::File,
         source_file.id,
@@ -335,30 +337,11 @@ async fn store_cached_manifest(
         ZIP_MANIFEST_CACHE_NAME,
         Some(&serialized),
     )
-    .await
-    {
-        tracing::warn!(
-            file_id = source_file.id,
-            "failed to write archive preview cache: {error}"
-        );
-    }
+    .await?;
+    Ok(())
 }
 
-async fn prepare_archive_preview_temp_path(state: &PrimaryAppState) -> Result<PathBuf> {
-    let runtime_temp_dir = crate::utils::paths::runtime_temp_dir(&state.config.server.temp_dir);
-    tokio::fs::create_dir_all(&runtime_temp_dir)
-        .await
-        .map_aster_err_ctx(
-            "create archive preview temp dir",
-            AsterError::storage_driver_error,
-        )?;
-    Ok(PathBuf::from(crate::utils::paths::runtime_temp_file_path(
-        &state.config.server.temp_dir,
-        &format!("archive-preview-{}.zip", uuid::Uuid::new_v4()),
-    )))
-}
-
-async fn download_blob_to_temp(
+pub(crate) async fn download_blob_to_temp(
     state: &PrimaryAppState,
     source_file: &file::Model,
     blob: &file_blob::Model,
@@ -385,7 +368,7 @@ async fn download_blob_to_temp(
     Ok(())
 }
 
-async fn scan_manifest_from_temp(
+pub(crate) async fn scan_manifest_from_temp(
     source_file: &file::Model,
     blob: &file_blob::Model,
     temp_path: &Path,
@@ -507,7 +490,7 @@ fn serialized_manifest_len(manifest: &ArchivePreviewManifest) -> Result<usize> {
         )
 }
 
-fn ensure_archive_preview_source_supported(source_file: &file::Model) -> Result<()> {
+pub(crate) fn ensure_archive_preview_source_supported(source_file: &file::Model) -> Result<()> {
     let mime = source_file.mime_type.to_ascii_lowercase();
     if source_file.name.to_ascii_lowercase().ends_with(".zip")
         || matches!(
@@ -524,8 +507,57 @@ fn ensure_archive_preview_source_supported(source_file: &file::Model) -> Result<
     }
 }
 
-fn archive_preview_validation_error(subcode: &str, message: impl Into<String>) -> AsterError {
+pub(crate) fn archive_preview_validation_error(
+    subcode: &str,
+    message: impl Into<String>,
+) -> AsterError {
     validation_error_with_subcode(subcode, message)
+}
+
+pub(crate) fn map_failed_task_error(last_error: Option<&str>) -> AsterError {
+    let message = last_error.unwrap_or("archive preview generation failed");
+    let lower = message.to_ascii_lowercase();
+    if lower.contains("archive preview currently supports")
+        || (lower.contains("supports .zip") && lower.contains("archive preview"))
+    {
+        return archive_preview_validation_error(
+            "archive_preview.unsupported_type",
+            "archive preview currently supports .zip files only",
+        );
+    }
+    if lower.contains("source archive size") && lower.contains("archive preview limit") {
+        return archive_preview_validation_error(
+            "archive_preview.source_too_large",
+            message.to_string(),
+        );
+    }
+    if lower.contains("invalid zip archive") {
+        return archive_preview_validation_error(
+            "archive_preview.invalid_zip",
+            "invalid zip archive",
+        );
+    }
+    if lower.contains("manifest") && lower.contains("exceeds") {
+        return archive_preview_validation_error(
+            "archive_preview.manifest_too_large",
+            message.to_string(),
+        );
+    }
+    if lower.contains("size mismatch") || lower.contains("expands beyond declared size") {
+        return archive_preview_validation_error(
+            "archive_preview.source_size_mismatch",
+            message.to_string(),
+        );
+    }
+    if lower.contains("archive contains")
+        || lower.contains("archive uncompressed size")
+        || lower.contains("compression ratio")
+        || lower.contains("unsafe path")
+    {
+        return archive_preview_validation_error("archive_preview.rejected", message.to_string());
+    }
+
+    AsterError::record_not_found("archive preview is unavailable for this file")
 }
 
 fn map_archive_preview_scan_error(error: AsterError) -> AsterError {

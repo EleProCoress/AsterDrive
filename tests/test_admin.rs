@@ -1843,6 +1843,10 @@ async fn test_admin_tasks_cleanup_uses_explicit_finished_before() {
                 r#"{"file_ids":[],"folder_ids":[1],"archive_name":"archive.zip","target_folder_id":null}"#
                     .to_string(),
             ),
+            BackgroundTaskKind::ArchivePreviewGenerate => StoredTaskPayload(
+                r#"{"file_id":1,"source_file_name":"archive.zip","source_blob_id":1,"source_hash":"hash","limit_signature":"source=1"}"#
+                    .to_string(),
+            ),
             BackgroundTaskKind::ThumbnailGenerate => StoredTaskPayload(
                 r#"{"blob_id":1,"blob_hash":"hash","source_file_name":"image.png","source_mime_type":"image/png","processor":"images"}"#
                     .to_string(),

@@ -35,6 +35,7 @@ use crate::services::{
 use crate::types::{BackgroundTaskKind, BackgroundTaskStatus, StoredTaskResult};
 use crate::utils::numbers::{i64_to_i32, i64_to_u64};
 
+pub(crate) use archive::ensure_archive_preview_task;
 pub(crate) use archive::{
     create_archive_compress_task_in_scope, create_archive_extract_task_in_scope,
     prepare_archive_download_in_scope, stream_archive_download_in_scope,
@@ -46,11 +47,11 @@ pub(crate) use storage_policy_cleanup::create_storage_policy_temp_cleanup_task;
 pub(crate) use thumbnail::ensure_thumbnail_task;
 pub use types::{
     ArchiveCompressTaskPayload, ArchiveCompressTaskResult, ArchiveExtractTaskPayload,
-    ArchiveExtractTaskResult, CreateArchiveCompressTaskParams, CreateArchiveExtractTaskParams,
-    CreateArchiveTaskParams, RuntimeSystemHealthComponent, RuntimeSystemHealthResult,
-    RuntimeSystemHealthStatus, RuntimeTaskPayload, RuntimeTaskResult, TaskInfo, TaskPayload,
-    TaskResult, TaskStepInfo, TaskStepStatus, ThumbnailGenerateTaskPayload,
-    ThumbnailGenerateTaskResult,
+    ArchiveExtractTaskResult, ArchivePreviewTaskPayload, ArchivePreviewTaskResult,
+    CreateArchiveCompressTaskParams, CreateArchiveExtractTaskParams, CreateArchiveTaskParams,
+    RuntimeSystemHealthComponent, RuntimeSystemHealthResult, RuntimeSystemHealthStatus,
+    RuntimeTaskPayload, RuntimeTaskResult, TaskInfo, TaskPayload, TaskResult, TaskStepInfo,
+    TaskStepStatus, ThumbnailGenerateTaskPayload, ThumbnailGenerateTaskResult,
 };
 use types::{parse_task_payload_info, parse_task_result_info, serialize_task_payload};
 
@@ -663,6 +664,7 @@ fn configured_task_max_attempts(state: &PrimaryAppState, kind: BackgroundTaskKin
         BackgroundTaskKind::SystemRuntime | BackgroundTaskKind::ThumbnailGenerate => 1,
         BackgroundTaskKind::ArchiveCompress
         | BackgroundTaskKind::ArchiveExtract
+        | BackgroundTaskKind::ArchivePreviewGenerate
         | BackgroundTaskKind::StoragePolicyTempCleanup => {
             operations::background_task_max_attempts(&state.runtime_config)
         }

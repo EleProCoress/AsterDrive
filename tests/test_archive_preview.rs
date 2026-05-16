@@ -8,7 +8,8 @@ use std::io::{Cursor, Write};
 use actix_web::http::StatusCode;
 use actix_web::test;
 use aster_drive::db::repository::property_repo;
-use aster_drive::types::EntityType;
+use aster_drive::entities::background_task;
+use aster_drive::types::{BackgroundTaskKind, BackgroundTaskStatus, EntityType};
 use serde_json::Value;
 
 fn create_stored_zip_bytes(entries: &[(&str, Option<&[u8]>)]) -> Vec<u8> {
@@ -151,10 +152,43 @@ async fn enable_archive_preview(
     }
 }
 
+async fn request_personal_archive_preview<S>(
+    app: &S,
+    token: &str,
+    file_id: i64,
+) -> actix_web::dev::ServiceResponse
+where
+    S: actix_web::dev::Service<
+            actix_http::Request,
+            Response = actix_web::dev::ServiceResponse,
+            Error = actix_web::Error,
+        >,
+{
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/files/{file_id}/archive-preview"))
+        .insert_header(("Cookie", common::access_cookie_header(token)))
+        .insert_header(common::csrf_header_for(token))
+        .to_request();
+    test::call_service(app, req).await
+}
+
+async fn archive_preview_tasks(
+    state: &aster_drive::runtime::PrimaryAppState,
+) -> Vec<background_task::Model> {
+    let mut tasks = aster_drive::db::repository::background_task_repo::list_recent(&state.db, 50)
+        .await
+        .expect("task list should load")
+        .into_iter()
+        .filter(|task| task.kind == BackgroundTaskKind::ArchivePreviewGenerate)
+        .collect::<Vec<_>>();
+    tasks.sort_by_key(|task| task.id);
+    tasks
+}
+
 #[actix_web::test]
 async fn test_archive_preview_default_disabled() {
     let state = common::setup().await;
-    let app = create_test_app!(state);
+    let app = create_test_app!(state.clone());
     let (token, _) = register_and_login!(app);
     let file_id = upload_bytes(
         &app,
@@ -180,7 +214,7 @@ async fn test_archive_preview_default_disabled() {
 async fn test_archive_preview_user_toggle_disabled_reports_subcode() {
     let state = common::setup().await;
     enable_archive_preview(&state, false, true).await;
-    let app = create_test_app!(state);
+    let app = create_test_app!(state.clone());
     let (token, _) = register_and_login!(app);
     let file_id = upload_bytes(
         &app,
@@ -221,12 +255,77 @@ async fn test_archive_preview_returns_manifest_and_caches_it() {
     )
     .await;
 
-    let req = test::TestRequest::get()
-        .uri(&format!("/api/v1/files/{file_id}/archive-preview"))
-        .insert_header(("Cookie", common::access_cookie_header(&token)))
-        .insert_header(common::csrf_header_for(&token))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
+    let resp = request_personal_archive_preview(&app, &token, file_id).await;
+    assert_eq!(resp.status(), StatusCode::ACCEPTED);
+    assert_eq!(
+        resp.headers()
+            .get("Retry-After")
+            .and_then(|value| value.to_str().ok()),
+        Some("2")
+    );
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["code"], 0);
+
+    let tasks = aster_drive::db::repository::background_task_repo::list_recent(&state.db, 10)
+        .await
+        .expect("task list should load");
+    let task = tasks
+        .iter()
+        .find(|task| task.kind == BackgroundTaskKind::ArchivePreviewGenerate)
+        .expect("archive preview task should be created");
+    assert_eq!(task.status, BackgroundTaskStatus::Pending);
+
+    aster_drive::services::task_service::drain(&state)
+        .await
+        .expect("archive preview task should drain");
+    let tasks = aster_drive::db::repository::background_task_repo::list_recent(&state.db, 10)
+        .await
+        .expect("task list should load");
+    let task = tasks
+        .iter()
+        .find(|task| task.kind == BackgroundTaskKind::ArchivePreviewGenerate)
+        .expect("archive preview task should exist");
+    assert_eq!(task.status, BackgroundTaskStatus::Succeeded);
+    assert_eq!(task.progress_current, 4);
+    assert_eq!(task.progress_total, 4);
+    assert_eq!(task.status_text.as_deref(), Some("Archive preview ready"));
+    let task_result: Value = serde_json::from_str(
+        task.result_json
+            .as_ref()
+            .expect("archive preview task should store result")
+            .as_ref(),
+    )
+    .expect("archive preview task result should parse");
+    assert_eq!(task_result["file_id"], file_id);
+    assert_eq!(task_result["entry_count"], 3);
+    assert_eq!(task_result["file_count"], 2);
+    assert_eq!(task_result["directory_count"], 1);
+    assert_eq!(task_result["truncated"], false);
+    let steps: Value = serde_json::from_str(
+        task.steps_json
+            .as_ref()
+            .expect("archive preview task should store steps")
+            .as_ref(),
+    )
+    .expect("archive preview task steps should parse");
+    let steps = steps.as_array().expect("task steps should be an array");
+    assert_eq!(
+        steps
+            .iter()
+            .map(|step| (
+                step["key"].as_str().unwrap(),
+                step["status"].as_str().unwrap()
+            ))
+            .collect::<Vec<_>>(),
+        vec![
+            ("waiting", "succeeded"),
+            ("download_source", "succeeded"),
+            ("scan_archive", "succeeded"),
+            ("persist_manifest", "succeeded"),
+        ]
+    );
+
+    let resp = request_personal_archive_preview(&app, &token, file_id).await;
     assert_eq!(resp.status(), 200);
     assert_eq!(
         resp.headers()
@@ -308,12 +407,7 @@ async fn test_archive_preview_returns_manifest_and_caches_it() {
         Some(etag.as_str())
     );
 
-    let req = test::TestRequest::get()
-        .uri(&format!("/api/v1/files/{file_id}/archive-preview"))
-        .insert_header(("Cookie", common::access_cookie_header(&token)))
-        .insert_header(common::csrf_header_for(&token))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
+    let resp = request_personal_archive_preview(&app, &token, file_id).await;
     assert_eq!(resp.status(), 200);
     assert_eq!(
         resp.headers()
@@ -326,13 +420,116 @@ async fn test_archive_preview_returns_manifest_and_caches_it() {
 }
 
 #[actix_web::test]
+async fn test_archive_preview_reuses_pending_task_for_repeated_requests() {
+    let state = common::setup().await;
+    enable_archive_preview(&state, true, false).await;
+    let app = create_test_app!(state.clone());
+    let (token, _) = register_and_login!(app);
+    let file_id = upload_bytes(
+        &app,
+        &token,
+        "dedupe.zip",
+        "application/zip",
+        create_stored_zip_bytes(&[("dedupe.txt", Some(b"dedupe".as_slice()))]),
+    )
+    .await;
+
+    let first = request_personal_archive_preview(&app, &token, file_id).await;
+    assert_eq!(first.status(), StatusCode::ACCEPTED);
+    let second = request_personal_archive_preview(&app, &token, file_id).await;
+    assert_eq!(second.status(), StatusCode::ACCEPTED);
+
+    let tasks = archive_preview_tasks(&state).await;
+    assert_eq!(
+        tasks.len(),
+        1,
+        "repeated cache-miss requests should reuse the pending task"
+    );
+    assert_eq!(tasks[0].status, BackgroundTaskStatus::Pending);
+    assert!(tasks[0].display_name.contains(&format!("file #{file_id}")));
+
+    aster_drive::services::task_service::drain(&state)
+        .await
+        .expect("archive preview task should drain");
+    let tasks = archive_preview_tasks(&state).await;
+    assert_eq!(
+        tasks.len(),
+        1,
+        "successful generation should not create another task"
+    );
+    assert_eq!(tasks[0].status, BackgroundTaskStatus::Succeeded);
+
+    let resp = request_personal_archive_preview(&app, &token, file_id).await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let tasks = archive_preview_tasks(&state).await;
+    assert_eq!(tasks.len(), 1, "cache hit should not enqueue a new task");
+}
+
+#[actix_web::test]
+async fn test_archive_preview_config_change_invalidates_cache_and_queues_new_task() {
+    let state = common::setup().await;
+    enable_archive_preview(&state, true, false).await;
+    let app = create_test_app!(state.clone());
+    let (token, _) = register_and_login!(app);
+    let file_id = upload_bytes(
+        &app,
+        &token,
+        "config-sensitive.zip",
+        "application/zip",
+        create_stored_zip_bytes(&[("config.txt", Some(b"config".as_slice()))]),
+    )
+    .await;
+
+    let resp = request_personal_archive_preview(&app, &token, file_id).await;
+    assert_eq!(resp.status(), StatusCode::ACCEPTED);
+    aster_drive::services::task_service::drain(&state)
+        .await
+        .expect("archive preview task should drain");
+    let resp = request_personal_archive_preview(&app, &token, file_id).await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    assert_eq!(archive_preview_tasks(&state).await.len(), 1);
+
+    aster_drive::services::config_service::set(&state, "archive_preview_max_entries", "2001", 1)
+        .await
+        .expect("archive preview entry limit should update");
+
+    let resp = request_personal_archive_preview(&app, &token, file_id).await;
+    assert_eq!(
+        resp.status(),
+        StatusCode::ACCEPTED,
+        "changed preview limits should make the cached manifest stale"
+    );
+    let tasks = archive_preview_tasks(&state).await;
+    assert_eq!(
+        tasks.len(),
+        2,
+        "stale cache should enqueue exactly one replacement task"
+    );
+    assert_eq!(tasks[0].status, BackgroundTaskStatus::Succeeded);
+    assert_eq!(tasks[1].status, BackgroundTaskStatus::Pending);
+
+    aster_drive::services::task_service::drain(&state)
+        .await
+        .expect("second archive preview task should drain");
+    let resp = request_personal_archive_preview(&app, &token, file_id).await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let tasks = archive_preview_tasks(&state).await;
+    assert_eq!(tasks.len(), 2);
+    assert!(
+        tasks
+            .iter()
+            .all(|task| task.status == BackgroundTaskStatus::Succeeded)
+    );
+}
+
+#[actix_web::test]
 async fn test_archive_preview_rejects_non_zip_and_source_limit() {
     let state = common::setup().await;
     enable_archive_preview(&state, true, false).await;
     aster_drive::services::config_service::set(&state, "archive_preview_max_source_bytes", "1", 1)
         .await
         .expect("archive preview source limit should update");
-    let app = create_test_app!(state);
+    let app = create_test_app!(state.clone());
     let (token, _) = register_and_login!(app);
 
     let text_id = upload_bytes(
@@ -352,6 +549,10 @@ async fn test_archive_preview_rejects_non_zip_and_source_limit() {
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
     let body: Value = test::read_body_json(resp).await;
     assert_eq!(body["error"]["subcode"], "archive_preview.unsupported_type");
+    assert!(
+        archive_preview_tasks(&state).await.is_empty(),
+        "unsupported files should fail before task creation"
+    );
 
     let zip_id = upload_bytes(
         &app,
@@ -370,13 +571,17 @@ async fn test_archive_preview_rejects_non_zip_and_source_limit() {
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
     let body: Value = test::read_body_json(resp).await;
     assert_eq!(body["error"]["subcode"], "archive_preview.source_too_large");
+    assert!(
+        archive_preview_tasks(&state).await.is_empty(),
+        "oversized sources should fail before task creation"
+    );
 }
 
 #[actix_web::test]
 async fn test_archive_preview_reports_invalid_zip_with_subcode() {
     let state = common::setup().await;
     enable_archive_preview(&state, true, false).await;
-    let app = create_test_app!(state);
+    let app = create_test_app!(state.clone());
     let (token, _) = register_and_login!(app);
 
     let file_id = upload_bytes(
@@ -388,15 +593,74 @@ async fn test_archive_preview_reports_invalid_zip_with_subcode() {
     )
     .await;
 
-    let req = test::TestRequest::get()
-        .uri(&format!("/api/v1/files/{file_id}/archive-preview"))
-        .insert_header(("Cookie", common::access_cookie_header(&token)))
-        .insert_header(common::csrf_header_for(&token))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
+    let resp = request_personal_archive_preview(&app, &token, file_id).await;
+    assert_eq!(resp.status(), StatusCode::ACCEPTED);
+    aster_drive::services::task_service::drain(&state)
+        .await
+        .expect("archive preview task should drain");
+    let resp = request_personal_archive_preview(&app, &token, file_id).await;
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
     let body: Value = test::read_body_json(resp).await;
     assert_eq!(body["error"]["subcode"], "archive_preview.invalid_zip");
+}
+
+#[actix_web::test]
+async fn test_archive_preview_failed_task_is_reused_as_friendly_error_without_requeue() {
+    let state = common::setup().await;
+    enable_archive_preview(&state, true, false).await;
+    let app = create_test_app!(state.clone());
+    let (token, _) = register_and_login!(app);
+
+    let file_id = upload_bytes(
+        &app,
+        &token,
+        "broken.zip",
+        "application/zip",
+        b"broken zip payload".to_vec(),
+    )
+    .await;
+
+    let resp = request_personal_archive_preview(&app, &token, file_id).await;
+    assert_eq!(resp.status(), StatusCode::ACCEPTED);
+    aster_drive::services::task_service::drain(&state)
+        .await
+        .expect("archive preview task should drain");
+
+    let tasks = archive_preview_tasks(&state).await;
+    assert_eq!(tasks.len(), 1);
+    let task = &tasks[0];
+    assert_eq!(task.status, BackgroundTaskStatus::Failed);
+    assert_eq!(task.failure_can_retry, Some(false));
+    assert!(
+        task.last_error
+            .as_deref()
+            .is_some_and(|error| error.contains("invalid zip archive"))
+    );
+    let steps: Value = serde_json::from_str(
+        task.steps_json
+            .as_ref()
+            .expect("failed archive preview task should store steps")
+            .as_ref(),
+    )
+    .expect("failed task steps should parse");
+    assert!(
+        steps
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|step| { step["key"] == "scan_archive" && step["status"] == "failed" }),
+        "scan step should be marked failed"
+    );
+
+    let resp = request_personal_archive_preview(&app, &token, file_id).await;
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["error"]["subcode"], "archive_preview.invalid_zip");
+    assert_eq!(
+        archive_preview_tasks(&state).await.len(),
+        1,
+        "known deterministic failure should not enqueue another identical task"
+    );
 }
 
 #[actix_web::test]
@@ -406,7 +670,7 @@ async fn test_archive_preview_reports_scan_limit_rejection_with_subcode() {
     aster_drive::services::config_service::set(&state, "archive_preview_max_entries", "1", 1)
         .await
         .expect("archive preview entry limit should update");
-    let app = create_test_app!(state);
+    let app = create_test_app!(state.clone());
     let (token, _) = register_and_login!(app);
 
     let file_id = upload_bytes(
@@ -421,12 +685,12 @@ async fn test_archive_preview_reports_scan_limit_rejection_with_subcode() {
     )
     .await;
 
-    let req = test::TestRequest::get()
-        .uri(&format!("/api/v1/files/{file_id}/archive-preview"))
-        .insert_header(("Cookie", common::access_cookie_header(&token)))
-        .insert_header(common::csrf_header_for(&token))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
+    let resp = request_personal_archive_preview(&app, &token, file_id).await;
+    assert_eq!(resp.status(), StatusCode::ACCEPTED);
+    aster_drive::services::task_service::drain(&state)
+        .await
+        .expect("archive preview task should drain");
+    let resp = request_personal_archive_preview(&app, &token, file_id).await;
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
     let body: Value = test::read_body_json(resp).await;
     assert_eq!(body["error"]["subcode"], "archive_preview.rejected");
@@ -444,7 +708,7 @@ async fn test_archive_preview_truncates_manifest_to_configured_limit() {
     )
     .await
     .expect("archive preview manifest limit should update");
-    let app = create_test_app!(state);
+    let app = create_test_app!(state.clone());
     let (token, _) = register_and_login!(app);
 
     let file_id = upload_bytes(
@@ -456,12 +720,12 @@ async fn test_archive_preview_truncates_manifest_to_configured_limit() {
     )
     .await;
 
-    let req = test::TestRequest::get()
-        .uri(&format!("/api/v1/files/{file_id}/archive-preview"))
-        .insert_header(("Cookie", common::access_cookie_header(&token)))
-        .insert_header(common::csrf_header_for(&token))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
+    let resp = request_personal_archive_preview(&app, &token, file_id).await;
+    assert_eq!(resp.status(), StatusCode::ACCEPTED);
+    aster_drive::services::task_service::drain(&state)
+        .await
+        .expect("archive preview task should drain");
+    let resp = request_personal_archive_preview(&app, &token, file_id).await;
     assert_eq!(resp.status(), 200);
     let body: Value = test::read_body_json(resp).await;
     let data = &body["data"];
@@ -485,7 +749,7 @@ async fn test_archive_preview_reports_manifest_limit_too_small_with_subcode() {
     )
     .await
     .expect("archive preview manifest limit should update");
-    let app = create_test_app!(state);
+    let app = create_test_app!(state.clone());
     let (token, _) = register_and_login!(app);
 
     let file_id = upload_bytes(
@@ -497,12 +761,12 @@ async fn test_archive_preview_reports_manifest_limit_too_small_with_subcode() {
     )
     .await;
 
-    let req = test::TestRequest::get()
-        .uri(&format!("/api/v1/files/{file_id}/archive-preview"))
-        .insert_header(("Cookie", common::access_cookie_header(&token)))
-        .insert_header(common::csrf_header_for(&token))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
+    let resp = request_personal_archive_preview(&app, &token, file_id).await;
+    assert_eq!(resp.status(), StatusCode::ACCEPTED);
+    aster_drive::services::task_service::drain(&state)
+        .await
+        .expect("archive preview task should drain");
+    let resp = request_personal_archive_preview(&app, &token, file_id).await;
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
     let body: Value = test::read_body_json(resp).await;
     assert_eq!(
@@ -552,6 +816,21 @@ async fn test_archive_preview_share_toggle_is_separate_from_user_toggle() {
         .uri(&format!("/api/v1/s/{share_token}/archive-preview"))
         .to_request();
     let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), StatusCode::ACCEPTED);
+    assert_eq!(
+        resp.headers()
+            .get("Retry-After")
+            .and_then(|value| value.to_str().ok()),
+        Some("2")
+    );
+    aster_drive::services::task_service::drain(&state)
+        .await
+        .expect("shared archive preview task should drain");
+
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/s/{share_token}/archive-preview"))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
     assert_eq!(
         resp.headers()
@@ -592,7 +871,7 @@ async fn test_archive_preview_share_toggle_is_separate_from_user_toggle() {
 async fn test_archive_preview_folder_share_file_uses_public_cache_and_etag() {
     let state = common::setup().await;
     enable_archive_preview(&state, true, true).await;
-    let app = create_test_app!(state);
+    let app = create_test_app!(state.clone());
     let (token, _) = register_and_login!(app);
     let folder_id = create_folder(&app, &token, "Shared Folder", None).await;
     let file_id = upload_bytes_to_folder(
@@ -615,6 +894,17 @@ async fn test_archive_preview_folder_share_file_uses_public_cache_and_etag() {
     assert_eq!(resp.status(), 201);
     let body: Value = test::read_body_json(resp).await;
     let share_token = body["data"]["token"].as_str().unwrap();
+
+    let req = test::TestRequest::get()
+        .uri(&format!(
+            "/api/v1/s/{share_token}/files/{file_id}/archive-preview"
+        ))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), StatusCode::ACCEPTED);
+    aster_drive::services::task_service::drain(&state)
+        .await
+        .expect("folder shared archive preview task should drain");
 
     let req = test::TestRequest::get()
         .uri(&format!(

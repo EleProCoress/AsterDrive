@@ -152,7 +152,9 @@ export type TeamAuditEntryInfo = components["schemas"]["TeamAuditEntryInfo"];
 export type TeamAuditPage =
 	components["schemas"]["OffsetPage_TeamAuditEntryInfo"];
 export type TeamMemberPage = components["schemas"]["TeamMemberPage"];
-export type BackgroundTaskKind = components["schemas"]["BackgroundTaskKind"];
+export type BackgroundTaskKind =
+	| components["schemas"]["BackgroundTaskKind"]
+	| "archive_preview_generate";
 export type BackgroundTaskStatus =
 	components["schemas"]["BackgroundTaskStatus"];
 export type AdminUserListQuery = OperationQuery<"list_users">;
@@ -223,9 +225,18 @@ export type PolicyGroupUserMigrationResult =
 export type StoragePolicyGroupPage =
 	components["schemas"]["OffsetPage_StoragePolicyGroupInfo"];
 export type AdminShareListQuery = OperationQuery<"list_all_shares">;
-export type AdminTaskListQuery = OperationQuery<"admin_list_tasks">;
-export type AdminTaskCleanupRequest =
-	components["schemas"]["AdminTaskCleanupReq"];
+export type AdminTaskListQuery = Omit<
+	OperationQuery<"admin_list_tasks">,
+	"kind"
+> & {
+	kind?: BackgroundTaskKind | null;
+};
+export type AdminTaskCleanupRequest = Omit<
+	components["schemas"]["AdminTaskCleanupReq"],
+	"kind"
+> & {
+	kind?: BackgroundTaskKind | null;
+};
 export type AdminLockListQuery = OperationQuery<"list_locks">;
 export type ConfigActionType = components["schemas"]["ConfigActionType"];
 export type ConfigSchemaItem = components["schemas"]["ConfigSchemaItem"];

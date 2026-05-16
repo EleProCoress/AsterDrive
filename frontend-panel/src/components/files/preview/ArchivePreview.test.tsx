@@ -4,10 +4,11 @@ import {
 	render,
 	screen,
 	waitFor,
+	within,
 } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { ArchivePreview } from "@/components/files/preview/ArchivePreview";
-import { ApiError } from "@/services/http";
+import { ApiError, ApiPendingError } from "@/services/http";
 import type { ArchivePreviewManifest } from "@/types/api";
 import { ErrorCode } from "@/types/api-helpers";
 
@@ -78,10 +79,21 @@ describe("ArchivePreview", () => {
 		const loadManifest = vi.fn(async () => manifest);
 		render(<ArchivePreview loadManifest={loadManifest} />);
 
-		expect(await screen.findByText("readme.txt")).toBeInTheDocument();
+		expect(await screen.findByText("docs")).toBeInTheDocument();
 		expect(screen.getByText("archive_preview_truncated")).toBeInTheDocument();
-		expect(screen.getByText("num:3")).toBeInTheDocument();
+		const itemSummary = screen.getByText("archive_preview_items").parentElement;
+		expect(itemSummary).not.toBeNull();
+		expect(
+			within(itemSummary as HTMLElement).getByText("num:3"),
+		).toBeInTheDocument();
+		expect(screen.getByText("archive_preview_zip_entries")).toBeInTheDocument();
 		expect(screen.getByText("bytes:12")).toBeInTheDocument();
+		expect(screen.queryByText("readme.txt")).not.toBeInTheDocument();
+
+		fireEvent.click(screen.getByText("docs"));
+
+		expect(screen.getByText("readme.txt")).toBeInTheDocument();
+		expect(screen.queryByText("image.bin")).not.toBeInTheDocument();
 
 		fireEvent.change(
 			screen.getByRole("searchbox", { name: "archive_preview_search" }),
@@ -90,6 +102,55 @@ describe("ArchivePreview", () => {
 
 		expect(screen.getByText("image.bin")).toBeInTheDocument();
 		expect(screen.queryByText("readme.txt")).not.toBeInTheDocument();
+	});
+
+	it("shows implicit folders as navigable entries", async () => {
+		const loadManifest = vi.fn(async () => ({
+			...manifest,
+			entry_count: 1,
+			directory_count: 1,
+			entries: [
+				{
+					path: "src/main.rs",
+					name: "main.rs",
+					parent: "src",
+					kind: "file",
+					size: 9,
+					compressed_size: 9,
+					modified_at: null,
+				},
+			],
+		}));
+		render(<ArchivePreview loadManifest={loadManifest} />);
+
+		expect(await screen.findByText("src")).toBeInTheDocument();
+		expect(screen.queryByText("main.rs")).not.toBeInTheDocument();
+
+		fireEvent.click(screen.getByText("src"));
+
+		expect(screen.getByText("main.rs")).toBeInTheDocument();
+	});
+
+	it("counts visible items separately from raw zip entries", async () => {
+		const loadManifest = vi.fn(async () => ({
+			...manifest,
+			entry_count: 146,
+			file_count: 146,
+			directory_count: 19,
+		}));
+		render(<ArchivePreview loadManifest={loadManifest} />);
+
+		expect(await screen.findByText("docs")).toBeInTheDocument();
+		expect(screen.getByText("archive_preview_items")).toBeInTheDocument();
+		expect(screen.getByText("num:165")).toBeInTheDocument();
+		expect(screen.getByText("archive_preview_zip_entries")).toBeInTheDocument();
+		const zipEntrySummary = screen.getByText(
+			"archive_preview_zip_entries",
+		).parentElement;
+		expect(zipEntrySummary).not.toBeNull();
+		expect(
+			within(zipEntrySummary as HTMLElement).getByText("num:146"),
+		).toBeInTheDocument();
 	});
 
 	it("shows retry UI when loading fails", async () => {
@@ -117,8 +178,41 @@ describe("ArchivePreview", () => {
 			await screen.findByRole("button", { name: "preview_retry" }),
 		);
 
-		expect(await screen.findByText("readme.txt")).toBeInTheDocument();
+		expect(await screen.findByText("docs")).toBeInTheDocument();
 		expect(loadManifest).toHaveBeenCalledTimes(2);
+	});
+
+	it("keeps loading and polls while archive preview is being generated", async () => {
+		vi.useFakeTimers();
+		const loadManifest = vi
+			.fn<() => Promise<ArchivePreviewManifest>>()
+			.mockRejectedValueOnce(
+				new ApiPendingError("Request is still processing", 1),
+			)
+			.mockResolvedValueOnce(manifest);
+
+		try {
+			render(<ArchivePreview loadManifest={loadManifest} />);
+
+			await act(async () => {
+				await Promise.resolve();
+			});
+			expect(
+				screen.getByText("archive_preview_generating"),
+			).toBeInTheDocument();
+			expect(screen.queryByText("preview_load_failed")).not.toBeInTheDocument();
+
+			await act(async () => {
+				vi.advanceTimersByTime(1000);
+				await Promise.resolve();
+				await Promise.resolve();
+			});
+
+			expect(screen.getByText("docs")).toBeInTheDocument();
+			expect(loadManifest).toHaveBeenCalledTimes(2);
+		} finally {
+			vi.useRealTimers();
+		}
 	});
 
 	it("passes an abort signal to the loader and aborts it on unmount", async () => {

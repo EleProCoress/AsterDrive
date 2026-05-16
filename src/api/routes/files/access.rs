@@ -58,6 +58,7 @@ pub async fn get_file(
     params(("id" = i64, Path, description = "File ID")),
     responses(
         (status = 200, description = "ZIP archive preview manifest", body = inline(ApiResponse<archive_preview_service::ArchivePreviewManifest>)),
+        (status = 202, description = "ZIP archive preview generation has been queued"),
         (status = 400, description = "Not a supported archive or archive rejected by limits"),
         (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "Archive preview disabled"),
@@ -490,12 +491,24 @@ pub(crate) async fn archive_preview_response(
         .headers()
         .get(header::IF_NONE_MATCH)
         .and_then(|value| value.to_str().ok());
-    let manifest = archive_preview_service::preview_file_in_scope(state, scope, file_id).await?;
-    archive_preview_manifest_response(
-        manifest,
-        if_none_match,
-        "private, max-age=0, must-revalidate",
-    )
+    match archive_preview_service::preview_file_in_scope(state, scope, file_id).await? {
+        archive_preview_service::ArchivePreviewManifestLookup::Ready(manifest) => {
+            archive_preview_manifest_response(
+                manifest,
+                if_none_match,
+                "private, max-age=0, must-revalidate",
+            )
+        }
+        archive_preview_service::ArchivePreviewManifestLookup::Pending => {
+            Ok(archive_preview_pending_response())
+        }
+    }
+}
+
+pub(crate) fn archive_preview_pending_response() -> HttpResponse {
+    HttpResponse::Accepted()
+        .insert_header((header::RETRY_AFTER, "2"))
+        .json(ApiResponse::<()>::ok_empty())
 }
 
 pub(crate) fn archive_preview_manifest_response(

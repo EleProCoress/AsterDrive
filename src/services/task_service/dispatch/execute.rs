@@ -267,6 +267,9 @@ async fn process_task(
         BackgroundTaskKind::ArchiveExtract => {
             archive::process_archive_extract_task(state, task, lease_guard).await
         }
+        BackgroundTaskKind::ArchivePreviewGenerate => {
+            archive::process_archive_preview_task(state, task, lease_guard).await
+        }
         BackgroundTaskKind::ThumbnailGenerate => {
             thumbnail::process_thumbnail_generate_task(state, task, lease_guard).await
         }
@@ -299,6 +302,9 @@ pub(super) fn task_retry_class(kind: BackgroundTaskKind, error: &AsterError) -> 
         }
         BackgroundTaskKind::ArchiveExtract => {
             archive::ArchiveExtractRetryPolicy::retry_class(error)
+        }
+        BackgroundTaskKind::ArchivePreviewGenerate => {
+            archive::ArchivePreviewRetryPolicy::retry_class(error)
         }
         BackgroundTaskKind::ThumbnailGenerate => {
             thumbnail::ThumbnailRetryPolicy::retry_class(error)

@@ -252,6 +252,7 @@ pub async fn create_preview_link(
     params(("token" = String, Path, description = "Share token")),
     responses(
         (status = 200, description = "ZIP archive preview manifest", body = inline(ApiResponse<archive_preview_service::ArchivePreviewManifest>)),
+        (status = 202, description = "ZIP archive preview generation has been queued"),
         (status = 400, description = "Not a supported archive or archive rejected by limits"),
         (status = 403, description = "Password required or archive preview disabled"),
         (status = 404, description = "Share not found"),
@@ -266,14 +267,20 @@ pub async fn archive_preview(
     let cookie_value = share_cookie_value(&req, &token);
     share_service::check_share_password_cookie(&state, &token, cookie_value.as_deref()).await?;
 
-    let manifest = archive_preview_service::preview_shared_file(&state, &token).await?;
-    files::archive_preview_manifest_response(
-        manifest,
-        req.headers()
-            .get(header::IF_NONE_MATCH)
-            .and_then(|value| value.to_str().ok()),
-        "public, max-age=0, must-revalidate",
-    )
+    match archive_preview_service::preview_shared_file(&state, &token).await? {
+        archive_preview_service::ArchivePreviewManifestLookup::Ready(manifest) => {
+            files::archive_preview_manifest_response(
+                manifest,
+                req.headers()
+                    .get(header::IF_NONE_MATCH)
+                    .and_then(|value| value.to_str().ok()),
+                "public, max-age=0, must-revalidate",
+            )
+        }
+        archive_preview_service::ArchivePreviewManifestLookup::Pending => {
+            Ok(files::archive_preview_pending_response())
+        }
+    }
 }
 
 #[api_docs_macros::path(
@@ -515,6 +522,7 @@ pub async fn create_folder_file_preview_link(
     ),
     responses(
         (status = 200, description = "ZIP archive preview manifest", body = inline(ApiResponse<archive_preview_service::ArchivePreviewManifest>)),
+        (status = 202, description = "ZIP archive preview generation has been queued"),
         (status = 400, description = "Not a supported archive or archive rejected by limits"),
         (status = 403, description = "Password required, file outside shared folder, or archive preview disabled"),
         (status = 404, description = "Share or file not found"),
@@ -529,15 +537,20 @@ pub async fn folder_file_archive_preview(
     let cookie_value = share_cookie_value(&req, &token);
     share_service::check_share_password_cookie(&state, &token, cookie_value.as_deref()).await?;
 
-    let manifest =
-        archive_preview_service::preview_shared_folder_file(&state, &token, file_id).await?;
-    files::archive_preview_manifest_response(
-        manifest,
-        req.headers()
-            .get(header::IF_NONE_MATCH)
-            .and_then(|value| value.to_str().ok()),
-        "public, max-age=0, must-revalidate",
-    )
+    match archive_preview_service::preview_shared_folder_file(&state, &token, file_id).await? {
+        archive_preview_service::ArchivePreviewManifestLookup::Ready(manifest) => {
+            files::archive_preview_manifest_response(
+                manifest,
+                req.headers()
+                    .get(header::IF_NONE_MATCH)
+                    .and_then(|value| value.to_str().ok()),
+                "public, max-age=0, must-revalidate",
+            )
+        }
+        archive_preview_service::ArchivePreviewManifestLookup::Pending => {
+            Ok(files::archive_preview_pending_response())
+        }
+    }
 }
 
 #[api_docs_macros::path(

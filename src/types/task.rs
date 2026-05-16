@@ -101,6 +101,8 @@ pub enum BackgroundTaskKind {
     ArchiveExtract,
     #[sea_orm(string_value = "archive_compress")]
     ArchiveCompress,
+    #[sea_orm(string_value = "archive_preview_generate")]
+    ArchivePreviewGenerate,
     #[sea_orm(string_value = "thumbnail_generate")]
     ThumbnailGenerate,
     #[sea_orm(string_value = "storage_policy_temp_cleanup")]
@@ -180,6 +182,10 @@ mod tests {
         let cases = [
             (BackgroundTaskKind::ArchiveExtract, "archive_extract"),
             (BackgroundTaskKind::ArchiveCompress, "archive_compress"),
+            (
+                BackgroundTaskKind::ArchivePreviewGenerate,
+                "archive_preview_generate",
+            ),
             (BackgroundTaskKind::ThumbnailGenerate, "thumbnail_generate"),
             (
                 BackgroundTaskKind::StoragePolicyTempCleanup,

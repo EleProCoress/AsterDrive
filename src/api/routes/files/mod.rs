@@ -30,9 +30,9 @@ pub use self::versions::{delete_version, list_versions, restore_version};
 pub use crate::api::dto::files::{OpenWopiRequest, VersionPath};
 
 pub(crate) use self::access::{
-    archive_preview_manifest_response, team_download, team_get_archive_preview,
-    team_get_direct_link, team_get_file, team_get_preview_link, team_get_thumbnail, team_open_wopi,
-    thumbnail_response,
+    archive_preview_manifest_response, archive_preview_pending_response, team_download,
+    team_get_archive_preview, team_get_direct_link, team_get_file, team_get_preview_link,
+    team_get_thumbnail, team_open_wopi, thumbnail_response,
 };
 pub(crate) use self::mutations::{
     team_copy_file, team_create_empty, team_delete_file, team_extract_archive, team_patch_file,

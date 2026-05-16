@@ -14,6 +14,8 @@ pub(super) const TASK_STEP_STORE_RESULT: &str = "store_result";
 pub(super) const TASK_STEP_DOWNLOAD_SOURCE: &str = "download_source";
 pub(super) const TASK_STEP_EXTRACT_ARCHIVE: &str = "extract_archive";
 pub(super) const TASK_STEP_IMPORT_RESULT: &str = "import_result";
+pub(super) const TASK_STEP_SCAN_ARCHIVE: &str = "scan_archive";
+pub(super) const TASK_STEP_PERSIST_MANIFEST: &str = "persist_manifest";
 pub(super) const TASK_STEP_INSPECT_SOURCE: &str = "inspect_source";
 pub(super) const TASK_STEP_RENDER_THUMBNAIL: &str = "render_thumbnail";
 pub(super) const TASK_STEP_PERSIST_THUMBNAIL: &str = "persist_thumbnail";
@@ -61,6 +63,24 @@ fn task_step_specs(kind: BackgroundTaskKind) -> &'static [TaskStepSpec] {
             TaskStepSpec {
                 key: TASK_STEP_IMPORT_RESULT,
                 title: "Import extracted files",
+            },
+        ],
+        BackgroundTaskKind::ArchivePreviewGenerate => &[
+            TaskStepSpec {
+                key: TASK_STEP_WAITING,
+                title: "Waiting",
+            },
+            TaskStepSpec {
+                key: TASK_STEP_DOWNLOAD_SOURCE,
+                title: "Download source archive",
+            },
+            TaskStepSpec {
+                key: TASK_STEP_SCAN_ARCHIVE,
+                title: "Scan archive manifest",
+            },
+            TaskStepSpec {
+                key: TASK_STEP_PERSIST_MANIFEST,
+                title: "Persist manifest",
             },
         ],
         BackgroundTaskKind::ThumbnailGenerate => &[
