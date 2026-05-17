@@ -265,11 +265,10 @@ async fn create_external_auth_user_and_identity(
 
         let txn = crate::db::transaction::begin(&state.db).await?;
         let result = async {
-            if let Some(existing) = user_repo::find_by_email(&txn, email).await? {
-                return Err(AsterError::validation_error(format!(
-                    "user email '{}' already exists but automatic email linking is disabled",
-                    existing.email
-                )));
+            if user_repo::find_by_email(&txn, email).await?.is_some() {
+                return Err(AsterError::validation_error(
+                    "account exists; automatic linking disabled",
+                ));
             }
             let user = auth_service::shared::create_user_with_role(
                 &txn,
