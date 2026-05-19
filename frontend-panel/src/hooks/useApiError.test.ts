@@ -115,6 +115,93 @@ describe("handleApiError", () => {
 		);
 	});
 
+	it("prefers auth security subcodes over generic forbidden errors", async () => {
+		const { handleApiError } = await import("@/hooks/useApiError");
+
+		handleApiError(
+			new mockState.ApiError(
+				ErrorCode.Forbidden,
+				"untrusted request origin",
+				ApiSubcode.AuthRequestOriginUntrusted,
+			),
+		);
+		handleApiError(
+			new mockState.ApiError(
+				ErrorCode.Forbidden,
+				"invalid CSRF token",
+				ApiSubcode.AuthCsrfTokenInvalid,
+			),
+		);
+
+		expect(mockState.translate).toHaveBeenCalledWith(
+			"errors:auth_request_origin_untrusted",
+		);
+		expect(mockState.translate).toHaveBeenCalledWith(
+			"errors:auth_csrf_token_invalid",
+		);
+		expect(mockState.toastError).toHaveBeenNthCalledWith(
+			1,
+			"translated:errors:auth_request_origin_untrusted",
+		);
+		expect(mockState.toastError).toHaveBeenNthCalledWith(
+			2,
+			"translated:errors:auth_csrf_token_invalid",
+		);
+	});
+
+	it("maps team and workspace authorization subcodes", async () => {
+		const { handleApiError } = await import("@/hooks/useApiError");
+
+		handleApiError(
+			new mockState.ApiError(
+				ErrorCode.Forbidden,
+				"team owner role is required",
+				ApiSubcode.TeamOwnerRequired,
+			),
+		);
+		handleApiError(
+			new mockState.ApiError(
+				ErrorCode.Forbidden,
+				"resource outside workspace scope",
+				ApiSubcode.WorkspaceScopeDenied,
+			),
+		);
+
+		expect(mockState.translate).toHaveBeenCalledWith(
+			"errors:team_owner_required",
+		);
+		expect(mockState.translate).toHaveBeenCalledWith(
+			"errors:workspace_scope_denied",
+		);
+		expect(mockState.toastError).toHaveBeenNthCalledWith(
+			1,
+			"translated:errors:team_owner_required",
+		);
+		expect(mockState.toastError).toHaveBeenNthCalledWith(
+			2,
+			"translated:errors:workspace_scope_denied",
+		);
+	});
+
+	it("maps validation subcodes over generic bad request errors", async () => {
+		const { handleApiError } = await import("@/hooks/useApiError");
+
+		handleApiError(
+			new mockState.ApiError(
+				ErrorCode.BadRequest,
+				"invalid Origin header",
+				ApiSubcode.ValidationRequestOriginInvalid,
+			),
+		);
+
+		expect(mockState.translate).toHaveBeenCalledWith(
+			"errors:validation_request_origin_invalid",
+		);
+		expect(mockState.toastError).toHaveBeenCalledWith(
+			"translated:errors:validation_request_origin_invalid",
+		);
+	});
+
 	it("prefers subcode translations over generic upload codes", async () => {
 		const { handleApiError } = await import("@/hooks/useApiError");
 
