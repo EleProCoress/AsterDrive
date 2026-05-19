@@ -13,6 +13,7 @@ mod m20260515_000001_add_passkeys;
 mod m20260517_000001_add_external_auth;
 mod m20260518_000001_add_file_type_filters;
 mod m20260518_000002_expand_audit_entity_type;
+mod m20260519_000001_expand_background_task_display_name;
 mod search_acceleration;
 mod time;
 
@@ -98,6 +99,7 @@ impl MigratorTrait for CurrentMigrator {
             Box::new(m20260517_000001_add_external_auth::Migration),
             Box::new(m20260518_000001_add_file_type_filters::Migration),
             Box::new(m20260518_000002_expand_audit_entity_type::Migration),
+            Box::new(m20260519_000001_expand_background_task_display_name::Migration),
         ]
     }
 }

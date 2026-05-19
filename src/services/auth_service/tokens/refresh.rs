@@ -68,6 +68,16 @@ enum RefreshReuseEvidence {
     SameProcessContention,
 }
 
+struct RefreshReuseClassification<'a> {
+    reused_auth_session: Option<&'a auth_session::Model>,
+    user_id: i64,
+    refresh_jti: &'a str,
+    now: chrono::DateTime<Utc>,
+    ip_address: Option<&'a str>,
+    user_agent: Option<&'a str>,
+    evidence: RefreshReuseEvidence,
+}
+
 #[derive(Serialize)]
 struct RefreshTokenReuseAuditDetails<'a> {
     reused_jti: &'a str,
@@ -113,15 +123,17 @@ fn is_stale_refresh_from_same_client(
         && refresh_client_matches(session, ip_address, user_agent)
 }
 
-fn classify_refresh_reuse_session(
-    reused_auth_session: Option<&auth_session::Model>,
-    user_id: i64,
-    refresh_jti: &str,
-    now: chrono::DateTime<Utc>,
-    ip_address: Option<&str>,
-    user_agent: Option<&str>,
-    evidence: RefreshReuseEvidence,
-) -> RefreshRejection {
+fn classify_refresh_reuse_session(input: RefreshReuseClassification<'_>) -> RefreshRejection {
+    let RefreshReuseClassification {
+        reused_auth_session,
+        user_id,
+        refresh_jti,
+        now,
+        ip_address,
+        user_agent,
+        evidence,
+    } = input;
+
     if evidence == RefreshReuseEvidence::SameProcessContention
         && reused_auth_session.is_some_and(|session| {
             session.user_id == user_id
@@ -204,15 +216,15 @@ async fn classify_failed_refresh_rotation<C: ConnectionTrait>(
 ) -> Result<RefreshRejection> {
     let reused_auth_session =
         auth_session_repo::find_by_previous_refresh_jti(db, refresh_jti).await?;
-    Ok(classify_refresh_reuse_session(
-        reused_auth_session.as_ref(),
-        claims.user_id,
+    Ok(classify_refresh_reuse_session(RefreshReuseClassification {
+        reused_auth_session: reused_auth_session.as_ref(),
+        user_id: claims.user_id,
         refresh_jti,
         now,
         ip_address,
         user_agent,
-        RefreshReuseEvidence::ClientFingerprint,
-    ))
+        evidence: RefreshReuseEvidence::ClientFingerprint,
+    }))
 }
 
 async fn revoke_sessions_in_connection<C: ConnectionTrait>(db: &C, user_id: i64) -> Result<()> {
@@ -222,23 +234,9 @@ async fn revoke_sessions_in_connection<C: ConnectionTrait>(db: &C, user_id: i64)
 
 async fn classify_refresh_reuse_in_transaction<C: ConnectionTrait>(
     db: &C,
-    reused_auth_session: Option<&auth_session::Model>,
-    user_id: i64,
-    refresh_jti: &str,
-    now: chrono::DateTime<Utc>,
-    ip_address: Option<&str>,
-    user_agent: Option<&str>,
-    evidence: RefreshReuseEvidence,
+    input: RefreshReuseClassification<'_>,
 ) -> Result<RefreshRejection> {
-    let rejection = classify_refresh_reuse_session(
-        reused_auth_session,
-        user_id,
-        refresh_jti,
-        now,
-        ip_address,
-        user_agent,
-        evidence,
-    );
+    let rejection = classify_refresh_reuse_session(input);
     if let RefreshRejection::ReuseDetected { user_id, .. } = &rejection {
         revoke_sessions_in_connection(db, *user_id).await?;
     }
@@ -275,13 +273,15 @@ async fn rotate_refresh_in_transaction<C: ConnectionTrait>(
         }) {
             let rejection = classify_refresh_reuse_in_transaction(
                 db,
-                reused_auth_session.as_ref(),
-                claims.user_id,
-                refresh_jti,
-                now,
-                ip_address,
-                user_agent,
-                reuse_evidence,
+                RefreshReuseClassification {
+                    reused_auth_session: reused_auth_session.as_ref(),
+                    user_id: claims.user_id,
+                    refresh_jti,
+                    now,
+                    ip_address,
+                    user_agent,
+                    evidence: reuse_evidence,
+                },
             )
             .await?;
             return Ok(RefreshRotationOutcome::Rejected(rejection));
@@ -530,15 +530,31 @@ mod tests {
         }
     }
 
+    fn classify_refresh_reuse_for_test(
+        session: &auth_session::Model,
+        now: chrono::DateTime<Utc>,
+        ip_address: Option<&str>,
+        user_agent: Option<&str>,
+        evidence: RefreshReuseEvidence,
+    ) -> RefreshRejection {
+        classify_refresh_reuse_session(RefreshReuseClassification {
+            reused_auth_session: Some(session),
+            user_id: 1,
+            refresh_jti: "refresh-jti",
+            now,
+            ip_address,
+            user_agent,
+            evidence,
+        })
+    }
+
     #[test]
     fn classify_refresh_reuse_session_treats_same_client_grace_as_stale() {
         let now = Utc::now();
         let session = make_auth_session(now);
 
-        let outcome = classify_refresh_reuse_session(
-            Some(&session),
-            1,
-            "refresh-jti",
+        let outcome = classify_refresh_reuse_for_test(
+            &session,
             now,
             Some("203.0.113.10"),
             Some("browser"),
@@ -553,10 +569,8 @@ mod tests {
         let now = Utc::now();
         let session = make_auth_session(now);
 
-        let outcome = classify_refresh_reuse_session(
-            Some(&session),
-            1,
-            "refresh-jti",
+        let outcome = classify_refresh_reuse_for_test(
+            &session,
             now,
             Some("203.0.113.11"),
             Some("other-browser"),
@@ -572,10 +586,8 @@ mod tests {
         let mut session = make_auth_session(now);
         session.last_seen_at = now - ChronoDuration::seconds(REFRESH_REUSE_GRACE_SECS);
 
-        let outcome = classify_refresh_reuse_session(
-            Some(&session),
-            1,
-            "refresh-jti",
+        let outcome = classify_refresh_reuse_for_test(
+            &session,
             now,
             Some("203.0.113.10"),
             Some("browser"),
@@ -591,10 +603,8 @@ mod tests {
         let mut session = make_auth_session(now);
         session.last_seen_at = now - ChronoDuration::seconds(REFRESH_REUSE_GRACE_SECS + 1);
 
-        let outcome = classify_refresh_reuse_session(
-            Some(&session),
-            1,
-            "refresh-jti",
+        let outcome = classify_refresh_reuse_for_test(
+            &session,
             now,
             Some("203.0.113.10"),
             Some("browser"),
@@ -609,10 +619,8 @@ mod tests {
         let now = Utc::now();
         let session = make_auth_session(now);
 
-        let outcome = classify_refresh_reuse_session(
-            Some(&session),
-            1,
-            "refresh-jti",
+        let outcome = classify_refresh_reuse_for_test(
+            &session,
             now,
             None,
             None,
@@ -628,10 +636,8 @@ mod tests {
         let now = Utc::now();
         let session = make_auth_session(now);
 
-        let outcome = classify_refresh_reuse_session(
-            Some(&session),
-            1,
-            "refresh-jti",
+        let outcome = classify_refresh_reuse_for_test(
+            &session,
             now,
             None,
             None,
@@ -647,10 +653,8 @@ mod tests {
         let now = Utc::now();
         let session = make_auth_session(now);
 
-        let outcome = classify_refresh_reuse_session(
-            Some(&session),
-            1,
-            "refresh-jti",
+        let outcome = classify_refresh_reuse_for_test(
+            &session,
             now,
             Some("203.0.113.11"),
             Some("other-browser"),
@@ -666,10 +670,8 @@ mod tests {
         let mut session = make_auth_session(now);
         session.user_id = 2;
 
-        let outcome = classify_refresh_reuse_session(
-            Some(&session),
-            1,
-            "refresh-jti",
+        let outcome = classify_refresh_reuse_for_test(
+            &session,
             now,
             None,
             None,
@@ -686,10 +688,8 @@ mod tests {
         let mut session = make_auth_session(now);
         session.revoked_at = Some(now);
 
-        let outcome = classify_refresh_reuse_session(
-            Some(&session),
-            1,
-            "refresh-jti",
+        let outcome = classify_refresh_reuse_for_test(
+            &session,
             now,
             None,
             None,
@@ -747,10 +747,8 @@ mod tests {
         let mut session = make_auth_session(now);
         session.last_seen_at = now - ChronoDuration::seconds(REFRESH_REUSE_GRACE_SECS + 1);
 
-        let outcome = classify_refresh_reuse_session(
-            Some(&session),
-            1,
-            "refresh-jti",
+        let outcome = classify_refresh_reuse_for_test(
+            &session,
             now,
             None,
             None,

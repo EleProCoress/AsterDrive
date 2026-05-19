@@ -202,6 +202,53 @@ describe("useAuthStore edge cases", () => {
 		expect(sessionStorage.getItem("aster-auth-expires-at")).toBeNull();
 	});
 
+	it("clears local session state when a peer reports refresh auth failure", async () => {
+		localStorage.setItem(
+			"aster-cached-user",
+			JSON.stringify(createCachedUser()),
+		);
+		sessionStorage.setItem(
+			"aster-auth-expires-at",
+			String(Date.now() + 60_000),
+		);
+		localStorage.setItem(
+			"aster-auth-refresh-lock",
+			JSON.stringify({
+				ownerId: "peer-tab",
+				lockId: "peer-lock",
+				expiresAt: Date.now() + 15_000,
+			}),
+		);
+		const { useAuthStore } = await loadStore();
+
+		const refresh = useAuthStore.getState().refreshToken();
+		window.dispatchEvent(
+			new StorageEvent("storage", {
+				key: "aster-auth-refresh-event",
+				newValue: JSON.stringify({
+					ownerId: "peer-tab",
+					lockId: "peer-lock",
+					status: "failure",
+					failureKind: "auth",
+					createdAt: Date.now(),
+				}),
+			}),
+		);
+
+		await expect(refresh).rejects.toThrow("peer auth refresh failed");
+		expect(mockState.refreshToken).not.toHaveBeenCalled();
+		expect(useAuthStore.getState()).toMatchObject({
+			isAuthenticated: false,
+			isChecking: false,
+			isAuthStale: false,
+			bootOffline: false,
+			user: null,
+			expiresAt: null,
+		});
+		expect(localStorage.getItem("aster-cached-user")).toBeNull();
+		expect(sessionStorage.getItem("aster-auth-expires-at")).toBeNull();
+	});
+
 	it("forceLogout clears cached auth artifacts", async () => {
 		localStorage.setItem(
 			"aster-cached-user",
