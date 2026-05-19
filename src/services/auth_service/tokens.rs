@@ -1,9 +1,11 @@
 //! 认证服务子模块：`tokens`。
 
 use chrono::{Duration as ChronoDuration, Utc};
+use dashmap::{DashMap, mapref::entry::Entry};
 use jsonwebtoken::{DecodingKey, EncodingKey, Header, Validation, decode, encode};
 use sea_orm::{ActiveValue::Set, ConnectionTrait};
 use serde::Serialize;
+use std::sync::LazyLock;
 
 use crate::config::auth_runtime::RuntimeAuthPolicy;
 use crate::db::repository::{auth_session_repo, user_repo};
@@ -20,6 +22,8 @@ use super::session::{
 use super::{AuthSnapshot, Claims};
 
 const REFRESH_REUSE_GRACE_SECS: i64 = 15;
+
+static REFRESH_ROTATION_LOCKS: LazyLock<DashMap<String, ()>> = LazyLock::new(DashMap::new);
 
 #[derive(Debug)]
 struct IssuedTokens {
@@ -40,6 +44,16 @@ enum RefreshRotationError {
 #[derive(Serialize)]
 struct RefreshTokenReuseAuditDetails<'a> {
     reused_jti: &'a str,
+}
+
+struct RefreshRotationLockGuard {
+    refresh_jti: String,
+}
+
+impl Drop for RefreshRotationLockGuard {
+    fn drop(&mut self) {
+        REFRESH_ROTATION_LOCKS.remove(&self.refresh_jti);
+    }
 }
 
 impl From<AsterError> for RefreshRotationError {
@@ -105,6 +119,18 @@ fn is_stale_refresh_from_same_client(
         && session.revoked_at.is_none()
         && is_recent_refresh_rotation(session, now)
         && refresh_client_matches(session, ip_address, user_agent)
+}
+
+fn try_acquire_refresh_rotation_lock(refresh_jti: &str) -> Option<RefreshRotationLockGuard> {
+    match REFRESH_ROTATION_LOCKS.entry(refresh_jti.to_string()) {
+        Entry::Occupied(_) => None,
+        Entry::Vacant(entry) => {
+            entry.insert(());
+            Some(RefreshRotationLockGuard {
+                refresh_jti: refresh_jti.to_string(),
+            })
+        }
+    }
 }
 
 async fn authenticate_token(
@@ -262,6 +288,14 @@ pub async fn refresh_tokens(
         .jti
         .clone()
         .ok_or_else(|| AsterError::auth_token_invalid("refresh token missing jti"))?;
+    let Some(_rotation_lock_guard) = try_acquire_refresh_rotation_lock(&refresh_jti) else {
+        tracing::debug!(
+            user_id = claims.user_id,
+            reused_jti = refresh_jti,
+            "concurrent refresh token rotation lost same-token race"
+        );
+        return Err(AsterError::auth_token_invalid("stale refresh token"));
+    };
 
     let txn = crate::db::transaction::begin(&state.db).await?;
     let rotation = async {
@@ -359,31 +393,10 @@ pub async fn refresh_tokens(
         .await
         .map_err(RefreshRotationError::from)?
         {
-            let reused_auth_session =
-                auth_session_repo::find_by_previous_refresh_jti(&txn, &refresh_jti)
-                    .await
-                    .map_err(RefreshRotationError::from)?;
-            if reused_auth_session.as_ref().is_some_and(|session| {
-                is_stale_refresh_from_same_client(
-                    session,
-                    claims.user_id,
-                    now,
-                    ip_address,
-                    user_agent,
-                )
-            }) {
-                return Err(RefreshRotationError::StaleRefresh {
-                    user_id: claims.user_id,
-                    reused_jti: refresh_jti,
-                });
-            }
-            user_repo::bump_session_version(&txn, claims.user_id)
-                .await
-                .map_err(RefreshRotationError::from)?;
-            purge_all_auth_sessions_in_connection(&txn, claims.user_id)
-                .await
-                .map_err(RefreshRotationError::from)?;
-            return Err(RefreshRotationError::ReuseDetected {
+            // We already observed this jti as current inside this refresh attempt.
+            // A failed conditional rotate means another request won the same-token race,
+            // not that an already-stale token was presented later.
+            return Err(RefreshRotationError::StaleRefresh {
                 user_id: claims.user_id,
                 reused_jti: refresh_jti,
             });
