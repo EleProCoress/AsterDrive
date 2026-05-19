@@ -201,6 +201,222 @@ describe("cross-tab refresh coordination", () => {
 		expect(refresh).toHaveBeenCalledTimes(1);
 	});
 
+	it("broadcasts direct fallback refresh results when the lock disappears", async () => {
+		vi.stubGlobal("BroadcastChannel", MockBroadcastChannel);
+		const { runWithCrossTabRefreshLock } = await loadModule();
+		const refresh = vi.fn(async () => undefined);
+		const received: unknown[] = [];
+		const observer = new MockBroadcastChannel("aster-auth-refresh");
+		observer.addEventListener("message", (event) => {
+			received.push(event.data);
+		});
+		const storedGetItem = Storage.prototype.getItem;
+		const getItemSpy = vi.spyOn(Storage.prototype, "getItem");
+		setRefreshLock();
+		getItemSpy.mockImplementation(function (
+			this: Storage,
+			key: string,
+		): string | null {
+			if (
+				key === "aster-auth-refresh-lock" &&
+				getItemSpy.mock.calls.length >= 2
+			) {
+				return null;
+			}
+			return storedGetItem.call(this, key);
+		});
+
+		await expect(runWithCrossTabRefreshLock(refresh)).resolves.toBe(true);
+
+		expect(refresh).toHaveBeenCalledTimes(1);
+		expect(received).toEqual([
+			expect.objectContaining({
+				fallback: true,
+				status: "success",
+			}),
+		]);
+		expect(
+			JSON.parse(localStorage.getItem("aster-auth-refresh-event") ?? "{}"),
+		).toMatchObject({
+			fallback: true,
+			status: "success",
+		});
+		observer.close();
+		expect(broadcastChannels.size).toBe(0);
+	});
+
+	it("broadcasts direct fallback refresh failures with classified error kind", async () => {
+		vi.stubGlobal("BroadcastChannel", MockBroadcastChannel);
+		const { runWithCrossTabRefreshLock } = await loadModule();
+		const refreshError = new Error("fallback failed");
+		const refresh = vi.fn(async () => {
+			throw refreshError;
+		});
+		const received: unknown[] = [];
+		const observer = new MockBroadcastChannel("aster-auth-refresh");
+		observer.addEventListener("message", (event) => {
+			received.push(event.data);
+		});
+		const storedGetItem = Storage.prototype.getItem;
+		const getItemSpy = vi.spyOn(Storage.prototype, "getItem");
+		setRefreshLock();
+		getItemSpy.mockImplementation(function (
+			this: Storage,
+			key: string,
+		): string | null {
+			if (
+				key === "aster-auth-refresh-lock" &&
+				getItemSpy.mock.calls.length >= 2
+			) {
+				return null;
+			}
+			return storedGetItem.call(this, key);
+		});
+
+		await expect(
+			runWithCrossTabRefreshLock(refresh, {
+				classifyError: () => "auth",
+			}),
+		).rejects.toBe(refreshError);
+
+		expect(refresh).toHaveBeenCalledTimes(1);
+		expect(received).toEqual([
+			expect.objectContaining({
+				failureKind: "auth",
+				fallback: true,
+				status: "failure",
+			}),
+		]);
+		expect(
+			JSON.parse(localStorage.getItem("aster-auth-refresh-event") ?? "{}"),
+		).toMatchObject({
+			failureKind: "auth",
+			fallback: true,
+			status: "failure",
+		});
+		observer.close();
+		expect(broadcastChannels.size).toBe(0);
+	});
+
+	it("recovers the lock when a competing lock disappears during acquisition", async () => {
+		const { runWithCrossTabRefreshLock } = await loadModule();
+		const refresh = vi.fn(async () => undefined);
+		const storedGetItem = Storage.prototype.getItem;
+		const getItemSpy = vi.spyOn(Storage.prototype, "getItem");
+		let lockReadCount = 0;
+		setRefreshLock();
+		getItemSpy.mockImplementation(function (
+			this: Storage,
+			key: string,
+		): string | null {
+			if (key !== "aster-auth-refresh-lock") {
+				return storedGetItem.call(this, key);
+			}
+			lockReadCount += 1;
+			if (lockReadCount === 2 || lockReadCount === 3) {
+				return null;
+			}
+			return storedGetItem.call(this, key);
+		});
+
+		await expect(runWithCrossTabRefreshLock(refresh)).resolves.toBe(true);
+
+		expect(refresh).toHaveBeenCalledTimes(1);
+		expect(localStorage.getItem("aster-auth-refresh-lock")).toBeNull();
+		expect(localStorage.getItem("aster-auth-refresh-event")).toContain(
+			'"status":"success"',
+		);
+	});
+
+	it("retries after a new active peer lock appears during recovery", async () => {
+		vi.useFakeTimers();
+
+		const { runWithCrossTabRefreshLock } = await loadModule();
+		const refresh = vi.fn(async () => undefined);
+		const storedGetItem = Storage.prototype.getItem;
+		const getItemSpy = vi.spyOn(Storage.prototype, "getItem");
+		let lockReadCount = 0;
+		setRefreshLock({
+			lockId: "first-peer-lock",
+			ownerId: "first-peer",
+		});
+		const secondPeerLock = JSON.stringify({
+			ownerId: "second-peer",
+			lockId: "second-peer-lock",
+			expiresAt: Date.now() + 15_000,
+		});
+		getItemSpy.mockImplementation(function (
+			this: Storage,
+			key: string,
+		): string | null {
+			if (key !== "aster-auth-refresh-lock") {
+				return storedGetItem.call(this, key);
+			}
+			lockReadCount += 1;
+			if (lockReadCount === 2) {
+				return null;
+			}
+			if (lockReadCount >= 3) {
+				return secondPeerLock;
+			}
+			return storedGetItem.call(this, key);
+		});
+
+		const pending = runWithCrossTabRefreshLock(refresh);
+		await vi.advanceTimersByTimeAsync(25);
+		dispatchRefreshEvent({
+			lockId: "second-peer-lock",
+			ownerId: "second-peer",
+		});
+
+		await expect(pending).resolves.toBe(false);
+		expect(refresh).not.toHaveBeenCalled();
+		expect(lockReadCount).toBeGreaterThanOrEqual(5);
+	});
+
+	it("lets peer waiters use a direct fallback refresh result after lock removal", async () => {
+		const waiter = await loadModuleForTab("waiter-tab");
+		const fallbackOwner = await loadModuleForTab("fallback-owner");
+		const waiterRefresh = vi.fn(async () => undefined);
+		const ownerRefresh = vi.fn(async () => undefined);
+		const storedGetItem = Storage.prototype.getItem;
+		const getItemSpy = vi.spyOn(Storage.prototype, "getItem");
+		let ownerLockReads = 0;
+		setRefreshLock({
+			lockId: "vanishing-peer-lock",
+			ownerId: "vanishing-peer",
+		});
+
+		const pendingWaiter = waiter.runWithCrossTabRefreshLock(waiterRefresh);
+		getItemSpy.mockImplementation(function (
+			this: Storage,
+			key: string,
+		): string | null {
+			if (key !== "aster-auth-refresh-lock") {
+				return storedGetItem.call(this, key);
+			}
+			ownerLockReads += 1;
+			if (ownerLockReads >= 2) {
+				return null;
+			}
+			return storedGetItem.call(this, key);
+		});
+		await expect(
+			fallbackOwner.runWithCrossTabRefreshLock(ownerRefresh),
+		).resolves.toBe(true);
+		getItemSpy.mockRestore();
+		window.dispatchEvent(
+			new StorageEvent("storage", {
+				key: "aster-auth-refresh-lock",
+				newValue: null,
+			}),
+		);
+
+		await expect(pendingWaiter).resolves.toBe(false);
+		expect(ownerRefresh).toHaveBeenCalledTimes(1);
+		expect(waiterRefresh).not.toHaveBeenCalled();
+	});
+
 	it("waits for another tab's successful refresh instead of refreshing again", async () => {
 		const { runWithCrossTabRefreshLock } = await loadModule();
 		const refresh = vi.fn(async () => undefined);
@@ -326,6 +542,19 @@ describe("cross-tab refresh coordination", () => {
 		expect(refresh).not.toHaveBeenCalled();
 	});
 
+	it("detects cross-tab auth failure marker objects and rejects non-markers", async () => {
+		const { isCrossTabRefreshAuthFailure } = await loadModule();
+
+		expect(isCrossTabRefreshAuthFailure(null)).toBe(false);
+		expect(isCrossTabRefreshAuthFailure(new Error("plain"))).toBe(false);
+		expect(
+			isCrossTabRefreshAuthFailure({ crossTabRefreshAuthFailure: false }),
+		).toBe(false);
+		expect(
+			isCrossTabRefreshAuthFailure({ crossTabRefreshAuthFailure: true }),
+		).toBe(true);
+	});
+
 	it("marks peer auth failures for every waiting tab", async () => {
 		vi.stubGlobal("BroadcastChannel", MockBroadcastChannel);
 		const waiterA = await loadModuleForTab("waiter-a");
@@ -405,6 +634,27 @@ describe("cross-tab refresh coordination", () => {
 		expect([...broadcastChannels]).toEqual([peerChannel]);
 		peerChannel.close();
 		expect(broadcastChannels.size).toBe(0);
+	});
+
+	it("ignores unrelated storage events while waiting for a peer result", async () => {
+		const { runWithCrossTabRefreshLock } = await loadModule();
+		const refresh = vi.fn(async () => undefined);
+		setRefreshLock();
+
+		const pending = runWithCrossTabRefreshLock(refresh);
+		window.dispatchEvent(
+			new StorageEvent("storage", {
+				key: "unrelated-key",
+				newValue: "{}",
+			}),
+		);
+		await Promise.resolve();
+
+		expect(refresh).not.toHaveBeenCalled();
+		dispatchRefreshEvent();
+
+		await expect(pending).resolves.toBe(false);
+		expect(refresh).not.toHaveBeenCalled();
 	});
 
 	it("uses the last refresh event when the peer lock is removed", async () => {
@@ -512,6 +762,35 @@ describe("cross-tab refresh coordination", () => {
 		expect(refresh).not.toHaveBeenCalled();
 	});
 
+	it("extends the peer expiry timer from storage lock renewal events", async () => {
+		vi.useFakeTimers();
+
+		const { runWithCrossTabRefreshLock } = await loadModule();
+		const refresh = vi.fn(async () => undefined);
+		const renewedLock = {
+			ownerId: "peer-tab",
+			lockId: "peer-lock",
+			expiresAt: Date.now() + 5_000,
+		};
+		setRefreshLock({ expiresAt: Date.now() + 1_000 });
+
+		const pending = runWithCrossTabRefreshLock(refresh);
+		await vi.advanceTimersByTimeAsync(500);
+		window.dispatchEvent(
+			new StorageEvent("storage", {
+				key: "aster-auth-refresh-lock",
+				newValue: JSON.stringify(renewedLock),
+			}),
+		);
+		await vi.advanceTimersByTimeAsync(500);
+
+		expect(refresh).not.toHaveBeenCalled();
+		dispatchRefreshEvent();
+
+		await expect(pending).resolves.toBe(false);
+		expect(refresh).not.toHaveBeenCalled();
+	});
+
 	it("waits for a newer peer lock when the original peer lease expires", async () => {
 		vi.useFakeTimers();
 
@@ -592,6 +871,19 @@ describe("cross-tab refresh coordination", () => {
 		expect(localStorage.getItem("aster-auth-refresh-event")).toContain(
 			'"status":"success"',
 		);
+	});
+
+	it("throws when the retry deadline is already exceeded", async () => {
+		const nowSpy = vi.spyOn(Date, "now");
+		nowSpy.mockReturnValueOnce(0);
+		nowSpy.mockReturnValue(45_001);
+		const { runWithCrossTabRefreshLock } = await loadModule();
+		const refresh = vi.fn(async () => undefined);
+
+		await expect(runWithCrossTabRefreshLock(refresh)).rejects.toThrow(
+			"peer auth refresh timed out",
+		);
+		expect(refresh).not.toHaveBeenCalled();
 	});
 
 	it("lets only one waiting tab take over when a peer owner dies", async () => {
@@ -678,6 +970,34 @@ describe("cross-tab refresh coordination", () => {
 		expect(localStorage.getItem("aster-auth-refresh-lock")).toBeNull();
 	});
 
+	it("stops renewing when another tab steals the local refresh lock", async () => {
+		vi.useFakeTimers();
+		let resolveRefresh: (() => void) | null = null;
+		const { runWithCrossTabRefreshLock } = await loadModule();
+		const refresh = vi.fn(
+			() =>
+				new Promise<void>((resolve) => {
+					resolveRefresh = resolve;
+				}),
+		);
+
+		const pending = runWithCrossTabRefreshLock(refresh);
+		expect(refresh).toHaveBeenCalledTimes(1);
+		setRefreshLock({
+			ownerId: "other-tab",
+			lockId: "stolen-lock",
+		});
+		const stolenLock = readRefreshLock();
+
+		await vi.advanceTimersByTimeAsync(5_000);
+
+		expect(readRefreshLock()).toEqual(stolenLock);
+		resolveRefresh?.();
+		await expect(pending).resolves.toBe(true);
+		expect(readRefreshLock()).toEqual(stolenLock);
+		expect(localStorage.getItem("aster-auth-refresh-event")).toBeNull();
+	});
+
 	it("broadcasts and closes the channel after a local refresh succeeds", async () => {
 		vi.stubGlobal("BroadcastChannel", MockBroadcastChannel);
 		const { runWithCrossTabRefreshLock } = await loadModule();
@@ -698,6 +1018,19 @@ describe("cross-tab refresh coordination", () => {
 		expect([...broadcastChannels]).toEqual([observer]);
 		observer.close();
 		expect(broadcastChannels.size).toBe(0);
+	});
+
+	it("writes refresh results when BroadcastChannel is unavailable", async () => {
+		vi.stubGlobal("BroadcastChannel", undefined);
+		const { runWithCrossTabRefreshLock } = await loadModule();
+		const refresh = vi.fn(async () => undefined);
+
+		await expect(runWithCrossTabRefreshLock(refresh)).resolves.toBe(true);
+
+		expect(refresh).toHaveBeenCalledTimes(1);
+		expect(localStorage.getItem("aster-auth-refresh-event")).toContain(
+			'"status":"success"',
+		);
 	});
 
 	it("ignores stale events from a previous refresh round", async () => {

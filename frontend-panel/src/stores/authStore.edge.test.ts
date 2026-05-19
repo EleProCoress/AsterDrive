@@ -249,6 +249,38 @@ describe("useAuthStore edge cases", () => {
 		expect(sessionStorage.getItem("aster-auth-expires-at")).toBeNull();
 	});
 
+	it("logs auto refresh failures for immediate and scheduled retries", async () => {
+		vi.useFakeTimers();
+		const immediateFailure = new Error("immediate refresh failed");
+		const scheduledFailure = new Error("scheduled refresh failed");
+		mockState.refreshToken
+			.mockRejectedValueOnce(immediateFailure)
+			.mockRejectedValueOnce(scheduledFailure);
+		mockState.isAxiosError.mockReturnValue(false);
+		const { useAuthStore } = await loadStore();
+
+		useAuthStore.getState().startAutoRefresh(-1);
+		await vi.waitFor(() => {
+			expect(mockState.warn).toHaveBeenCalledWith(
+				"auto refresh failed",
+				immediateFailure,
+			);
+		});
+
+		expect(vi.getTimerCount()).toBe(1);
+
+		useAuthStore.getState().startAutoRefresh(1);
+		await vi.advanceTimersByTimeAsync(1);
+
+		expect(mockState.warn).toHaveBeenCalledWith(
+			"auto refresh failed",
+			scheduledFailure,
+		);
+		expect(mockState.refreshToken).toHaveBeenCalledTimes(2);
+		useAuthStore.getState().stopAutoRefresh();
+		vi.useRealTimers();
+	});
+
 	it("forceLogout clears cached auth artifacts", async () => {
 		localStorage.setItem(
 			"aster-cached-user",
