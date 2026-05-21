@@ -918,7 +918,7 @@ mod tests {
             crate::services::share_service::build_share_download_rollback_queue(db.clone(), 1);
 
         web::Data::new(PrimaryAppState {
-            db,
+            db_handles: crate::db::DbHandles::single(db),
             driver_registry: Arc::new(crate::storage::DriverRegistry::new()),
             runtime_config,
             policy_snapshot: Arc::new(crate::storage::PolicySnapshot::new()),
@@ -1208,7 +1208,7 @@ mod tests {
         .await;
 
         let tasks = crate::entities::background_task::Entity::find()
-            .all(&state.db)
+            .all(state.writer_db())
             .await
             .unwrap();
         assert_eq!(tasks.len(), 1);
@@ -1234,7 +1234,7 @@ mod tests {
         .await;
 
         let tasks = crate::entities::background_task::Entity::find()
-            .all(&state.db)
+            .all(state.writer_db())
             .await
             .unwrap();
         assert_eq!(tasks.len(), 1);

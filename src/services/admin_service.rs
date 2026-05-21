@@ -224,17 +224,17 @@ pub async fn get_overview(
         daily_reports,
         latest_health_task,
     ) = tokio::try_join!(
-        user_repo::count_all(&state.db),
-        user_repo::count_by_status(&state.db, UserStatus::Active),
-        user_repo::count_by_status(&state.db, UserStatus::Disabled),
-        file_repo::count_live_files(&state.db),
-        file_repo::sum_live_file_bytes(&state.db),
-        file_repo::count_all_blobs(&state.db),
-        file_repo::sum_blob_bytes(&state.db),
-        share_repo::count_all(&state.db),
+        user_repo::count_all(state.reader_db()),
+        user_repo::count_by_status(state.reader_db(), UserStatus::Active),
+        user_repo::count_by_status(state.reader_db(), UserStatus::Disabled),
+        file_repo::count_live_files(state.reader_db()),
+        file_repo::sum_live_file_bytes(state.reader_db()),
+        file_repo::count_all_blobs(state.reader_db()),
+        file_repo::sum_blob_bytes(state.reader_db()),
+        share_repo::count_all(state.reader_db()),
         build_daily_reports(state, today, days, timezone),
         background_task_repo::find_latest_system_runtime_by_task_name(
-            &state.db,
+            state.reader_db(),
             SYSTEM_HEALTH_TASK_NAME
         ),
     )?;
@@ -309,7 +309,7 @@ async fn load_recent_overview_events(
             crate::api::pagination::AdminAuditLogSortBy::CreatedAt,
             crate::api::pagination::SortOrder::Desc,
         ),
-        background_task_repo::list_recent(&state.db, event_limit),
+        background_task_repo::list_recent(state.reader_db(), event_limit),
     )?;
     Ok((
         recent_events.items,
@@ -475,7 +475,7 @@ async fn build_daily_reports(
     let end = start_of_local_day(today + Duration::days(1), timezone)?;
 
     audit_service::flush_global_audit_log_manager().await;
-    let events = audit_log_repo::find_actions_in_range(&state.db, start, end).await?;
+    let events = audit_log_repo::find_actions_in_range(state.reader_db(), start, end).await?;
 
     for (action, created_at) in events {
         let date = created_at.with_timezone(&timezone).date_naive();

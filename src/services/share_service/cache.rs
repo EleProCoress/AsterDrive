@@ -118,7 +118,7 @@ pub(super) async fn load_share_record_by_token(
 ) -> Result<share::Model> {
     let cache_key = share_token_lookup_cache_key(token);
     if let Some(cached) = state.cache.get::<CachedShareTokenLookup>(&cache_key).await {
-        match share_repo::find_by_id(&state.db, cached.id).await {
+        match share_repo::find_by_id(state.reader_db(), cached.id).await {
             Ok(share) if share.token == token => {
                 tracing::debug!(share_id = share.id, "share token lookup cache hit");
                 return Ok(share);
@@ -142,7 +142,7 @@ pub(super) async fn load_share_record_by_token(
         }
     }
 
-    let share = share_repo::find_by_token(&state.db, token)
+    let share = share_repo::find_by_token(state.reader_db(), token)
         .await?
         .ok_or_else(|| AsterError::share_not_found(format!("token={token}")))?;
 
@@ -240,16 +240,16 @@ async fn load_active_ids_from_database(
 ) -> Result<HashSet<i64>> {
     match (scope, kind) {
         (WorkspaceResourceScope::Personal { user_id }, ShareTargetKind::File) => {
-            share_repo::find_active_file_ids(&state.db, user_id, ids).await
+            share_repo::find_active_file_ids(state.reader_db(), user_id, ids).await
         }
         (WorkspaceResourceScope::Personal { user_id }, ShareTargetKind::Folder) => {
-            share_repo::find_active_folder_ids(&state.db, user_id, ids).await
+            share_repo::find_active_folder_ids(state.reader_db(), user_id, ids).await
         }
         (WorkspaceResourceScope::Team { team_id }, ShareTargetKind::File) => {
-            share_repo::find_active_team_file_ids(&state.db, team_id, ids).await
+            share_repo::find_active_team_file_ids(state.reader_db(), team_id, ids).await
         }
         (WorkspaceResourceScope::Team { team_id }, ShareTargetKind::Folder) => {
-            share_repo::find_active_team_folder_ids(&state.db, team_id, ids).await
+            share_repo::find_active_team_folder_ids(state.reader_db(), team_id, ids).await
         }
     }
 }

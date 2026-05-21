@@ -256,7 +256,7 @@ pub(crate) async fn search_in_scope(
                         Ok((vec![], 0))
                     } else {
                         search_repo::search_files(
-                            &state.db,
+                            state.reader_db(),
                             user_id,
                             search_repo::FileSearchFilters {
                                 query,
@@ -280,7 +280,7 @@ pub(crate) async fn search_in_scope(
                         Ok((vec![], 0))
                     } else {
                         search_repo::search_folders(
-                            &state.db,
+                            state.reader_db(),
                             user_id,
                             search_repo::FolderSearchFilters {
                                 query,
@@ -323,7 +323,7 @@ pub(crate) async fn search_in_scope(
                         Ok((vec![], 0))
                     } else {
                         search_repo::search_team_files(
-                            &state.db,
+                            state.reader_db(),
                             team_id,
                             search_repo::FileSearchFilters {
                                 query,
@@ -347,7 +347,7 @@ pub(crate) async fn search_in_scope(
                         Ok((vec![], 0))
                     } else {
                         search_repo::search_team_folders(
-                            &state.db,
+                            state.reader_db(),
                             team_id,
                             search_repo::FolderSearchFilters {
                                 query,

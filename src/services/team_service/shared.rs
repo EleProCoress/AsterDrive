@@ -103,7 +103,7 @@ pub(super) async fn build_team_info(
     my_role: TeamMemberRole,
 ) -> Result<TeamInfo> {
     let creator = load_creator_summary(state, team).await?;
-    let member_count = team_member_repo::count_by_team(&state.db, team.id).await?;
+    let member_count = team_member_repo::count_by_team(state.reader_db(), team.id).await?;
 
     Ok(build_team_info_with_metadata(
         team,
@@ -140,7 +140,7 @@ pub(super) async fn build_admin_team_info(
     team: &team::Model,
 ) -> Result<AdminTeamInfo> {
     let creator = load_creator_summary(state, team).await?;
-    let member_count = team_member_repo::count_by_team(&state.db, team.id).await?;
+    let member_count = team_member_repo::count_by_team(state.reader_db(), team.id).await?;
 
     Ok(build_admin_team_info_with_metadata(
         team,
@@ -271,13 +271,13 @@ pub(super) async fn load_team_member_page(
     };
     let ((rows, total), role_counts) = tokio::try_join!(
         team_member_repo::list_page_by_team_with_user(
-            &state.db,
+            state.reader_db(),
             team_id,
             effective_limit,
             offset,
             &repo_filters,
         ),
-        team_member_repo::count_by_team_grouped_by_role(&state.db, team_id),
+        team_member_repo::count_by_team_grouped_by_role(state.reader_db(), team_id),
     )?;
     let mut owner_count = 0;
     let mut admin_count = 0;
@@ -313,12 +313,12 @@ pub(super) async fn resolve_target_user(
         (None, None) => Err(AsterError::validation_error(
             "user_id or identifier is required",
         )),
-        (Some(user_id), None) => user_repo::find_by_id(&state.db, user_id).await,
+        (Some(user_id), None) => user_repo::find_by_id(state.writer_db(), user_id).await,
         (None, Some(identifier)) => {
-            if let Some(user) = user_repo::find_by_username(&state.db, identifier).await? {
+            if let Some(user) = user_repo::find_by_username(state.writer_db(), identifier).await? {
                 return Ok(user);
             }
-            if let Some(user) = user_repo::find_by_email(&state.db, identifier).await? {
+            if let Some(user) = user_repo::find_by_email(state.writer_db(), identifier).await? {
                 return Ok(user);
             }
             Err(AsterError::record_not_found(format!("user '{identifier}'")))
@@ -331,10 +331,26 @@ pub(super) async fn require_team_membership(
     team_id: i64,
     user_id: i64,
 ) -> Result<(team::Model, team_member::Model)> {
+    require_team_membership_with_db(state.writer_db(), team_id, user_id).await
+}
+
+pub(super) async fn require_team_membership_for_read(
+    state: &PrimaryAppState,
+    team_id: i64,
+    user_id: i64,
+) -> Result<(team::Model, team_member::Model)> {
+    require_team_membership_with_db(state.reader_db(), team_id, user_id).await
+}
+
+async fn require_team_membership_with_db<C: ConnectionTrait>(
+    db: &C,
+    team_id: i64,
+    user_id: i64,
+) -> Result<(team::Model, team_member::Model)> {
     // 这里故意只接受 active team。
     // 对归档团队的访问需要走专门恢复 / admin 流程，避免普通团队 API 混入 archived 语义。
-    let team = team_repo::find_active_by_id(&state.db, team_id).await?;
-    let membership = team_member_repo::find_by_team_and_user(&state.db, team_id, user_id)
+    let team = team_repo::find_active_by_id(db, team_id).await?;
+    let membership = team_member_repo::find_by_team_and_user(db, team_id, user_id)
         .await?
         .ok_or_else(|| {
             auth_forbidden_with_subcode(ApiSubcode::TeamNotMember, "not a member of this team")
@@ -405,7 +421,7 @@ pub(super) async fn load_team_metadata<'a>(
             &creator_ids,
             profile_service::AvatarAudience::AdminUser,
         ),
-        team_member_repo::count_by_team_ids(&state.db, &team_ids),
+        team_member_repo::count_by_team_ids(state.reader_db(), &team_ids),
     )?;
 
     Ok((creators, member_counts))
@@ -415,14 +431,14 @@ pub(super) async fn ensure_assignable_policy_group(
     state: &PrimaryAppState,
     group_id: i64,
 ) -> Result<()> {
-    let group = policy_group_repo::find_group_by_id(&state.db, group_id).await?;
+    let group = policy_group_repo::find_group_by_id(state.writer_db(), group_id).await?;
     if !group.is_enabled {
         return Err(AsterError::validation_error(
             "cannot assign a disabled storage policy group",
         ));
     }
 
-    let items = policy_group_repo::find_group_items(&state.db, group_id).await?;
+    let items = policy_group_repo::find_group_items(state.writer_db(), group_id).await?;
     if items.is_empty() {
         return Err(AsterError::validation_error(
             "cannot assign a storage policy group without policies",
@@ -466,7 +482,7 @@ pub(super) async fn create_team_record(
     let storage_quota = default_team_storage_quota(state);
     let now = Utc::now();
 
-    let txn = crate::db::transaction::begin(&state.db).await?;
+    let txn = crate::db::transaction::begin(state.writer_db()).await?;
     let created_team = team_repo::create(
         &txn,
         team::ActiveModel {
@@ -533,7 +549,7 @@ pub(super) async fn update_team_record(
     }
     active.updated_at = Set(Utc::now());
 
-    let updated = team_repo::update(&state.db, active).await?;
+    let updated = team_repo::update(state.writer_db(), active).await?;
     crate::services::workspace_storage_service::invalidate_team_access_cache_for_team(
         state, updated.id,
     )
@@ -553,7 +569,7 @@ pub(super) async fn archive_team_record(state: &PrimaryAppState, team: team::Mod
     let now = Utc::now();
     active.archived_at = Set(Some(now));
     active.updated_at = Set(now);
-    team_repo::update(&state.db, active).await?;
+    team_repo::update(state.writer_db(), active).await?;
     crate::services::workspace_storage_service::invalidate_team_access_cache_for_team(
         state, team_id,
     )
@@ -577,7 +593,7 @@ pub(super) async fn restore_team_record(
     let now = Utc::now();
     active.archived_at = Set(None);
     active.updated_at = Set(now);
-    let restored = team_repo::update(&state.db, active).await?;
+    let restored = team_repo::update(state.writer_db(), active).await?;
     crate::services::workspace_storage_service::invalidate_team_access_cache_for_team(
         state,
         restored.id,

@@ -11,7 +11,9 @@ use crate::runtime::PrimaryAppState;
 use crate::services::upload_service::responses::{
     RecoverableUploadPartResponse, RecoverableUploadSessionResponse, UploadProgressResponse,
 };
-use crate::services::upload_service::scope::{load_upload_session, personal_scope, team_scope};
+use crate::services::upload_service::scope::{
+    load_upload_session, load_upload_session_for_read, personal_scope, team_scope,
+};
 use crate::services::workspace_storage_service::{self, resolve_policy_upload_transport};
 use crate::types::{UploadMode, UploadSessionStatus};
 use crate::utils::paths;
@@ -52,7 +54,7 @@ async fn get_progress_impl(
     } else if session.s3_multipart_id.is_some() {
         let policy = state.policy_snapshot.get_policy_or_err(session.policy_id)?;
         if is_relay_multipart_policy(&policy) {
-            upload_session_part_repo::list_part_numbers(&state.db, &session.id)
+            upload_session_part_repo::list_part_numbers(state.reader_db(), &session.id)
                 .await?
                 .into_iter()
                 .map(|part_number| part_number - 1)
@@ -104,7 +106,7 @@ async fn recoverable_session_response(
 ) -> Result<RecoverableUploadSessionResponse> {
     let mode = recoverable_mode_for_session(&session);
     let progress = get_progress_impl(state, session.clone()).await?;
-    let completed_parts = upload_session_part_repo::list_by_upload(&state.db, &session.id)
+    let completed_parts = upload_session_part_repo::list_by_upload(state.reader_db(), &session.id)
         .await?
         .into_iter()
         .map(|part| RecoverableUploadPartResponse {
@@ -136,7 +138,7 @@ async fn list_recoverable_sessions_impl(
     team_id: Option<i64>,
 ) -> Result<Vec<RecoverableUploadSessionResponse>> {
     let sessions = upload_session_repo::find_recoverable_by_owner(
-        &state.db,
+        state.reader_db(),
         user_id,
         team_id,
         RECOVERABLE_UPLOAD_SESSIONS_LIMIT,
@@ -156,7 +158,7 @@ pub async fn get_progress(
     upload_id: &str,
     user_id: i64,
 ) -> Result<UploadProgressResponse> {
-    let session = load_upload_session(state, personal_scope(user_id), upload_id).await?;
+    let session = load_upload_session_for_read(state, personal_scope(user_id), upload_id).await?;
     get_progress_impl(state, session).await
 }
 
@@ -173,7 +175,8 @@ pub async fn get_progress_for_team(
     upload_id: &str,
     user_id: i64,
 ) -> Result<UploadProgressResponse> {
-    let session = load_upload_session(state, team_scope(team_id, user_id), upload_id).await?;
+    let session =
+        load_upload_session_for_read(state, team_scope(team_id, user_id), upload_id).await?;
     get_progress_impl(state, session).await
 }
 

@@ -32,7 +32,7 @@ pub async fn get_profile_info(
     user: &user::Model,
     audience: AvatarAudience,
 ) -> Result<UserProfileInfo> {
-    let profile = user_profile_repo::find_by_user_id(&state.db, user.id).await?;
+    let profile = user_profile_repo::find_by_user_id(state.reader_db(), user.id).await?;
     let gravatar_base_url = resolve_gravatar_base_url(state);
     Ok(build_profile_info(
         user,
@@ -47,8 +47,8 @@ pub async fn update_profile(
     user_id: i64,
     display_name: Option<String>,
 ) -> Result<UserProfileInfo> {
-    let user = user_repo::find_by_id(&state.db, user_id).await?;
-    let existing = user_profile_repo::find_by_user_id(&state.db, user_id).await?;
+    let user = user_repo::find_by_id(state.writer_db(), user_id).await?;
+    let existing = user_profile_repo::find_by_user_id(state.writer_db(), user_id).await?;
     let gravatar_base_url = resolve_gravatar_base_url(state);
 
     let Some(display_name) = display_name else {
@@ -71,7 +71,7 @@ pub async fn update_profile(
                 let mut active: user_profile::ActiveModel = current.into();
                 active.display_name = Set(normalized);
                 active.updated_at = Set(now);
-                user_profile_repo::update(&state.db, active).await?
+                user_profile_repo::update(state.writer_db(), active).await?
             }
         }
         None => {
@@ -86,7 +86,7 @@ pub async fn update_profile(
 
             let mut active = default_profile_active_model(user_id, now);
             active.display_name = Set(normalized);
-            user_profile_repo::create(&state.db, active).await?
+            user_profile_repo::create(state.writer_db(), active).await?
         }
     };
 
@@ -99,9 +99,11 @@ pub async fn update_profile(
 }
 
 pub async fn get_wopi_user_info(state: &PrimaryAppState, user_id: i64) -> Result<Option<String>> {
-    Ok(user_profile_repo::find_by_user_id(&state.db, user_id)
-        .await?
-        .and_then(|profile| profile.wopi_user_info))
+    Ok(
+        user_profile_repo::find_by_user_id(state.reader_db(), user_id)
+            .await?
+            .and_then(|profile| profile.wopi_user_info),
+    )
 }
 
 pub async fn update_wopi_user_info(
@@ -109,8 +111,8 @@ pub async fn update_wopi_user_info(
     user_id: i64,
     wopi_user_info: String,
 ) -> Result<()> {
-    user_repo::find_by_id(&state.db, user_id).await?;
-    let existing = user_profile_repo::find_by_user_id(&state.db, user_id).await?;
+    user_repo::find_by_id(state.writer_db(), user_id).await?;
+    let existing = user_profile_repo::find_by_user_id(state.writer_db(), user_id).await?;
     let now = Utc::now();
 
     match existing {
@@ -122,12 +124,12 @@ pub async fn update_wopi_user_info(
             let mut active: user_profile::ActiveModel = current.into();
             active.wopi_user_info = Set(Some(wopi_user_info));
             active.updated_at = Set(now);
-            user_profile_repo::update(&state.db, active).await?;
+            user_profile_repo::update(state.writer_db(), active).await?;
         }
         None => {
             let mut active = default_profile_active_model(user_id, now);
             active.wopi_user_info = Set(Some(wopi_user_info));
-            user_profile_repo::create(&state.db, active).await?;
+            user_profile_repo::create(state.writer_db(), active).await?;
         }
     }
 

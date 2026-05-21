@@ -6,4 +6,4 @@ pub mod retry;
 pub mod sqlite_search;
 pub mod transaction;
 
-pub use connection::connect;
+pub use connection::{DbHandles, connect, connect_handles, connect_reader_for_writer};

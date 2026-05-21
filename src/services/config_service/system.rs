@@ -146,7 +146,7 @@ pub async fn list_paginated(
     offset: u64,
 ) -> Result<OffsetPage<SystemConfig>> {
     let page = load_offset_page(limit, offset, 100, |limit, offset| async move {
-        config_repo::find_paginated(&state.db, limit, offset).await
+        config_repo::find_paginated(state.reader_db(), limit, offset).await
     })
     .await?;
     let items = page
@@ -159,7 +159,7 @@ pub async fn list_paginated(
 }
 
 pub async fn get_by_key(state: &PrimaryAppState, key: &str) -> Result<SystemConfig> {
-    config_repo::find_by_key(&state.db, key)
+    config_repo::find_by_key(state.reader_db(), key)
         .await?
         .map(apply_system_config_definition)
         .map(Into::into)
@@ -186,7 +186,7 @@ pub async fn set(
     }
 
     let config = apply_system_config_definition(
-        config_repo::upsert(&state.db, key, &normalized_value, updated_by).await?,
+        config_repo::upsert(state.writer_db(), key, &normalized_value, updated_by).await?,
     );
     state.runtime_config.apply(config.clone());
     invalidate_dependent_public_config_caches(key);
@@ -194,7 +194,7 @@ pub async fn set(
 }
 
 pub async fn delete(state: &PrimaryAppState, key: &str) -> Result<()> {
-    config_repo::delete_by_key(&state.db, key).await?;
+    config_repo::delete_by_key(state.writer_db(), key).await?;
     state.runtime_config.remove(key);
     invalidate_dependent_public_config_caches(key);
     tracing::debug!(key, "deleted runtime config");

@@ -86,7 +86,7 @@ pub(super) async fn load_share_in_scope(
     share_id: i64,
 ) -> Result<share::Model> {
     workspace_storage_service::require_scope_access(state, scope).await?;
-    let share = share_repo::find_by_id(&state.db, share_id).await?;
+    let share = share_repo::find_by_id(state.writer_db(), share_id).await?;
     ensure_share_scope(&share, scope)?;
     Ok(share)
 }
@@ -114,7 +114,7 @@ pub(super) async fn load_share_record(
     // 团队分享如果指向的团队已被归档 / 删除，对外表现应当像 share 不存在，
     // 不再向匿名访问者暴露“token 有效但团队没了”这种内部状态。
     if let Some(team_id) = share.team_id {
-        match team_repo::find_active_by_id(&state.db, team_id).await {
+        match team_repo::find_active_by_id(state.reader_db(), team_id).await {
             Ok(_) => {}
             Err(AsterError::RecordNotFound(_)) => {
                 return Err(AsterError::share_not_found(format!("token={token}")));
@@ -179,7 +179,7 @@ pub(super) async fn load_share_file_resource(
             ));
         }
     };
-    let file = file_repo::find_by_id(&state.db, file_id).await?;
+    let file = file_repo::find_by_id(state.reader_db(), file_id).await?;
     ensure_share_matches_file(share, &file)?;
     if file.deleted_at.is_some() {
         return Err(AsterError::file_not_found(format!(
@@ -207,7 +207,7 @@ pub(super) async fn load_share_folder_resource(
             ));
         }
     };
-    let folder = folder_repo::find_by_id(&state.db, folder_id).await?;
+    let folder = folder_repo::find_by_id(state.reader_db(), folder_id).await?;
     ensure_share_matches_folder(share, &folder)?;
     if folder.deleted_at.is_some() {
         return Err(AsterError::folder_not_found(format!(
@@ -241,7 +241,7 @@ pub(super) async fn load_shared_folder_file_target(
     file_id: i64,
 ) -> Result<(share::Model, crate::entities::file::Model)> {
     let (share, root_folder_id) = load_valid_folder_share_root(state, token).await?;
-    let file = file_repo::find_by_id(&state.db, file_id).await?;
+    let file = file_repo::find_by_id(state.reader_db(), file_id).await?;
     ensure_share_matches_file(&share, &file)?;
     if file.deleted_at.is_some() {
         return Err(AsterError::file_not_found(format!(
@@ -256,7 +256,8 @@ pub(super) async fn load_shared_folder_file_target(
             "file is outside shared folder scope",
         )
     })?;
-    folder_service::verify_folder_in_scope(&state.db, file_folder_id, root_folder_id).await?;
+    folder_service::verify_folder_in_scope(state.reader_db(), file_folder_id, root_folder_id)
+        .await?;
     Ok((share, file))
 }
 
@@ -267,7 +268,7 @@ pub(crate) async fn load_shared_folder_file_target_ignoring_download_limit(
 ) -> Result<(share::Model, crate::entities::file::Model)> {
     let (share, root_folder_id) =
         load_usable_folder_share_root_ignoring_download_limit(state, token).await?;
-    let file = file_repo::find_by_id(&state.db, file_id).await?;
+    let file = file_repo::find_by_id(state.reader_db(), file_id).await?;
     ensure_share_matches_file(&share, &file)?;
     if file.deleted_at.is_some() {
         return Err(AsterError::file_not_found(format!(
@@ -280,7 +281,8 @@ pub(crate) async fn load_shared_folder_file_target_ignoring_download_limit(
             "file is outside shared folder scope",
         )
     })?;
-    folder_service::verify_folder_in_scope(&state.db, file_folder_id, root_folder_id).await?;
+    folder_service::verify_folder_in_scope(state.reader_db(), file_folder_id, root_folder_id)
+        .await?;
     Ok((share, file))
 }
 
@@ -290,14 +292,14 @@ pub(super) async fn load_shared_subfolder_target(
     folder_id: i64,
 ) -> Result<(share::Model, crate::entities::folder::Model)> {
     let (share, root_folder_id) = load_valid_folder_share_root(state, token).await?;
-    let target = folder_repo::find_by_id(&state.db, folder_id).await?;
+    let target = folder_repo::find_by_id(state.reader_db(), folder_id).await?;
     ensure_share_matches_folder(&share, &target)?;
     if target.deleted_at.is_some() {
         return Err(AsterError::folder_not_found(format!(
             "folder #{folder_id} is in trash"
         )));
     }
-    folder_service::verify_folder_in_scope(&state.db, folder_id, root_folder_id).await?;
+    folder_service::verify_folder_in_scope(state.reader_db(), folder_id, root_folder_id).await?;
     Ok((share, target))
 }
 

@@ -50,7 +50,7 @@ pub async fn user_summaries_by_ids(
         return Ok(HashMap::new());
     }
 
-    let users = user_repo::find_by_ids(&state.db, &unique_ids).await?;
+    let users = user_repo::find_by_ids(state.reader_db(), &unique_ids).await?;
     let profile_map = profile_service::get_profile_info_map(state, &users, audience).await?;
     let gravatar_base_url = profile_service::resolve_gravatar_base_url(state);
 
@@ -70,7 +70,7 @@ pub async fn user_summary_by_id(
     user_id: i64,
     audience: profile_service::AvatarAudience,
 ) -> Result<Option<UserSummary>> {
-    match user_repo::find_by_id(&state.db, user_id).await {
+    match user_repo::find_by_id(state.reader_db(), user_id).await {
         Ok(user) => Ok(Some(to_user_summary(state, &user, audience).await?)),
         Err(crate::errors::AsterError::RecordNotFound(_)) => Ok(None),
         Err(err) => Err(err),
@@ -135,7 +135,7 @@ pub async fn get_me(
     user_id: i64,
     access_token_expires_at: i64,
 ) -> Result<MeResponse> {
-    let user = user_repo::find_by_id(&state.db, user_id).await?;
+    let user = user_repo::find_by_id(state.reader_db(), user_id).await?;
     let prefs = parse_preferences(&user);
     let core = user_core(&user);
     Ok(MeResponse {
@@ -168,7 +168,7 @@ pub async fn get_me_partial(
     access_token_expires_at: i64,
     fields: MeResponseFields,
 ) -> Result<MePartialResponse> {
-    let user = user_repo::find_by_id(&state.db, user_id).await?;
+    let user = user_repo::find_by_id(state.reader_db(), user_id).await?;
     let prefs = fields.preferences.then(|| parse_preferences(&user));
     let profile = if fields.profile {
         Some(
@@ -203,7 +203,7 @@ pub async fn get_me_partial(
 }
 
 pub async fn get_self_info(state: &PrimaryAppState, user_id: i64) -> Result<UserInfo> {
-    let user = user_repo::find_by_id(&state.db, user_id).await?;
+    let user = user_repo::find_by_id(state.reader_db(), user_id).await?;
     to_user_info(state, &user, profile_service::AvatarAudience::SelfUser).await
 }
 
@@ -221,7 +221,7 @@ pub async fn list_paginated(
             sort_by: filters.sort_by,
             sort_order: filters.sort_order,
         };
-        user_repo::find_paginated(&state.db, limit, offset, &repo_filters).await
+        user_repo::find_paginated(state.reader_db(), limit, offset, &repo_filters).await
     })
     .await?;
 
@@ -239,6 +239,6 @@ pub async fn list_paginated(
 }
 
 pub async fn get(state: &PrimaryAppState, id: i64) -> Result<UserInfo> {
-    let user = user_repo::find_by_id(&state.db, id).await?;
+    let user = user_repo::find_by_id(state.reader_db(), id).await?;
     to_user_info(state, &user, profile_service::AvatarAudience::AdminUser).await
 }

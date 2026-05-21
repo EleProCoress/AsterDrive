@@ -77,7 +77,7 @@ async fn test_state(configs: &[(&str, &str)]) -> PrimaryAppState {
         );
 
     PrimaryAppState {
-        db,
+        db_handles: crate::db::DbHandles::single(db),
         driver_registry: Arc::new(crate::storage::DriverRegistry::new()),
         runtime_config: runtime_config.clone(),
         policy_snapshot: Arc::new(crate::storage::PolicySnapshot::new()),

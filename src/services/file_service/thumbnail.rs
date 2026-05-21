@@ -30,7 +30,7 @@ pub(crate) async fn get_thumbnail_data_in_scope(
     file_id: i64,
 ) -> Result<Option<ThumbnailResult>> {
     let f = get_info_in_scope(state, scope, file_id).await?;
-    let blob = file_repo::find_blob_by_id(&state.db, f.blob_id).await?;
+    let blob = file_repo::find_blob_by_id(state.reader_db(), f.blob_id).await?;
     let thumbnail =
         media_processing_service::load_thumbnail_if_exists(state, &blob, &f.name, &f.mime_type)
             .await
@@ -65,7 +65,7 @@ pub(crate) async fn image_preview_for_file(
     state: &PrimaryAppState,
     f: &crate::entities::file::Model,
 ) -> Result<ImagePreviewResult> {
-    let blob = file_repo::find_blob_by_id(&state.db, f.blob_id).await?;
+    let blob = file_repo::find_blob_by_id(state.reader_db(), f.blob_id).await?;
     let preview = media_processing_service::generate_and_store_image_preview(
         state,
         &blob,

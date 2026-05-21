@@ -115,14 +115,15 @@ impl WorkspaceStorageScope {
     }
 }
 
-async fn load_team_access(
+async fn load_team_access<C: ConnectionTrait>(
     state: &PrimaryAppState,
+    db: &C,
     team_id: i64,
     user_id: i64,
 ) -> Result<CachedTeamAccess> {
     let cache_key = team_access_cache_key(team_id, user_id);
     if let Some(cached) = state.cache.get::<CachedTeamAccess>(&cache_key).await {
-        let access = match load_team_access_from_database(state, team_id, user_id).await {
+        let access = match load_team_access_from_database(db, team_id, user_id).await {
             Ok(access) => access,
             Err(error @ (AsterError::RecordNotFound(_) | AsterError::AuthForbidden(_))) => {
                 state.cache.delete(&cache_key).await;
@@ -146,7 +147,7 @@ async fn load_team_access(
         return Ok(access);
     }
 
-    let access = load_team_access_from_database(state, team_id, user_id).await?;
+    let access = load_team_access_from_database(db, team_id, user_id).await?;
     state
         .cache
         .set(&cache_key, &access, Some(TEAM_ACCESS_CACHE_TTL))
@@ -155,19 +156,17 @@ async fn load_team_access(
     Ok(access)
 }
 
-async fn load_team_access_from_database(
-    state: &PrimaryAppState,
+async fn load_team_access_from_database<C: ConnectionTrait>(
+    db: &C,
     team_id: i64,
     user_id: i64,
 ) -> Result<CachedTeamAccess> {
-    if let Some(snapshot) =
-        team_member_repo::find_active_team_access(&state.db, team_id, user_id).await?
-    {
+    if let Some(snapshot) = team_member_repo::find_active_team_access(db, team_id, user_id).await? {
         return Ok(snapshot.into());
     }
 
     // 保持旧语义：团队不存在或已归档时返回 not found；团队仍活跃但用户不是成员时返回 forbidden。
-    team_repo::find_active_by_id(&state.db, team_id).await?;
+    team_repo::find_active_by_id(db, team_id).await?;
     Err(auth_forbidden_with_subcode(
         ApiSubcode::TeamNotMember,
         "not a member of this team",
@@ -178,6 +177,14 @@ pub(crate) async fn require_scope_access(
     state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
 ) -> Result<()> {
+    require_scope_access_with_db(state, state.reader_db(), scope).await
+}
+
+pub(crate) async fn require_scope_access_with_db<C: ConnectionTrait>(
+    state: &PrimaryAppState,
+    db: &C,
+    scope: WorkspaceStorageScope,
+) -> Result<()> {
     // 个人空间天然只需要“用户正在操作自己的空间”这个前提；
     // 团队空间则必须先确认 actor 当前仍然是团队成员。
     if let WorkspaceStorageScope::Team {
@@ -185,7 +192,7 @@ pub(crate) async fn require_scope_access(
         actor_user_id,
     } = scope
     {
-        require_team_access(state, team_id, actor_user_id).await?;
+        require_team_access_with_db(state, db, team_id, actor_user_id).await?;
     }
 
     Ok(())
@@ -210,7 +217,7 @@ pub(crate) async fn load_scope_actor_username_cached(
         return Ok(username);
     }
 
-    let username = load_scope_actor_username(&state.db, scope).await?;
+    let username = load_scope_actor_username(state.reader_db(), scope).await?;
     state
         .cache
         .set(&cache_key, &username, Some(ACTOR_USERNAME_CACHE_TTL))
@@ -349,7 +356,20 @@ pub(crate) async fn require_team_access(
     team_id: i64,
     user_id: i64,
 ) -> Result<()> {
-    load_team_access(state, team_id, user_id).await.map(|_| ())
+    load_team_access(state, state.reader_db(), team_id, user_id)
+        .await
+        .map(|_| ())
+}
+
+pub(crate) async fn require_team_access_with_db<C: ConnectionTrait>(
+    state: &PrimaryAppState,
+    db: &C,
+    team_id: i64,
+    user_id: i64,
+) -> Result<()> {
+    load_team_access(state, db, team_id, user_id)
+        .await
+        .map(|_| ())
 }
 
 pub(crate) async fn require_team_policy_group_id(
@@ -357,7 +377,16 @@ pub(crate) async fn require_team_policy_group_id(
     team_id: i64,
     user_id: i64,
 ) -> Result<i64> {
-    let access = load_team_access(state, team_id, user_id).await?;
+    require_team_policy_group_id_with_db(state, state.reader_db(), team_id, user_id).await
+}
+
+pub(crate) async fn require_team_policy_group_id_with_db<C: ConnectionTrait>(
+    state: &PrimaryAppState,
+    db: &C,
+    team_id: i64,
+    user_id: i64,
+) -> Result<i64> {
+    let access = load_team_access(state, db, team_id, user_id).await?;
     access.policy_group_id.ok_or_else(|| {
         AsterError::storage_policy_not_found(format!(
             "no storage policy group assigned to team #{}",
@@ -371,7 +400,7 @@ pub(crate) async fn require_team_management_access(
     team_id: i64,
     user_id: i64,
 ) -> Result<()> {
-    let access = load_team_access(state, team_id, user_id).await?;
+    let access = load_team_access(state, state.reader_db(), team_id, user_id).await?;
     if !access.role.can_manage_team() {
         return Err(auth_forbidden_with_subcode(
             ApiSubcode::TeamAdminOrOwnerRequired,
@@ -386,10 +415,27 @@ pub(crate) async fn verify_folder_access(
     scope: WorkspaceStorageScope,
     folder_id: i64,
 ) -> Result<folder::Model> {
+    verify_folder_access_with_db(state.writer_db(), state, scope, folder_id).await
+}
+
+pub(crate) async fn verify_folder_access_for_read(
+    state: &PrimaryAppState,
+    scope: WorkspaceStorageScope,
+    folder_id: i64,
+) -> Result<folder::Model> {
+    verify_folder_access_with_db(state.reader_db(), state, scope, folder_id).await
+}
+
+async fn verify_folder_access_with_db<C: ConnectionTrait>(
+    db: &C,
+    state: &PrimaryAppState,
+    scope: WorkspaceStorageScope,
+    folder_id: i64,
+) -> Result<folder::Model> {
     // 先校验当前 scope 还有效，再取实体做归属检查。
     // 这样所有调用方都能拿到“存在 + 属于当前空间 + 未进回收站”的 folder。
-    require_scope_access(state, scope).await?;
-    let folder = folder_repo::find_by_id(&state.db, folder_id).await?;
+    require_scope_access_with_db(state, db, scope).await?;
+    let folder = folder_repo::find_by_id(db, folder_id).await?;
     ensure_active_folder_scope(&folder, scope)?;
 
     Ok(folder)
@@ -400,10 +446,27 @@ pub(crate) async fn verify_file_access(
     scope: WorkspaceStorageScope,
     file_id: i64,
 ) -> Result<file::Model> {
+    verify_file_access_with_db(state.writer_db(), state, scope, file_id).await
+}
+
+pub(crate) async fn verify_file_access_for_read(
+    state: &PrimaryAppState,
+    scope: WorkspaceStorageScope,
+    file_id: i64,
+) -> Result<file::Model> {
+    verify_file_access_with_db(state.reader_db(), state, scope, file_id).await
+}
+
+async fn verify_file_access_with_db<C: ConnectionTrait>(
+    db: &C,
+    state: &PrimaryAppState,
+    scope: WorkspaceStorageScope,
+    file_id: i64,
+) -> Result<file::Model> {
     // 文件访问和文件夹访问保持同样语义：返回值一旦成功，就已经完成 scope
     // 校验和 trash 过滤，上层不需要再手写重复判断。
-    require_scope_access(state, scope).await?;
-    let file = file_repo::find_by_id(&state.db, file_id).await?;
+    require_scope_access_with_db(state, db, scope).await?;
+    let file = file_repo::find_by_id(db, file_id).await?;
     ensure_active_file_scope(&file, scope)?;
 
     Ok(file)
@@ -416,10 +479,10 @@ pub(crate) async fn list_files_in_folder(
 ) -> Result<Vec<file::Model>> {
     match scope {
         WorkspaceStorageScope::Personal { user_id } => {
-            file_repo::find_by_folder(&state.db, user_id, folder_id).await
+            file_repo::find_by_folder(state.reader_db(), user_id, folder_id).await
         }
         WorkspaceStorageScope::Team { team_id, .. } => {
-            file_repo::find_by_team_folder(&state.db, team_id, folder_id).await
+            file_repo::find_by_team_folder(state.reader_db(), team_id, folder_id).await
         }
     }
 }
@@ -431,10 +494,10 @@ pub(crate) async fn list_folders_in_parent(
 ) -> Result<Vec<folder::Model>> {
     match scope {
         WorkspaceStorageScope::Personal { user_id } => {
-            folder_repo::find_children(&state.db, user_id, parent_id).await
+            folder_repo::find_children(state.reader_db(), user_id, parent_id).await
         }
         WorkspaceStorageScope::Team { team_id, .. } => {
-            folder_repo::find_team_children(&state.db, team_id, parent_id).await
+            folder_repo::find_team_children(state.reader_db(), team_id, parent_id).await
         }
     }
 }
@@ -489,7 +552,7 @@ mod tests {
             );
 
         PrimaryAppState {
-            db,
+            db_handles: crate::db::DbHandles::single(db),
             driver_registry: Arc::new(DriverRegistry::new()),
             runtime_config: runtime_config.clone(),
             policy_snapshot: Arc::new(PolicySnapshot::new()),
@@ -522,7 +585,7 @@ mod tests {
             config: Set(None),
             ..Default::default()
         }
-        .insert(&state.db)
+        .insert(state.writer_db())
         .await
         .expect("test user should insert")
     }
@@ -533,7 +596,7 @@ mod tests {
     ) -> storage_policy_group::Model {
         let now = Utc::now();
         let policy = policy_repo::create(
-            &state.db,
+            state.writer_db(),
             storage_policy::ActiveModel {
                 name: Set(format!("{name} Policy")),
                 driver_type: Set(DriverType::Local),
@@ -556,7 +619,7 @@ mod tests {
         .await
         .expect("test policy should insert");
         let group = policy_group_repo::create_group(
-            &state.db,
+            state.writer_db(),
             storage_policy_group::ActiveModel {
                 name: Set(format!("{name} Group")),
                 description: Set(String::new()),
@@ -570,7 +633,7 @@ mod tests {
         .await
         .expect("test policy group should insert");
         policy_group_repo::create_group_item(
-            &state.db,
+            state.writer_db(),
             storage_policy_group_item::ActiveModel {
                 group_id: Set(group.id),
                 policy_id: Set(policy.id),
@@ -585,7 +648,7 @@ mod tests {
         .expect("test policy group item should insert");
         state
             .policy_snapshot
-            .reload(&state.db)
+            .reload(state.writer_db())
             .await
             .expect("policy snapshot should reload");
         group
@@ -599,7 +662,7 @@ mod tests {
     ) -> (team::Model, team_member::Model) {
         let now = Utc::now();
         let team = team_repo::create(
-            &state.db,
+            state.writer_db(),
             team::ActiveModel {
                 name: Set("Cache Test Team".to_string()),
                 description: Set(String::new()),
@@ -616,7 +679,7 @@ mod tests {
         .await
         .expect("test team should insert");
         team_member_repo::create(
-            &state.db,
+            state.writer_db(),
             team_member::ActiveModel {
                 team_id: Set(team.id),
                 user_id: Set(owner.id),
@@ -629,7 +692,7 @@ mod tests {
         .await
         .expect("test owner membership should insert");
         let membership = team_member_repo::create(
-            &state.db,
+            state.writer_db(),
             team_member::ActiveModel {
                 team_id: Set(team.id),
                 user_id: Set(member.id),
@@ -660,7 +723,7 @@ mod tests {
 
         let mut active = team.clone().into_active_model();
         active.policy_group_id = Set(Some(second_group.id));
-        team_repo::update(&state.db, active)
+        team_repo::update(state.writer_db(), active)
             .await
             .expect("team policy group should update");
         let policy_group_id = require_team_policy_group_id(&state, team.id, member.id)
@@ -668,7 +731,7 @@ mod tests {
             .expect("cached access should refresh policy group from database");
         assert_eq!(policy_group_id, second_group.id);
 
-        team_member_repo::delete(&state.db, membership.id)
+        team_member_repo::delete(state.writer_db(), membership.id)
             .await
             .expect("membership should delete");
         let error = require_team_access(&state, team.id, member.id)
@@ -683,7 +746,7 @@ mod tests {
         let user = create_user(&state, "folder-owner").await;
         let now = Utc::now();
         let parent = crate::db::repository::folder_repo::create(
-            &state.db,
+            state.writer_db(),
             crate::entities::folder::ActiveModel {
                 name: Set("Parent".to_string()),
                 parent_id: Set(None),
@@ -702,7 +765,7 @@ mod tests {
         .await
         .expect("parent folder should insert");
         let child = crate::db::repository::folder_repo::create(
-            &state.db,
+            state.writer_db(),
             crate::entities::folder::ActiveModel {
                 name: Set("Child".to_string()),
                 parent_id: Set(Some(parent.id)),
@@ -733,7 +796,7 @@ mod tests {
         active.name = Set("Renamed".to_string());
         active.updated_at = Set(Utc::now());
         active
-            .update(&state.db)
+            .update(state.writer_db())
             .await
             .expect("parent should rename");
 
@@ -761,7 +824,7 @@ mod tests {
         let team_id = team.id;
         let mut active = team.into_active_model();
         active.archived_at = Set(Some(Utc::now()));
-        team_repo::update(&state.db, active)
+        team_repo::update(state.writer_db(), active)
             .await
             .expect("team should archive");
 

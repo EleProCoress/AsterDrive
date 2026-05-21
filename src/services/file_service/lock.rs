@@ -8,8 +8,6 @@ use crate::services::{
 };
 use crate::types::EntityType;
 
-use super::get_info_in_scope;
-
 pub(crate) async fn set_lock_in_scope(
     state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
@@ -22,7 +20,7 @@ pub(crate) async fn set_lock_in_scope(
         locked,
         "setting file lock state"
     );
-    get_info_in_scope(state, scope, file_id).await?;
+    crate::services::workspace_storage_service::verify_file_access(state, scope, file_id).await?;
 
     if locked {
         lock_service::lock(
@@ -38,7 +36,9 @@ pub(crate) async fn set_lock_in_scope(
         lock_service::unlock(state, EntityType::File, file_id, scope.actor_user_id()).await?;
     }
 
-    let file = get_info_in_scope(state, scope, file_id).await?;
+    let file =
+        crate::services::workspace_storage_service::verify_file_access(state, scope, file_id)
+            .await?;
     tracing::debug!(
         scope = ?scope,
         file_id = file.id,

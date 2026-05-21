@@ -40,7 +40,7 @@ pub(crate) async fn create_share_in_scope(
     expires_at: Option<chrono::DateTime<Utc>>,
     max_downloads: i64,
 ) -> Result<ShareInfo> {
-    let db = &state.db;
+    let db = state.writer_db();
     let (file_id, folder_id) = target.into_ids();
     tracing::debug!(
         scope = ?scope,
@@ -50,7 +50,7 @@ pub(crate) async fn create_share_in_scope(
         max_downloads,
         "creating share"
     );
-    workspace_storage_service::require_scope_access(state, scope).await?;
+    workspace_storage_service::require_scope_access_with_db(state, db, scope).await?;
 
     validate_max_downloads(max_downloads)?;
 
@@ -142,17 +142,20 @@ pub(crate) async fn list_shares_paginated_in_scope(
         offset,
         "listing paginated shares"
     );
-    workspace_storage_service::require_scope_access(state, scope).await?;
+    workspace_storage_service::require_scope_access_with_db(state, state.writer_db(), scope)
+        .await?;
     let page = load_offset_page(limit, offset, 100, |limit, offset| async move {
         let (shares, total) = match scope {
             WorkspaceStorageScope::Personal { user_id } => {
-                share_repo::find_by_user_paginated(&state.db, user_id, limit, offset).await?
+                share_repo::find_by_user_paginated(state.reader_db(), user_id, limit, offset)
+                    .await?
             }
             WorkspaceStorageScope::Team { team_id, .. } => {
-                share_repo::find_by_team_paginated(&state.db, team_id, limit, offset).await?
+                share_repo::find_by_team_paginated(state.reader_db(), team_id, limit, offset)
+                    .await?
             }
         };
-        let items = build_my_share_infos(&state.db, shares).await?;
+        let items = build_my_share_infos(state.reader_db(), shares).await?;
         Ok((items, total))
     })
     .await?;
@@ -174,7 +177,7 @@ pub(crate) async fn delete_share_in_scope(
 ) -> Result<()> {
     tracing::debug!(scope = ?scope, share_id, "deleting share");
     let share = load_share_in_scope(state, scope, share_id).await?;
-    share_repo::delete(&state.db, share_id).await?;
+    share_repo::delete(state.writer_db(), share_id).await?;
     invalidate_active_share_target_cache_for_scope(state, scope).await;
     invalidate_share_token_record_cache_for_share(state, &share).await;
     tracing::debug!(scope = ?scope, share_id, "deleted share");
@@ -219,9 +222,11 @@ pub(crate) async fn update_share_in_scope(
     active.max_downloads = Set(max_downloads);
     active.updated_at = Set(Utc::now());
 
-    let updated =
-        share_info_from_model_with_user(state, share_repo::update(&state.db, active).await?)
-            .await?;
+    let updated = share_info_from_model_with_user(
+        state,
+        share_repo::update(state.writer_db(), active).await?,
+    )
+    .await?;
     invalidate_active_share_target_cache_for_scope(state, scope).await;
     invalidate_share_token_record_cache(state, &existing_token).await;
     tracing::debug!(
@@ -256,10 +261,10 @@ pub(crate) async fn batch_delete_shares_in_scope(
 
     let scoped_shares = match scope {
         WorkspaceStorageScope::Personal { user_id } => {
-            share_repo::find_by_ids_in_personal_scope(&state.db, user_id, share_ids).await?
+            share_repo::find_by_ids_in_personal_scope(state.writer_db(), user_id, share_ids).await?
         }
         WorkspaceStorageScope::Team { team_id, .. } => {
-            share_repo::find_by_ids_in_team_scope(&state.db, team_id, share_ids).await?
+            share_repo::find_by_ids_in_team_scope(state.writer_db(), team_id, share_ids).await?
         }
     };
     let share_map: HashMap<i64, share::Model> = scoped_shares
@@ -284,7 +289,7 @@ pub(crate) async fn batch_delete_shares_in_scope(
     }
 
     if !ids_to_delete.is_empty() {
-        let txn = crate::db::transaction::begin(&state.db).await?;
+        let txn = crate::db::transaction::begin(state.writer_db()).await?;
         share_repo::delete_many(&txn, &ids_to_delete).await?;
         crate::db::transaction::commit(txn).await?;
         invalidate_active_share_target_cache_for_scope(state, scope).await;
@@ -459,7 +464,8 @@ pub async fn list_paginated(
 ) -> Result<OffsetPage<ShareInfo>> {
     load_offset_page(limit, offset, 100, |limit, offset| async move {
         let (items, total) =
-            share_repo::find_paginated(&state.db, limit, offset, sort_by, sort_order).await?;
+            share_repo::find_paginated(state.reader_db(), limit, offset, sort_by, sort_order)
+                .await?;
         let items = share_infos_from_models(state, items).await?;
         Ok((items, total))
     })
@@ -467,8 +473,8 @@ pub async fn list_paginated(
 }
 
 pub async fn admin_delete_share(state: &PrimaryAppState, share_id: i64) -> Result<()> {
-    let share = share_repo::find_by_id(&state.db, share_id).await?;
-    share_repo::delete(&state.db, share_id).await?;
+    let share = share_repo::find_by_id(state.writer_db(), share_id).await?;
+    share_repo::delete(state.writer_db(), share_id).await?;
     invalidate_active_share_target_cache_for_share(state, &share).await;
     invalidate_share_token_record_cache_for_share(state, &share).await;
     Ok(())

@@ -53,6 +53,7 @@ fn known_thumbnail_cache_paths_include_normalized_namespaces() {
             format!("_thumb/images/1/ab/ca/{hash}.webp"),
             format!("_thumb/vips-cli/1/ab/ca/{hash}.webp"),
             format!("_thumb/ffmpeg-cli/1/ab/ca/{hash}.webp"),
+            format!("_thumb/lofty/1/ab/ca/{hash}.webp"),
             format!("_thumb/storage-native/1/ab/ca/{hash}.webp"),
         ]
     );

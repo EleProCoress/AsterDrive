@@ -19,7 +19,6 @@ use crate::services::{
     },
 };
 
-use super::get_info_in_scope;
 use crate::utils::numbers::usize_to_i64;
 
 pub(crate) struct StreamedTempUpload {
@@ -244,7 +243,7 @@ pub(crate) async fn update_content_in_scope(
     body: Bytes,
     if_match: Option<&str>,
 ) -> Result<(crate::entities::file::Model, String)> {
-    let db = &state.db;
+    let db = state.writer_db();
     tracing::debug!(
         scope = ?scope,
         file_id,
@@ -252,7 +251,7 @@ pub(crate) async fn update_content_in_scope(
         has_if_match = if_match.is_some(),
         "updating file content"
     );
-    let f = get_info_in_scope(state, scope, file_id).await?;
+    let f = workspace_storage_service::verify_file_access(state, scope, file_id).await?;
 
     if f.is_locked {
         let lock = crate::db::repository::lock_repo::find_by_entity(
@@ -367,7 +366,7 @@ pub(crate) async fn update_content_stream_in_scope(
     declared_size: Option<i64>,
     if_match: Option<&str>,
 ) -> Result<(crate::entities::file::Model, String)> {
-    let db = &state.db;
+    let db = state.writer_db();
     tracing::debug!(
         scope = ?scope,
         file_id,
@@ -375,7 +374,7 @@ pub(crate) async fn update_content_stream_in_scope(
         has_if_match = if_match.is_some(),
         "streaming file content update"
     );
-    let f = get_info_in_scope(state, scope, file_id).await?;
+    let f = workspace_storage_service::verify_file_access(state, scope, file_id).await?;
 
     if f.is_locked {
         let lock = crate::db::repository::lock_repo::find_by_entity(

@@ -38,7 +38,7 @@ pub(crate) async fn create_token_in_scope(
 }
 
 pub(crate) async fn load_public_file(state: &PrimaryAppState, file_id: i64) -> Result<file::Model> {
-    let file = file_repo::find_by_id(&state.db, file_id).await?;
+    let file = file_repo::find_by_id(state.reader_db(), file_id).await?;
     validate_file_scope(state, &file).await?;
     Ok(file)
 }
@@ -71,7 +71,7 @@ pub(crate) async fn download_file(
     range: Option<ResolvedDownloadRange>,
 ) -> Result<file_service::DownloadOutcome> {
     let file = resolve_file_for_download(state, token, requested_name).await?;
-    let blob = file_repo::find_blob_by_id(&state.db, file.blob_id).await?;
+    let blob = file_repo::find_blob_by_id(state.reader_db(), file.blob_id).await?;
     let disposition = if force_download {
         file_service::DownloadDisposition::Attachment
     } else {
@@ -154,7 +154,7 @@ async fn validate_file_scope(state: &PrimaryAppState, file: &file::Model) -> Res
     }
 
     if let Some(team_id) = file.team_id {
-        match team_repo::find_active_by_id(&state.db, team_id).await {
+        match team_repo::find_active_by_id(state.reader_db(), team_id).await {
             Ok(_) => {}
             Err(AsterError::RecordNotFound(_)) => {
                 return Err(AsterError::share_not_found("direct link team is inactive"));

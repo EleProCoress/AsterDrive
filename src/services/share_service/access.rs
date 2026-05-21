@@ -16,7 +16,7 @@ use super::shared::{
 };
 
 pub async fn get_share_info(state: &PrimaryAppState, token: &str) -> Result<SharePublicInfo> {
-    let db = &state.db;
+    let db = state.writer_db();
     let share = load_valid_share(state, token).await?;
     tracing::debug!(share_id = share.id, "loading public share info");
 
@@ -76,8 +76,8 @@ async fn resolve_share_owner_info(
     state: &PrimaryAppState,
     share: &share::Model,
 ) -> Result<SharePublicOwnerInfo> {
-    let user = user_repo::find_by_id(&state.db, share.user_id).await?;
-    let profile = user_profile_repo::find_by_user_id(&state.db, share.user_id).await?;
+    let user = user_repo::find_by_id(state.reader_db(), share.user_id).await?;
+    let profile = user_profile_repo::find_by_user_id(state.reader_db(), share.user_id).await?;
     let gravatar_base_url = profile_service::resolve_gravatar_base_url(state);
 
     Ok(SharePublicOwnerInfo {
