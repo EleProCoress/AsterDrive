@@ -1,11 +1,7 @@
 //! Blob-level media metadata extraction and cache orchestration.
 
-use std::path::{Path, PathBuf};
-use std::sync::Arc;
-
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use tokio::io::AsyncWriteExt;
 
 use crate::config::{media_processing, operations};
 use crate::db::repository::{file_repo, media_metadata_repo};
@@ -13,19 +9,21 @@ use crate::entities::{blob_media_metadata, file, file_blob};
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::PrimaryAppState;
 use crate::services::workspace_storage_service::WorkspaceStorageScope;
-use crate::storage::StorageDriver;
 use crate::types::{
     FileCategory, MediaMetadataKind, MediaMetadataPayload, MediaMetadataStatus, MediaProcessorKind,
     StoredMediaMetadataPayload, VideoMediaMetadata,
 };
-use crate::utils::raii::TempFileGuard;
 
 mod audio;
 mod image;
+mod source;
+#[cfg(test)]
+mod tests;
 mod video;
 
-use audio::parse_audio_metadata_from_path;
-use image::parse_image_metadata_from_path;
+use audio::{parse_audio_metadata_from_path, parse_audio_metadata_from_reader};
+use image::{parse_image_metadata_from_path, parse_image_metadata_with_reader_factory};
+use source::{PreparedMediaMetadataSource, prepare_media_metadata_source};
 use video::parse_video_metadata_from_path;
 
 pub use video::probe_ffprobe_cli_command;
@@ -396,7 +394,8 @@ async fn extract_video_metadata(
     }
 
     let source =
-        prepare_media_metadata_source(state, blob, source_file_name, source_mime_type).await?;
+        prepare_media_metadata_source(state, blob, source_file_name, source_mime_type, false)
+            .await?;
     let path = source.path().to_path_buf();
     let video_metadata =
         tokio::task::spawn_blocking(move || parse_video_metadata_from_path(&command, &path))
@@ -421,11 +420,17 @@ async fn extract_image_metadata(
 ) -> Result<ExtractedMediaMetadata> {
     ensure_media_metadata_source_size_supported(state, blob)?;
     let source =
-        prepare_media_metadata_source(state, blob, source_file_name, source_mime_type).await?;
-    let path = source.path().to_path_buf();
-    let image_metadata = tokio::task::spawn_blocking(move || parse_image_metadata_from_path(&path))
-        .await
-        .map_aster_err_ctx("image metadata task panicked", AsterError::internal_error)??;
+        prepare_media_metadata_source(state, blob, source_file_name, source_mime_type, true)
+            .await?;
+    let image_metadata = tokio::task::spawn_blocking(move || match source {
+        PreparedMediaMetadataSource::Local(path) => parse_image_metadata_from_path(&path),
+        PreparedMediaMetadataSource::Temp(guard) => parse_image_metadata_from_path(guard.path()),
+        PreparedMediaMetadataSource::Range(range_source) => {
+            parse_image_metadata_with_reader_factory("storage range", || Ok(range_source.reader()))
+        }
+    })
+    .await
+    .map_aster_err_ctx("image metadata task panicked", AsterError::internal_error)??;
 
     Ok(ExtractedMediaMetadata {
         kind: MediaMetadataKind::Image,
@@ -445,11 +450,18 @@ async fn extract_audio_metadata(
 ) -> Result<ExtractedMediaMetadata> {
     ensure_media_metadata_source_size_supported(state, blob)?;
     let source =
-        prepare_media_metadata_source(state, blob, source_file_name, source_mime_type).await?;
-    let path = source.path().to_path_buf();
-    let audio_metadata = tokio::task::spawn_blocking(move || parse_audio_metadata_from_path(&path))
-        .await
-        .map_aster_err_ctx("audio metadata task panicked", AsterError::internal_error)??;
+        prepare_media_metadata_source(state, blob, source_file_name, source_mime_type, true)
+            .await?;
+    let audio_metadata = tokio::task::spawn_blocking(move || match source {
+        PreparedMediaMetadataSource::Local(path) => parse_audio_metadata_from_path(&path),
+        PreparedMediaMetadataSource::Temp(guard) => parse_audio_metadata_from_path(guard.path()),
+        PreparedMediaMetadataSource::Range(range_source) => {
+            let file_type = range_source.file_type();
+            parse_audio_metadata_from_reader(range_source.reader(), file_type)
+        }
+    })
+    .await
+    .map_aster_err_ctx("audio metadata task panicked", AsterError::internal_error)??;
 
     Ok(ExtractedMediaMetadata {
         kind: MediaMetadataKind::Audio,
@@ -473,116 +485,6 @@ fn ensure_media_metadata_source_size_supported(
         )));
     }
     Ok(())
-}
-
-async fn prepare_media_metadata_source(
-    state: &PrimaryAppState,
-    blob: &file_blob::Model,
-    source_file_name: &str,
-    source_mime_type: &str,
-) -> Result<PreparedMediaMetadataSource> {
-    let policy = state.policy_snapshot.get_policy_or_err(blob.policy_id)?;
-    let driver = state.driver_registry.get_driver(&policy)?;
-
-    if let Some(local_path_driver) = driver.as_local_path() {
-        return Ok(PreparedMediaMetadataSource::Local(
-            local_path_driver.resolve_local_path(&blob.storage_path)?,
-        ));
-    }
-
-    let temp_source = stream_blob_to_temp_source(
-        driver,
-        blob,
-        &state.config.server.temp_dir,
-        source_file_name,
-        source_mime_type,
-    )
-    .await?;
-    Ok(PreparedMediaMetadataSource::Temp(temp_source))
-}
-
-async fn stream_blob_to_temp_source(
-    driver: Arc<dyn StorageDriver>,
-    blob: &file_blob::Model,
-    temp_root: &str,
-    source_file_name: &str,
-    source_mime_type: &str,
-) -> Result<TempFileGuard> {
-    let temp_dir = PathBuf::from(crate::utils::paths::runtime_temp_dir(temp_root));
-    tokio::fs::create_dir_all(&temp_dir)
-        .await
-        .map_aster_err_ctx(
-            "create media metadata temp dir",
-            AsterError::storage_driver_error,
-        )?;
-    let extension = media_metadata_source_extension(source_file_name, source_mime_type);
-    let temp_source = TempFileGuard::new(
-        temp_dir.join(format!(
-            "media-metadata-source-{}.{}",
-            uuid::Uuid::new_v4(),
-            extension
-        )),
-        "media metadata source temp file",
-    );
-
-    let mut stream = driver.get_stream(&blob.storage_path).await?;
-    let mut file = tokio::fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(temp_source.path())
-        .await
-        .map_aster_err_ctx(
-            "create media metadata source temp file",
-            AsterError::storage_driver_error,
-        )?;
-    let copied = tokio::io::copy(&mut stream, &mut file)
-        .await
-        .map_aster_err_ctx(
-            "copy media metadata source stream",
-            AsterError::storage_driver_error,
-        )?;
-    file.flush().await.map_aster_err_ctx(
-        "flush media metadata source temp file",
-        AsterError::storage_driver_error,
-    )?;
-    drop(file);
-
-    let expected_size = crate::utils::numbers::i64_to_u64(blob.size, "media metadata source size")?;
-    if copied != expected_size {
-        return Err(AsterError::storage_driver_error(format!(
-            "media metadata source stream size mismatch: expected {expected_size} bytes, got {copied}"
-        )));
-    }
-
-    Ok(temp_source)
-}
-
-fn media_metadata_source_extension(source_file_name: &str, source_mime_type: &str) -> String {
-    std::path::Path::new(source_file_name)
-        .extension()
-        .and_then(|value| value.to_str())
-        .filter(|value| !value.trim().is_empty())
-        .map(|value| value.to_ascii_lowercase())
-        .or_else(|| {
-            mime_guess::get_mime_extensions_str(source_mime_type)
-                .and_then(|extensions| extensions.first().copied())
-                .map(str::to_string)
-        })
-        .unwrap_or_else(|| "bin".to_string())
-}
-
-enum PreparedMediaMetadataSource {
-    Local(PathBuf),
-    Temp(TempFileGuard),
-}
-
-impl PreparedMediaMetadataSource {
-    fn path(&self) -> &Path {
-        match self {
-            Self::Local(path) => path.as_path(),
-            Self::Temp(guard) => guard.path(),
-        }
-    }
 }
 
 pub fn result_status_text(status: MediaMetadataStatus) -> &'static str {

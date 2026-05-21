@@ -1,4 +1,9 @@
-use std::{collections::BTreeMap, fs::File, io::BufReader, path::Path};
+use std::{
+    collections::BTreeMap,
+    fs::File,
+    io::{BufReader, Read, Seek},
+    path::Path,
+};
 
 use nom_exif::{
     EntryValue, Exif, ExifDateTime, ExifTag, IfdIndex, ImageFormatMetadata, MediaParser,
@@ -13,6 +18,22 @@ use crate::types::ImageMediaMetadata;
 const EXIF_ARTIST_TAG_CODE: u16 = 0x013b;
 
 pub(super) fn parse_image_metadata_from_path(path: &Path) -> Result<ImageMediaMetadata> {
+    parse_image_metadata_with_reader_factory(&path.display().to_string(), || {
+        File::open(path).map_aster_err_ctx(
+            "open image metadata source",
+            AsterError::storage_driver_error,
+        )
+    })
+}
+
+pub(super) fn parse_image_metadata_with_reader_factory<R, F>(
+    source_label: &str,
+    mut make_reader: F,
+) -> Result<ImageMediaMetadata>
+where
+    R: Read + Seek,
+    F: FnMut() -> Result<R>,
+{
     let mut metadata = ImageMediaMetadata {
         width: 0,
         height: 0,
@@ -39,18 +60,18 @@ pub(super) fn parse_image_metadata_from_path(path: &Path) -> Result<ImageMediaMe
         software: None,
     };
 
-    match parse_nom_exif_image_metadata(path) {
+    match parse_nom_exif_image_metadata_from_reader(make_reader()?) {
         Ok(image_metadata) => enrich_image_metadata_from_nom_exif(&image_metadata, &mut metadata),
         Err(error) => {
             tracing::debug!(
-                path = %path.display(),
+                source = source_label,
                 error = %error,
                 "image metadata unavailable from nom-exif, falling back to image dimensions"
             );
         }
     }
 
-    match tiff_directory_dimensions_from_path(path) {
+    match tiff_directory_dimensions_from_reader(make_reader()?) {
         Ok(Some((width, height)))
             if dimensions_area(width, height)
                 > dimensions_area(metadata.width, metadata.height) =>
@@ -61,7 +82,7 @@ pub(super) fn parse_image_metadata_from_path(path: &Path) -> Result<ImageMediaMe
         Ok(_) => {}
         Err(error) => {
             tracing::debug!(
-                path = %path.display(),
+                source = source_label,
                 error = %error,
                 "image dimensions unavailable from TIFF directory metadata"
             );
@@ -69,7 +90,7 @@ pub(super) fn parse_image_metadata_from_path(path: &Path) -> Result<ImageMediaMe
     }
 
     if metadata.width == 0 || metadata.height == 0 {
-        let (width, height, format) = image_reader_metadata(path)?;
+        let (width, height, format) = image_reader_metadata_from_reader(make_reader()?)?;
         metadata.width = width;
         metadata.height = height;
         metadata.format = metadata.format.take().or(format);
@@ -78,9 +99,12 @@ pub(super) fn parse_image_metadata_from_path(path: &Path) -> Result<ImageMediaMe
     Ok(metadata)
 }
 
-fn parse_nom_exif_image_metadata(path: &Path) -> Result<nom_exif::ImageMetadata<Exif>> {
+fn parse_nom_exif_image_metadata_from_reader<R>(reader: R) -> Result<nom_exif::ImageMetadata<Exif>>
+where
+    R: Read + Seek,
+{
     let mut parser = MediaParser::new();
-    let source = MediaSource::open(path)
+    let source = MediaSource::seekable(reader)
         .map_aster_err_ctx("open image metadata source", AsterError::validation_error)?;
     let image_metadata = parser
         .parse_image_metadata(source)
@@ -88,11 +112,11 @@ fn parse_nom_exif_image_metadata(path: &Path) -> Result<nom_exif::ImageMetadata<
     Ok(image_metadata.into())
 }
 
-fn image_reader_metadata(path: &Path) -> Result<(u32, u32, Option<String>)> {
-    let reader = image::ImageReader::open(path).map_aster_err_ctx(
-        "open image metadata source",
-        AsterError::storage_driver_error,
-    )?;
+fn image_reader_metadata_from_reader<R>(reader: R) -> Result<(u32, u32, Option<String>)>
+where
+    R: Read + Seek,
+{
+    let reader = image::ImageReader::new(BufReader::new(reader));
     let reader = reader
         .with_guessed_format()
         .map_aster_err_ctx("guess image metadata format", AsterError::validation_error)?;
@@ -186,11 +210,13 @@ fn exif_text_by_code(exif: &Exif, code: u16) -> Option<String> {
     clean_metadata_string(exif_entry_by_code(exif, code).and_then(EntryValue::as_str))
 }
 
-fn tiff_directory_dimensions_from_path(
-    path: &Path,
-) -> std::result::Result<Option<(u32, u32)>, tiff::TiffError> {
-    let file = File::open(path)?;
-    let mut decoder = TiffDecoder::new(BufReader::new(file))?;
+fn tiff_directory_dimensions_from_reader<R>(
+    reader: R,
+) -> std::result::Result<Option<(u32, u32)>, tiff::TiffError>
+where
+    R: Read + Seek,
+{
+    let mut decoder = TiffDecoder::new(BufReader::new(reader))?;
     let mut best = Some(decoder.dimensions()?);
 
     if let Some(value) = decoder.find_tag(TiffTag::SubIfd)? {

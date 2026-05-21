@@ -1,6 +1,8 @@
+use std::io::{BufReader, Read, Seek};
 use std::path::Path;
 
 use lofty::config::ParseOptions;
+use lofty::file::FileType;
 use lofty::file::{AudioFile, TaggedFileExt};
 use lofty::prelude::Accessor;
 use lofty::probe::Probe;
@@ -10,23 +12,35 @@ use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::types::AudioMediaMetadata;
 
 pub(super) fn parse_audio_metadata_from_path(path: &Path) -> Result<AudioMediaMetadata> {
-    let mut options = ParseOptions::new();
-    options = options.read_cover_art(true);
-    let tagged_file = Probe::open(path)
-        .map_aster_err_ctx(
-            "open audio metadata source",
-            AsterError::storage_driver_error,
-        )?
+    let file = std::fs::File::open(path).map_aster_err_ctx(
+        "open audio metadata source",
+        AsterError::storage_driver_error,
+    )?;
+    parse_audio_metadata_from_reader(BufReader::new(file), FileType::from_path(path))
+}
+
+pub(super) fn parse_audio_metadata_from_reader<R>(
+    reader: R,
+    file_type: Option<FileType>,
+) -> Result<AudioMediaMetadata>
+where
+    R: Read + Seek,
+{
+    let options = ParseOptions::new().read_cover_art(false);
+    let probe = match file_type {
+        Some(file_type) => Probe::with_file_type(reader, file_type),
+        None => Probe::new(reader),
+    };
+    let tagged_file = probe
+        .options(options)
         .guess_file_type()
         .map_aster_err_ctx("guess audio metadata format", AsterError::validation_error)?
-        .options(options)
         .read()
         .map_aster_err_ctx("read audio metadata", AsterError::validation_error)?;
     let tag = tagged_file
         .primary_tag()
         .or_else(|| tagged_file.first_tag());
     let properties = tagged_file.properties();
-    let picture = tag.and_then(|tag| tag.pictures().first());
 
     Ok(AudioMediaMetadata {
         title: tag.and_then(Accessor::title).map(clean_tag_text),
@@ -50,10 +64,8 @@ pub(super) fn parse_audio_metadata_from_path(path: &Path) -> Result<AudioMediaMe
         date: tag
             .and_then(Accessor::date)
             .map(|timestamp| timestamp.to_string()),
-        has_embedded_picture: picture.is_some(),
-        embedded_picture_mime_type: picture
-            .and_then(|picture| picture.mime_type())
-            .map(|mime| mime.as_str().to_string()),
+        has_embedded_picture: false,
+        embedded_picture_mime_type: None,
     })
 }
 
