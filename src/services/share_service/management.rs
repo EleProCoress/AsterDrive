@@ -146,13 +146,15 @@ pub(crate) async fn list_shares_paginated_in_scope(
     let page = load_offset_page(limit, offset, 100, |limit, offset| async move {
         let (shares, total) = match scope {
             WorkspaceStorageScope::Personal { user_id } => {
-                share_repo::find_by_user_paginated(&state.db, user_id, limit, offset).await?
+                share_repo::find_by_user_paginated(state.reader_db(), user_id, limit, offset)
+                    .await?
             }
             WorkspaceStorageScope::Team { team_id, .. } => {
-                share_repo::find_by_team_paginated(&state.db, team_id, limit, offset).await?
+                share_repo::find_by_team_paginated(state.reader_db(), team_id, limit, offset)
+                    .await?
             }
         };
-        let items = build_my_share_infos(&state.db, shares).await?;
+        let items = build_my_share_infos(state.reader_db(), shares).await?;
         Ok((items, total))
     })
     .await?;
@@ -459,7 +461,8 @@ pub async fn list_paginated(
 ) -> Result<OffsetPage<ShareInfo>> {
     load_offset_page(limit, offset, 100, |limit, offset| async move {
         let (items, total) =
-            share_repo::find_paginated(&state.db, limit, offset, sort_by, sort_order).await?;
+            share_repo::find_paginated(state.reader_db(), limit, offset, sort_by, sort_order)
+                .await?;
         let items = share_infos_from_models(state, items).await?;
         Ok((items, total))
     })

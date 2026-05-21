@@ -39,7 +39,7 @@ pub(crate) async fn download_in_scope_with_range_and_file(
         Some(file) => file,
         None => get_info_in_scope(state, scope, id).await?,
     };
-    let blob = file_repo::find_blob_by_id(&state.db, file.blob_id).await?;
+    let blob = file_repo::find_blob_by_id(state.reader_db(), file.blob_id).await?;
     build_download_outcome(state, &file, &blob, if_none_match, range).await
 }
 
@@ -67,7 +67,7 @@ pub async fn download_raw(
     id: i64,
     if_none_match: Option<&str>,
 ) -> Result<DownloadOutcome> {
-    let db = &state.db;
+    let db = state.reader_db();
     let file = file_repo::find_by_id(db, id).await?;
     ensure_personal_file_scope(&file)?;
     download_raw_unchecked_with_file(state, file, if_none_match).await
@@ -78,7 +78,7 @@ async fn download_raw_unchecked_with_file(
     file: file::Model,
     if_none_match: Option<&str>,
 ) -> Result<DownloadOutcome> {
-    let blob = file_repo::find_blob_by_id(&state.db, file.blob_id).await?;
+    let blob = file_repo::find_blob_by_id(state.reader_db(), file.blob_id).await?;
     build_stream_outcome(state, &file, &blob, if_none_match, None).await
 }
 

@@ -19,7 +19,7 @@ pub(crate) async fn get_info_in_scope(
     scope: WorkspaceStorageScope,
     id: i64,
 ) -> Result<file::Model> {
-    workspace_storage_service::verify_file_access(state, scope, id).await
+    workspace_storage_service::verify_file_access_for_read(state, scope, id).await
 }
 
 pub(crate) async fn update_in_scope(
@@ -37,7 +37,7 @@ pub(crate) async fn update_in_scope(
         folder_patch = ?folder_id,
         "updating file metadata"
     );
-    let f = get_info_in_scope(state, scope, id).await?;
+    let f = workspace_storage_service::verify_file_access(state, scope, id).await?;
     if f.is_locked {
         return Err(AsterError::resource_locked("file is locked"));
     }

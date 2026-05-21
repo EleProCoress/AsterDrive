@@ -146,7 +146,7 @@ pub(crate) async fn download_file(
 
     direct_link_service::validate_public_file_name(file, requested_name)?;
 
-    let blob = file_repo::find_blob_by_id(&state.db, file.blob_id).await?;
+    let blob = file_repo::find_blob_by_id(state.reader_db(), file.blob_id).await?;
     if let Some(if_none_match) = if_none_match
         && file_service::if_none_match_matches(if_none_match, &blob.hash)
     {

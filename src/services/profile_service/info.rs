@@ -172,7 +172,8 @@ pub async fn get_profile_info_map(
 ) -> crate::errors::Result<HashMap<i64, UserProfileInfo>> {
     let user_ids: Vec<i64> = users.iter().map(|user| user.id).collect();
     let profiles =
-        crate::db::repository::user_profile_repo::find_by_user_ids(&state.db, &user_ids).await?;
+        crate::db::repository::user_profile_repo::find_by_user_ids(state.reader_db(), &user_ids)
+            .await?;
     let gravatar_base_url = resolve_gravatar_base_url(state);
 
     Ok(users

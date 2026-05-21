@@ -198,7 +198,8 @@ mod tests {
             );
 
         PrimaryAppState {
-            db,
+            db: db.clone(),
+            db_handles: crate::db::DbHandles::single(db),
             driver_registry: Arc::new(DriverRegistry::new()),
             runtime_config: runtime_config.clone(),
             policy_snapshot: Arc::new(PolicySnapshot::new()),

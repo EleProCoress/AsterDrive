@@ -103,7 +103,7 @@ pub(super) async fn build_team_info(
     my_role: TeamMemberRole,
 ) -> Result<TeamInfo> {
     let creator = load_creator_summary(state, team).await?;
-    let member_count = team_member_repo::count_by_team(&state.db, team.id).await?;
+    let member_count = team_member_repo::count_by_team(state.reader_db(), team.id).await?;
 
     Ok(build_team_info_with_metadata(
         team,
@@ -140,7 +140,7 @@ pub(super) async fn build_admin_team_info(
     team: &team::Model,
 ) -> Result<AdminTeamInfo> {
     let creator = load_creator_summary(state, team).await?;
-    let member_count = team_member_repo::count_by_team(&state.db, team.id).await?;
+    let member_count = team_member_repo::count_by_team(state.reader_db(), team.id).await?;
 
     Ok(build_admin_team_info_with_metadata(
         team,
@@ -271,13 +271,13 @@ pub(super) async fn load_team_member_page(
     };
     let ((rows, total), role_counts) = tokio::try_join!(
         team_member_repo::list_page_by_team_with_user(
-            &state.db,
+            state.reader_db(),
             team_id,
             effective_limit,
             offset,
             &repo_filters,
         ),
-        team_member_repo::count_by_team_grouped_by_role(&state.db, team_id),
+        team_member_repo::count_by_team_grouped_by_role(state.reader_db(), team_id),
     )?;
     let mut owner_count = 0;
     let mut admin_count = 0;
@@ -331,10 +331,26 @@ pub(super) async fn require_team_membership(
     team_id: i64,
     user_id: i64,
 ) -> Result<(team::Model, team_member::Model)> {
+    require_team_membership_with_db(&state.db, team_id, user_id).await
+}
+
+pub(super) async fn require_team_membership_for_read(
+    state: &PrimaryAppState,
+    team_id: i64,
+    user_id: i64,
+) -> Result<(team::Model, team_member::Model)> {
+    require_team_membership_with_db(state.reader_db(), team_id, user_id).await
+}
+
+async fn require_team_membership_with_db<C: ConnectionTrait>(
+    db: &C,
+    team_id: i64,
+    user_id: i64,
+) -> Result<(team::Model, team_member::Model)> {
     // 这里故意只接受 active team。
     // 对归档团队的访问需要走专门恢复 / admin 流程，避免普通团队 API 混入 archived 语义。
-    let team = team_repo::find_active_by_id(&state.db, team_id).await?;
-    let membership = team_member_repo::find_by_team_and_user(&state.db, team_id, user_id)
+    let team = team_repo::find_active_by_id(db, team_id).await?;
+    let membership = team_member_repo::find_by_team_and_user(db, team_id, user_id)
         .await?
         .ok_or_else(|| {
             auth_forbidden_with_subcode(ApiSubcode::TeamNotMember, "not a member of this team")
@@ -405,7 +421,7 @@ pub(super) async fn load_team_metadata<'a>(
             &creator_ids,
             profile_service::AvatarAudience::AdminUser,
         ),
-        team_member_repo::count_by_team_ids(&state.db, &team_ids),
+        team_member_repo::count_by_team_ids(state.reader_db(), &team_ids),
     )?;
 
     Ok((creators, member_counts))

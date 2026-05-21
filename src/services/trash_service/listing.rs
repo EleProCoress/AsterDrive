@@ -42,7 +42,7 @@ async fn list_trash_in_scope(
     let (raw_folders, folders_total) = match scope {
         WorkspaceStorageScope::Personal { user_id } => {
             folder_repo::find_top_level_deleted_paginated(
-                &state.db,
+                state.reader_db(),
                 user_id,
                 folder_limit,
                 folder_offset,
@@ -51,7 +51,7 @@ async fn list_trash_in_scope(
         }
         WorkspaceStorageScope::Team { team_id, .. } => {
             folder_repo::find_top_level_deleted_by_team_paginated(
-                &state.db,
+                state.reader_db(),
                 team_id,
                 folder_limit,
                 folder_offset,
@@ -62,12 +62,17 @@ async fn list_trash_in_scope(
 
     let (raw_files, files_total) = match scope {
         WorkspaceStorageScope::Personal { user_id } => {
-            file_repo::find_top_level_deleted_paginated(&state.db, user_id, file_limit, file_cursor)
-                .await?
+            file_repo::find_top_level_deleted_paginated(
+                state.reader_db(),
+                user_id,
+                file_limit,
+                file_cursor,
+            )
+            .await?
         }
         WorkspaceStorageScope::Team { team_id, .. } => {
             file_repo::find_top_level_deleted_by_team_paginated(
-                &state.db,
+                state.reader_db(),
                 team_id,
                 file_limit,
                 file_cursor,
@@ -76,7 +81,7 @@ async fn list_trash_in_scope(
         }
     };
 
-    let folder_paths = build_trash_path_cache(&state.db, &raw_folders, &raw_files).await?;
+    let folder_paths = build_trash_path_cache(state.reader_db(), &raw_folders, &raw_files).await?;
 
     let raw_file_count = usize_to_u64(raw_files.len(), "trash file count")?;
     let next_file_cursor = if file_limit > 0 && raw_file_count == file_limit {

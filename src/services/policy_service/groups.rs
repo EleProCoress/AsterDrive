@@ -105,8 +105,14 @@ pub async fn list_groups_paginated(
     sort_order: SortOrder,
 ) -> Result<OffsetPage<StoragePolicyGroupInfo>> {
     let page = load_offset_page(limit, offset, 100, |limit, offset| async move {
-        policy_group_repo::find_groups_paginated(&state.db, limit, offset, sort_by, sort_order)
-            .await
+        policy_group_repo::find_groups_paginated(
+            state.reader_db(),
+            limit,
+            offset,
+            sort_by,
+            sort_order,
+        )
+        .await
     })
     .await?;
     Ok(OffsetPage {
@@ -122,7 +128,7 @@ pub async fn list_groups_paginated(
 }
 
 pub async fn get_group(state: &PrimaryAppState, id: i64) -> Result<StoragePolicyGroupInfo> {
-    let group = policy_group_repo::find_group_by_id(&state.db, id).await?;
+    let group = policy_group_repo::find_group_by_id(state.reader_db(), id).await?;
     Ok(build_group_info(state, &group))
 }
 

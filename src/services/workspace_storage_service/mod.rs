@@ -20,7 +20,7 @@ pub(crate) use crate::services::workspace_scope_service::{
     invalidate_team_access_cache_for_team, list_files_in_folder, list_folders_in_parent,
     load_scope_actor_username, require_scope_access, require_team_access,
     require_team_management_access, require_team_policy_group_id, verify_file_access,
-    verify_folder_access,
+    verify_file_access_for_read, verify_folder_access, verify_folder_access_for_read,
 };
 pub(crate) use crate::services::workspace_storage_core::{
     FinalizeUploadSessionFileParams, VerifiedFolderPolicyHint, check_quota,

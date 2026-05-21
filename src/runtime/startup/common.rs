@@ -10,6 +10,7 @@ use std::sync::Arc;
 
 pub(super) struct CommonRuntimeParts {
     pub cfg: Arc<crate::config::Config>,
+    pub db_handles: db::DbHandles,
     pub database: sea_orm::DatabaseConnection,
     pub driver_registry: Arc<DriverRegistry>,
     pub policy_snapshot: Arc<crate::storage::PolicySnapshot>,
@@ -26,6 +27,7 @@ pub(super) async fn prepare_common(mode: NodeRuntimeMode) -> Result<CommonRuntim
 
     let database = db::connect(&cfg.database).await?;
     initialize_database_state(&database, cfg.as_ref(), mode).await?;
+    let db_handles = db::connect_reader_for_writer(&cfg.database, database.clone()).await?;
 
     let policy_snapshot = Arc::new(crate::storage::PolicySnapshot::new());
     policy_snapshot.reload(&database).await?;
@@ -40,6 +42,7 @@ pub(super) async fn prepare_common(mode: NodeRuntimeMode) -> Result<CommonRuntim
 
     Ok(CommonRuntimeParts {
         cfg,
+        db_handles,
         database,
         driver_registry,
         policy_snapshot,

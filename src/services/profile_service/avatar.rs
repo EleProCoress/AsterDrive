@@ -191,8 +191,8 @@ fn validate_avatar_size(size: u32) -> Result<u32> {
 
 pub async fn get_avatar_bytes(state: &PrimaryAppState, user_id: i64, size: u32) -> Result<Vec<u8>> {
     let size = validate_avatar_size(size)?;
-    user_repo::find_by_id(&state.db, user_id).await?;
-    let profile = user_profile_repo::find_by_user_id(&state.db, user_id)
+    user_repo::find_by_id(state.reader_db(), user_id).await?;
+    let profile = user_profile_repo::find_by_user_id(state.reader_db(), user_id)
         .await?
         .ok_or_else(|| AsterError::record_not_found(format!("profile for user #{user_id}")))?;
 

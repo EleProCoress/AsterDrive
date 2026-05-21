@@ -848,6 +848,7 @@ pub async fn setup_with_memory_cache() -> PrimaryAppState {
 
     PrimaryAppState {
         db: base.db,
+        db_handles: base.db_handles,
         driver_registry: base.driver_registry,
         runtime_config: base.runtime_config,
         policy_snapshot: base.policy_snapshot,
@@ -1093,7 +1094,10 @@ pub async fn setup_with_database_url(database_url: &str) -> PrimaryAppState {
         );
 
     PrimaryAppState {
-        db,
+        db: db.clone(),
+        db_handles: aster_drive::db::connect_reader_for_writer(&db_cfg, db.clone())
+            .await
+            .unwrap(),
         driver_registry: std::sync::Arc::new(aster_drive::storage::DriverRegistry::new()),
         runtime_config,
         policy_snapshot,

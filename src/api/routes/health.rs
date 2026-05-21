@@ -306,7 +306,8 @@ mod tests {
             );
 
         PrimaryAppState {
-            db,
+            db: db.clone(),
+            db_handles: crate::db::DbHandles::single(db),
             driver_registry,
             runtime_config: runtime_config.clone(),
             policy_snapshot,

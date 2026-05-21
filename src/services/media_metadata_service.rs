@@ -105,7 +105,7 @@ pub async fn get_for_file(state: &PrimaryAppState, f: &file::Model) -> Result<Me
     }
 
     let Some(kind) = metadata_kind_for_file(f) else {
-        let blob = file_repo::find_blob_by_id(&state.db, f.blob_id).await?;
+        let blob = file_repo::find_blob_by_id(state.reader_db(), f.blob_id).await?;
         return Ok(MediaMetadataLookup::Ready(unsupported_file_metadata_info(
             &blob,
             f,
@@ -113,7 +113,7 @@ pub async fn get_for_file(state: &PrimaryAppState, f: &file::Model) -> Result<Me
         )));
     };
 
-    let blob = file_repo::find_blob_by_id(&state.db, f.blob_id).await?;
+    let blob = file_repo::find_blob_by_id(state.reader_db(), f.blob_id).await?;
     if media_metadata_processor_for_file_name(&state.runtime_config, kind, &f.name).is_none() {
         return Ok(MediaMetadataLookup::Ready(unsupported_kind_metadata_info(
             &blob,
@@ -126,7 +126,7 @@ pub async fn get_for_file(state: &PrimaryAppState, f: &file::Model) -> Result<Me
         )));
     }
 
-    if let Some(cached) = media_metadata_repo::find_by_blob_id(&state.db, blob.id).await?
+    if let Some(cached) = media_metadata_repo::find_by_blob_id(state.reader_db(), blob.id).await?
         && cached.blob_hash == blob.hash
         && cached.kind == kind
         && should_use_cached_metadata(state, f, &cached)

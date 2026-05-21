@@ -15,7 +15,8 @@ use crate::types::TeamMemberRole;
 use super::shared::{
     archive_team_record, build_team_info, build_team_info_with_metadata, create_team_record,
     ensure_can_manage_team, load_team_metadata, require_team_membership,
-    resolve_required_policy_group_id, restore_team_record, update_team_record,
+    require_team_membership_for_read, resolve_required_policy_group_id, restore_team_record,
+    update_team_record,
 };
 use super::{CreateTeamInput, TeamInfo, UpdateTeamInput};
 
@@ -84,12 +85,22 @@ async fn list_user_team_memberships(
     // 这样角色信息和 archived 过滤能保持一致，不会出现“能看到 team 但没有 membership”的状态。
     if archived {
         team_member_repo::list_by_user_with_archived_team_filtered(
-            &state.db, user_id, keyword, limit, offset, None,
+            state.reader_db(),
+            user_id,
+            keyword,
+            limit,
+            offset,
+            None,
         )
         .await
     } else {
         team_member_repo::list_by_user_with_team_filtered(
-            &state.db, user_id, keyword, limit, offset, None,
+            state.reader_db(),
+            user_id,
+            keyword,
+            limit,
+            offset,
+            None,
         )
         .await
     }
@@ -116,7 +127,7 @@ pub async fn create_team(
 }
 
 pub async fn get_team(state: &PrimaryAppState, team_id: i64, user_id: i64) -> Result<TeamInfo> {
-    let (team, membership) = require_team_membership(state, team_id, user_id).await?;
+    let (team, membership) = require_team_membership_for_read(state, team_id, user_id).await?;
     build_team_info(state, &team, membership.role).await
 }
 

@@ -33,6 +33,14 @@ impl SharedRuntimeState for TestFollowerState {
         &self.db
     }
 
+    fn writer_db(&self) -> &DatabaseConnection {
+        &self.db
+    }
+
+    fn reader_db(&self) -> &DatabaseConnection {
+        &self.db
+    }
+
     fn driver_registry(&self) -> &Arc<crate::storage::DriverRegistry> {
         &self.driver_registry
     }

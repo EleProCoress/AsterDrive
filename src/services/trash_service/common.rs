@@ -2,7 +2,7 @@
 
 use std::collections::{BTreeSet, HashMap};
 
-use sea_orm::DatabaseConnection;
+use sea_orm::ConnectionTrait;
 
 use crate::db::repository::{file_repo, folder_repo, property_repo, share_repo};
 use crate::entities::{file, folder};
@@ -34,8 +34,8 @@ pub fn load_retention_days(state: &PrimaryAppState) -> i64 {
         })
 }
 
-pub(super) async fn build_trash_path_cache(
-    db: &DatabaseConnection,
+pub(super) async fn build_trash_path_cache<C: ConnectionTrait>(
+    db: &C,
     folders: &[folder::Model],
     files: &[file::Model],
 ) -> Result<HashMap<i64, String>> {

@@ -161,13 +161,13 @@ async fn load_team_access_from_database(
     user_id: i64,
 ) -> Result<CachedTeamAccess> {
     if let Some(snapshot) =
-        team_member_repo::find_active_team_access(&state.db, team_id, user_id).await?
+        team_member_repo::find_active_team_access(state.reader_db(), team_id, user_id).await?
     {
         return Ok(snapshot.into());
     }
 
     // 保持旧语义：团队不存在或已归档时返回 not found；团队仍活跃但用户不是成员时返回 forbidden。
-    team_repo::find_active_by_id(&state.db, team_id).await?;
+    team_repo::find_active_by_id(state.reader_db(), team_id).await?;
     Err(auth_forbidden_with_subcode(
         ApiSubcode::TeamNotMember,
         "not a member of this team",
@@ -210,7 +210,7 @@ pub(crate) async fn load_scope_actor_username_cached(
         return Ok(username);
     }
 
-    let username = load_scope_actor_username(&state.db, scope).await?;
+    let username = load_scope_actor_username(state.reader_db(), scope).await?;
     state
         .cache
         .set(&cache_key, &username, Some(ACTOR_USERNAME_CACHE_TTL))
@@ -386,10 +386,27 @@ pub(crate) async fn verify_folder_access(
     scope: WorkspaceStorageScope,
     folder_id: i64,
 ) -> Result<folder::Model> {
+    verify_folder_access_with_db(&state.db, state, scope, folder_id).await
+}
+
+pub(crate) async fn verify_folder_access_for_read(
+    state: &PrimaryAppState,
+    scope: WorkspaceStorageScope,
+    folder_id: i64,
+) -> Result<folder::Model> {
+    verify_folder_access_with_db(state.reader_db(), state, scope, folder_id).await
+}
+
+async fn verify_folder_access_with_db<C: ConnectionTrait>(
+    db: &C,
+    state: &PrimaryAppState,
+    scope: WorkspaceStorageScope,
+    folder_id: i64,
+) -> Result<folder::Model> {
     // 先校验当前 scope 还有效，再取实体做归属检查。
     // 这样所有调用方都能拿到“存在 + 属于当前空间 + 未进回收站”的 folder。
     require_scope_access(state, scope).await?;
-    let folder = folder_repo::find_by_id(&state.db, folder_id).await?;
+    let folder = folder_repo::find_by_id(db, folder_id).await?;
     ensure_active_folder_scope(&folder, scope)?;
 
     Ok(folder)
@@ -400,10 +417,27 @@ pub(crate) async fn verify_file_access(
     scope: WorkspaceStorageScope,
     file_id: i64,
 ) -> Result<file::Model> {
+    verify_file_access_with_db(&state.db, state, scope, file_id).await
+}
+
+pub(crate) async fn verify_file_access_for_read(
+    state: &PrimaryAppState,
+    scope: WorkspaceStorageScope,
+    file_id: i64,
+) -> Result<file::Model> {
+    verify_file_access_with_db(state.reader_db(), state, scope, file_id).await
+}
+
+async fn verify_file_access_with_db<C: ConnectionTrait>(
+    db: &C,
+    state: &PrimaryAppState,
+    scope: WorkspaceStorageScope,
+    file_id: i64,
+) -> Result<file::Model> {
     // 文件访问和文件夹访问保持同样语义：返回值一旦成功，就已经完成 scope
     // 校验和 trash 过滤，上层不需要再手写重复判断。
     require_scope_access(state, scope).await?;
-    let file = file_repo::find_by_id(&state.db, file_id).await?;
+    let file = file_repo::find_by_id(db, file_id).await?;
     ensure_active_file_scope(&file, scope)?;
 
     Ok(file)
@@ -416,10 +450,10 @@ pub(crate) async fn list_files_in_folder(
 ) -> Result<Vec<file::Model>> {
     match scope {
         WorkspaceStorageScope::Personal { user_id } => {
-            file_repo::find_by_folder(&state.db, user_id, folder_id).await
+            file_repo::find_by_folder(state.reader_db(), user_id, folder_id).await
         }
         WorkspaceStorageScope::Team { team_id, .. } => {
-            file_repo::find_by_team_folder(&state.db, team_id, folder_id).await
+            file_repo::find_by_team_folder(state.reader_db(), team_id, folder_id).await
         }
     }
 }
@@ -431,10 +465,10 @@ pub(crate) async fn list_folders_in_parent(
 ) -> Result<Vec<folder::Model>> {
     match scope {
         WorkspaceStorageScope::Personal { user_id } => {
-            folder_repo::find_children(&state.db, user_id, parent_id).await
+            folder_repo::find_children(state.reader_db(), user_id, parent_id).await
         }
         WorkspaceStorageScope::Team { team_id, .. } => {
-            folder_repo::find_team_children(&state.db, team_id, parent_id).await
+            folder_repo::find_team_children(state.reader_db(), team_id, parent_id).await
         }
     }
 }
@@ -489,7 +523,8 @@ mod tests {
             );
 
         PrimaryAppState {
-            db,
+            db: db.clone(),
+            db_handles: crate::db::DbHandles::single(db),
             driver_registry: Arc::new(DriverRegistry::new()),
             runtime_config: runtime_config.clone(),
             policy_snapshot: Arc::new(PolicySnapshot::new()),

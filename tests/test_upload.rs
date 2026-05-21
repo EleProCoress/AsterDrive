@@ -2470,6 +2470,77 @@ async fn test_upload_service_get_progress_uses_db_parts_for_terminal_relay_multi
 }
 
 #[actix_web::test]
+async fn test_sqlite_reader_routes_do_not_wait_for_busy_writer_pool() {
+    use aster_drive::services::auth_service;
+    use sea_orm::{ConnectionTrait, TransactionTrait};
+
+    let database_url = format!(
+        "sqlite:///tmp/asterdrive-reader-routes-{}.db?mode=rwc",
+        uuid::Uuid::new_v4()
+    );
+    let state = common::setup_with_database_url(&database_url).await;
+    assert!(
+        state.db_handles.sqlite_read_write_split(),
+        "file SQLite test state should enable reader/writer split"
+    );
+
+    let app = create_test_app!(state.clone());
+    let user = auth_service::register(&state, "readerroute", "readerroute@test.com", "password123")
+        .await
+        .unwrap();
+    let (access_token, _) =
+        auth_service::issue_tokens_for_session(&state, user.id, user.session_version, None, None)
+            .await
+            .unwrap();
+    let upload_id = new_test_upload_id();
+    create_upload_session(
+        &state,
+        user.id,
+        UploadSessionSpec::new(
+            &upload_id,
+            aster_drive::types::UploadSessionStatus::Uploading,
+            chrono::Utc::now() + chrono::Duration::hours(1),
+        )
+        .chunks(3, 2),
+    )
+    .await;
+
+    let txn = state.db.begin().await.unwrap();
+    txn.execute_unprepared("UPDATE users SET updated_at = updated_at WHERE id = -1")
+        .await
+        .unwrap();
+
+    let folder_req = test::TestRequest::get()
+        .uri("/api/v1/folders")
+        .insert_header(("Authorization", format!("Bearer {access_token}")))
+        .to_request();
+    let folder_resp = tokio::time::timeout(
+        std::time::Duration::from_millis(500),
+        test::call_service(&app, folder_req),
+    )
+    .await
+    .expect("folder listing should not wait for the busy writer pool");
+    assert_eq!(folder_resp.status(), 200);
+
+    let progress_req = test::TestRequest::get()
+        .uri(&format!("/api/v1/files/upload/{upload_id}"))
+        .insert_header(("Authorization", format!("Bearer {access_token}")))
+        .to_request();
+    let progress_resp = tokio::time::timeout(
+        std::time::Duration::from_millis(500),
+        test::call_service(&app, progress_req),
+    )
+    .await
+    .expect("upload progress should not wait for the busy writer pool");
+    assert_eq!(progress_resp.status(), 200);
+    let progress_body: Value = test::read_body_json(progress_resp).await;
+    assert_eq!(progress_body["data"]["upload_id"], upload_id);
+    assert_eq!(progress_body["data"]["received_count"], 2);
+
+    txn.rollback().await.unwrap();
+}
+
+#[actix_web::test]
 async fn test_upload_service_presign_parts_rejects_non_multipart_session() {
     use aster_drive::services::{auth_service, upload_service};
 

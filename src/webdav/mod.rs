@@ -1739,6 +1739,7 @@ mod tests {
 
         let state = PrimaryAppState {
             db: db.clone(),
+            db_handles: crate::db::DbHandles::single(db.clone()),
             driver_registry,
             runtime_config: runtime_config.clone(),
             policy_snapshot,

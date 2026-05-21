@@ -32,7 +32,7 @@ pub async fn get_profile_info(
     user: &user::Model,
     audience: AvatarAudience,
 ) -> Result<UserProfileInfo> {
-    let profile = user_profile_repo::find_by_user_id(&state.db, user.id).await?;
+    let profile = user_profile_repo::find_by_user_id(state.reader_db(), user.id).await?;
     let gravatar_base_url = resolve_gravatar_base_url(state);
     Ok(build_profile_info(
         user,
@@ -99,9 +99,11 @@ pub async fn update_profile(
 }
 
 pub async fn get_wopi_user_info(state: &PrimaryAppState, user_id: i64) -> Result<Option<String>> {
-    Ok(user_profile_repo::find_by_user_id(&state.db, user_id)
-        .await?
-        .and_then(|profile| profile.wopi_user_info))
+    Ok(
+        user_profile_repo::find_by_user_id(state.reader_db(), user_id)
+            .await?
+            .and_then(|profile| profile.wopi_user_info),
+    )
 }
 
 pub async fn update_wopi_user_info(

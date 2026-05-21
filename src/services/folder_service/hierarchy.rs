@@ -159,7 +159,7 @@ pub async fn build_folder_paths_cached(
             .collect();
         chain_ids.sort_unstable();
         chain_ids.dedup();
-        let chain_map = folder_repo::find_by_ids(&state.db, &chain_ids)
+        let chain_map = folder_repo::find_by_ids(state.reader_db(), &chain_ids)
             .await?
             .into_iter()
             .map(|folder| (folder.id, folder))
@@ -202,7 +202,7 @@ pub async fn build_folder_paths_cached(
 
     misses.sort_unstable();
     misses.dedup();
-    let loaded = build_folder_path_entries(&state.db, &misses).await?;
+    let loaded = build_folder_path_entries(state.reader_db(), &misses).await?;
     for (&id, entry) in &loaded {
         state
             .cache
@@ -228,15 +228,16 @@ pub(crate) async fn get_ancestors_in_scope(
     scope: WorkspaceStorageScope,
     folder_id: i64,
 ) -> Result<Vec<FolderAncestorItem>> {
-    let folder = workspace_storage_service::verify_folder_access(state, scope, folder_id).await?;
+    let folder =
+        workspace_storage_service::verify_folder_access_for_read(state, scope, folder_id).await?;
     ensure_folder_model_in_scope(&folder, scope)?;
 
     let ancestors = match scope {
         WorkspaceStorageScope::Personal { user_id } => {
-            folder_repo::find_ancestor_models(&state.db, user_id, folder_id).await?
+            folder_repo::find_ancestor_models(state.reader_db(), user_id, folder_id).await?
         }
         WorkspaceStorageScope::Team { team_id, .. } => {
-            folder_repo::find_team_ancestor_models(&state.db, team_id, folder_id).await?
+            folder_repo::find_team_ancestor_models(state.reader_db(), team_id, folder_id).await?
         }
     };
 

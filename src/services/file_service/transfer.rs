@@ -15,8 +15,6 @@ use crate::services::{
     workspace_storage_service::{self, WorkspaceStorageScope, load_scope_actor_username},
 };
 
-use super::get_info_in_scope;
-
 const MAX_COPY_NAME_RETRIES: usize = 32;
 
 fn collect_blob_ref_count_increments(
@@ -48,7 +46,7 @@ pub(crate) async fn copy_file_in_scope(
         dest_folder_id,
         "copying file"
     );
-    let src = get_info_in_scope(state, scope, src_id).await?;
+    let src = workspace_storage_service::verify_file_access(state, scope, src_id).await?;
 
     if let Some(folder_id) = dest_folder_id {
         workspace_storage_service::verify_folder_access(state, scope, folder_id).await?;

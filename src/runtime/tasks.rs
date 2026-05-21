@@ -918,7 +918,8 @@ mod tests {
             crate::services::share_service::build_share_download_rollback_queue(db.clone(), 1);
 
         web::Data::new(PrimaryAppState {
-            db,
+            db: db.clone(),
+            db_handles: crate::db::DbHandles::single(db),
             driver_registry: Arc::new(crate::storage::DriverRegistry::new()),
             runtime_config,
             policy_snapshot: Arc::new(crate::storage::PolicySnapshot::new()),

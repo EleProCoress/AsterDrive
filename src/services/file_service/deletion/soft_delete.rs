@@ -3,15 +3,14 @@ use crate::errors::{AsterError, Result};
 use crate::runtime::PrimaryAppState;
 use crate::services::{storage_change_service, workspace_storage_service::WorkspaceStorageScope};
 
-use super::super::get_info_in_scope;
-
 pub(crate) async fn delete_in_scope(
     state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     id: i64,
 ) -> Result<()> {
     tracing::debug!(scope = ?scope, file_id = id, "soft deleting file");
-    let file = get_info_in_scope(state, scope, id).await?;
+    let file =
+        crate::services::workspace_storage_service::verify_file_access(state, scope, id).await?;
     if file.is_locked {
         return Err(AsterError::resource_locked("file is locked"));
     }

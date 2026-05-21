@@ -132,7 +132,8 @@ pub(crate) async fn preview_file_in_scope(
 ) -> Result<ArchivePreviewManifestLookup> {
     ensure_user_preview_enabled(state)?;
     workspace_storage_service::require_scope_access(state, scope).await?;
-    let source_file = workspace_storage_service::verify_file_access(state, scope, file_id).await?;
+    let source_file =
+        workspace_storage_service::verify_file_access_for_read(state, scope, file_id).await?;
     workspace_storage_service::ensure_active_file_scope(&source_file, scope)?;
     preview_verified_file(state, &source_file).await
 }
@@ -194,7 +195,7 @@ async fn preview_verified_file(
     source_file: &file::Model,
 ) -> Result<ArchivePreviewManifestLookup> {
     ensure_archive_preview_source_supported(source_file)?;
-    let blob = file_repo::find_blob_by_id(&state.db, source_file.blob_id).await?;
+    let blob = file_repo::find_blob_by_id(state.reader_db(), source_file.blob_id).await?;
     if let Some(cached) = load_cached_manifest(state, source_file, &blob).await? {
         return Ok(ArchivePreviewManifestLookup::Ready(cached));
     }
@@ -275,7 +276,7 @@ async fn load_cached_manifest(
     blob: &file_blob::Model,
 ) -> Result<Option<ArchivePreviewManifest>> {
     let Some(prop) = property_repo::find_by_key(
-        &state.db,
+        state.reader_db(),
         EntityType::File,
         source_file.id,
         CACHE_NAMESPACE,

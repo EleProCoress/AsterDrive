@@ -18,6 +18,8 @@ use super::{AuthSnapshot, Claims};
 mod refresh;
 
 pub use refresh::refresh_tokens;
+#[cfg(debug_assertions)]
+pub use refresh::test_support;
 
 #[derive(Debug)]
 struct IssuedTokens {

@@ -82,14 +82,17 @@ pub async fn list_paginated(
 ) -> Result<OffsetPage<StoragePolicy>> {
     load_offset_page(limit, offset, 100, |limit, offset| async move {
         let (items, total) =
-            policy_repo::find_paginated(&state.db, limit, offset, sort_by, sort_order).await?;
+            policy_repo::find_paginated(state.reader_db(), limit, offset, sort_by, sort_order)
+                .await?;
         Ok((items.into_iter().map(Into::into).collect(), total))
     })
     .await
 }
 
 pub async fn get(state: &PrimaryAppState, id: i64) -> Result<StoragePolicy> {
-    policy_repo::find_by_id(&state.db, id).await.map(Into::into)
+    policy_repo::find_by_id(state.reader_db(), id)
+        .await
+        .map(Into::into)
 }
 
 pub async fn create(

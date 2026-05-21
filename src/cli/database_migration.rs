@@ -51,6 +51,7 @@ const COPY_TABLE_ORDER: &[&str] = &[
     "folders",
     "webdav_accounts",
     "file_blobs",
+    "blob_media_metadata",
     "files",
     "file_versions",
     "shares",

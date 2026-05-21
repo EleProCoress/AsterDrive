@@ -168,7 +168,7 @@ pub(crate) async fn get_info_in_scope(
     scope: WorkspaceStorageScope,
     folder_id: i64,
 ) -> Result<folder::Model> {
-    workspace_storage_service::verify_folder_access(state, scope, folder_id).await
+    workspace_storage_service::verify_folder_access_for_read(state, scope, folder_id).await
 }
 
 pub(crate) async fn update_in_scope(

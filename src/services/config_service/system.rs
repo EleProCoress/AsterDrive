@@ -146,7 +146,7 @@ pub async fn list_paginated(
     offset: u64,
 ) -> Result<OffsetPage<SystemConfig>> {
     let page = load_offset_page(limit, offset, 100, |limit, offset| async move {
-        config_repo::find_paginated(&state.db, limit, offset).await
+        config_repo::find_paginated(state.reader_db(), limit, offset).await
     })
     .await?;
     let items = page
@@ -159,7 +159,7 @@ pub async fn list_paginated(
 }
 
 pub async fn get_by_key(state: &PrimaryAppState, key: &str) -> Result<SystemConfig> {
-    config_repo::find_by_key(&state.db, key)
+    config_repo::find_by_key(state.reader_db(), key)
         .await?
         .map(apply_system_config_definition)
         .map(Into::into)

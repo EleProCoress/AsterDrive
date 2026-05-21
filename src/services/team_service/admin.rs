@@ -27,12 +27,24 @@ pub async fn list_admin_teams(
     let page = load_offset_page(limit, offset, 100, |limit, offset| async move {
         if archived {
             team_repo::find_archived_paginated(
-                &state.db, limit, offset, keyword, sort_by, sort_order,
+                state.reader_db(),
+                limit,
+                offset,
+                keyword,
+                sort_by,
+                sort_order,
             )
             .await
         } else {
-            team_repo::find_active_paginated(&state.db, limit, offset, keyword, sort_by, sort_order)
-                .await
+            team_repo::find_active_paginated(
+                state.reader_db(),
+                limit,
+                offset,
+                keyword,
+                sort_by,
+                sort_order,
+            )
+            .await
         }
     })
     .await?;
@@ -54,7 +66,7 @@ pub async fn list_admin_teams(
 }
 
 pub async fn get_admin_team(state: &PrimaryAppState, team_id: i64) -> Result<AdminTeamInfo> {
-    let team = team_repo::find_by_id(&state.db, team_id).await?;
+    let team = team_repo::find_by_id(state.reader_db(), team_id).await?;
     build_admin_team_info(state, &team).await
 }
 

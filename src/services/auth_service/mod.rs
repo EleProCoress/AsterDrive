@@ -29,6 +29,8 @@ pub use session::{
     cleanup_expired_auth_sessions, get_auth_snapshot, invalidate_auth_snapshot_cache,
     list_auth_sessions, revoke_auth_session, revoke_other_auth_sessions, revoke_user_sessions,
 };
+#[cfg(debug_assertions)]
+pub use tokens::test_support;
 pub use tokens::{
     authenticate_access_token, authenticate_refresh_token, issue_tokens_for_session,
     issue_tokens_for_user, refresh_tokens, revoke_refresh_token, verify_token,

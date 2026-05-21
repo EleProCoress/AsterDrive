@@ -212,8 +212,8 @@ async fn list_versions_in_scope(
     scope: WorkspaceStorageScope,
     file_id: i64,
 ) -> Result<Vec<file_version::Model>> {
-    workspace_storage_service::verify_file_access(state, scope, file_id).await?;
-    version_repo::find_by_file_id(&state.db, file_id).await
+    workspace_storage_service::verify_file_access_for_read(state, scope, file_id).await?;
+    version_repo::find_by_file_id(state.reader_db(), file_id).await
 }
 
 async fn restore_version_in_scope(

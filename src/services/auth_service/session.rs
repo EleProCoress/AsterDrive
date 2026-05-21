@@ -22,7 +22,7 @@ pub async fn get_auth_snapshot(state: &PrimaryAppState, user_id: i64) -> Result<
         return Ok(snapshot);
     }
 
-    let user = user_repo::find_by_id(&state.db, user_id).await?;
+    let user = user_repo::find_by_id(state.reader_db(), user_id).await?;
     let snapshot = AuthSnapshot::from_user(&user);
     state
         .cache

@@ -14,7 +14,6 @@ use aster_drive::types::UserStatus;
 use base64::Engine as _;
 use serde_json::Value;
 use std::io::Cursor;
-use std::sync::Arc;
 use std::time::Duration;
 use tokio_util::sync::CancellationToken;
 use webauthn_authenticator_rs::prelude::{Url, WebauthnAuthenticator};
@@ -984,25 +983,38 @@ async fn test_concurrent_refresh_same_token_has_single_winner() {
     let app = create_test_app!(state.clone());
 
     let (_, refresh) = register_and_login!(app);
-    let barrier = Arc::new(tokio::sync::Barrier::new(2));
+    let hook = auth_service::test_support::install_refresh_rotation_test_hook(
+        &refresh,
+        &state.config.auth.jwt_secret,
+    )
+    .await
+    .unwrap();
 
     let first_state = state.clone();
     let first_refresh = refresh.clone();
-    let first_barrier = barrier.clone();
+    let first_task = tokio::spawn(async move {
+        auth_service::refresh_tokens(&first_state, &first_refresh, None, None).await
+    });
+
+    tokio::time::timeout(Duration::from_secs(2), hook.wait_until_lock_acquired())
+        .await
+        .expect("first refresh should acquire rotation lock");
+
     let second_state = state.clone();
     let second_refresh = refresh.clone();
-    let second_barrier = barrier.clone();
+    let second_task = tokio::spawn(async move {
+        auth_service::refresh_tokens(&second_state, &second_refresh, None, None).await
+    });
 
-    let (first, second) = tokio::join!(
-        async move {
-            first_barrier.wait().await;
-            auth_service::refresh_tokens(&first_state, &first_refresh, None, None).await
-        },
-        async move {
-            second_barrier.wait().await;
-            auth_service::refresh_tokens(&second_state, &second_refresh, None, None).await
-        }
-    );
+    tokio::time::timeout(Duration::from_secs(2), hook.wait_until_lock_contended())
+        .await
+        .expect("second refresh should wait on the same rotation lock");
+    hook.release_lock();
+
+    let (first, second) = tokio::join!(first_task, second_task);
+    let first = first.expect("first refresh task should not panic");
+    let second = second.expect("second refresh task should not panic");
+    auth_service::test_support::clear_refresh_rotation_test_hook().await;
 
     assert_eq!(usize::from(first.is_ok()) + usize::from(second.is_ok()), 1);
     assert_eq!(
@@ -2940,6 +2952,7 @@ async fn test_user_status_cached_in_auth_middleware() {
     let base = common::setup().await;
     let state = aster_drive::runtime::PrimaryAppState {
         db: base.db,
+        db_handles: base.db_handles,
         driver_registry: base.driver_registry,
         runtime_config: base.runtime_config,
         policy_snapshot: base.policy_snapshot,
@@ -2986,6 +2999,7 @@ async fn test_disable_user_invalidates_status_cache() {
     let base = common::setup().await;
     let state = aster_drive::runtime::PrimaryAppState {
         db: base.db,
+        db_handles: base.db_handles,
         driver_registry: base.driver_registry,
         runtime_config: base.runtime_config,
         policy_snapshot: base.policy_snapshot,

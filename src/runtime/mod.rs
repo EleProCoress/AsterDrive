@@ -8,6 +8,7 @@ pub mod tasks;
 
 use crate::cache::CacheBackend;
 use crate::config::{Config, RuntimeConfig};
+use crate::db::DbHandles;
 use crate::services::{
     mail_service::MailSender, share_service::ShareDownloadRollbackQueue,
     storage_change_service::StorageChangeEvent,
@@ -20,7 +21,9 @@ use tokio::sync::Notify;
 
 #[derive(Clone)]
 pub struct PrimaryAppState {
+    /// Writer connection. Keep all transactions and write-capable flows on this handle.
     pub db: DatabaseConnection,
+    pub db_handles: DbHandles,
     pub driver_registry: Arc<DriverRegistry>,
     pub runtime_config: Arc<RuntimeConfig>,
     pub policy_snapshot: Arc<PolicySnapshot>,
@@ -37,7 +40,9 @@ pub struct PrimaryAppState {
 
 #[derive(Clone)]
 pub struct FollowerAppState {
+    /// Writer connection. Keep all transactions and write-capable flows on this handle.
     pub db: DatabaseConnection,
+    pub db_handles: DbHandles,
     pub driver_registry: Arc<DriverRegistry>,
     pub policy_snapshot: Arc<PolicySnapshot>,
     pub config: Arc<Config>,
@@ -46,6 +51,8 @@ pub struct FollowerAppState {
 
 pub trait SharedRuntimeState {
     fn db(&self) -> &DatabaseConnection;
+    fn writer_db(&self) -> &DatabaseConnection;
+    fn reader_db(&self) -> &DatabaseConnection;
     fn driver_registry(&self) -> &Arc<DriverRegistry>;
     fn policy_snapshot(&self) -> &Arc<PolicySnapshot>;
     fn config(&self) -> &Arc<Config>;
@@ -66,6 +73,14 @@ impl PrimaryAppState {
         Arc::new(Notify::new())
     }
 
+    pub fn writer_db(&self) -> &DatabaseConnection {
+        self.db_handles.writer()
+    }
+
+    pub fn reader_db(&self) -> &DatabaseConnection {
+        self.db_handles.reader()
+    }
+
     pub fn wake_background_task_dispatcher(&self) {
         self.background_task_dispatch_wakeup.notify_one();
     }
@@ -79,6 +94,7 @@ impl From<&PrimaryAppState> for FollowerAppState {
     fn from(state: &PrimaryAppState) -> Self {
         Self {
             db: state.db.clone(),
+            db_handles: state.db_handles.clone(),
             driver_registry: state.driver_registry.clone(),
             policy_snapshot: state.policy_snapshot.clone(),
             config: state.config.clone(),
@@ -87,9 +103,27 @@ impl From<&PrimaryAppState> for FollowerAppState {
     }
 }
 
+impl FollowerAppState {
+    pub fn writer_db(&self) -> &DatabaseConnection {
+        self.db_handles.writer()
+    }
+
+    pub fn reader_db(&self) -> &DatabaseConnection {
+        self.db_handles.reader()
+    }
+}
+
 impl SharedRuntimeState for PrimaryAppState {
     fn db(&self) -> &DatabaseConnection {
         &self.db
+    }
+
+    fn writer_db(&self) -> &DatabaseConnection {
+        self.db_handles.writer()
+    }
+
+    fn reader_db(&self) -> &DatabaseConnection {
+        self.db_handles.reader()
     }
 
     fn driver_registry(&self) -> &Arc<DriverRegistry> {
@@ -132,6 +166,14 @@ impl SharedRuntimeState for FollowerAppState {
         &self.db
     }
 
+    fn writer_db(&self) -> &DatabaseConnection {
+        self.db_handles.writer()
+    }
+
+    fn reader_db(&self) -> &DatabaseConnection {
+        self.db_handles.reader()
+    }
+
     fn driver_registry(&self) -> &Arc<DriverRegistry> {
         &self.driver_registry
     }
@@ -154,6 +196,14 @@ impl FollowerRuntimeState for FollowerAppState {}
 impl<T: SharedRuntimeState> SharedRuntimeState for web::Data<T> {
     fn db(&self) -> &DatabaseConnection {
         self.get_ref().db()
+    }
+
+    fn writer_db(&self) -> &DatabaseConnection {
+        self.get_ref().writer_db()
+    }
+
+    fn reader_db(&self) -> &DatabaseConnection {
+        self.get_ref().reader_db()
     }
 
     fn driver_registry(&self) -> &Arc<DriverRegistry> {
@@ -225,7 +275,8 @@ mod tests {
         let (share_download_rollback, _worker) = build_share_download_rollback_queue(db.clone(), 1);
 
         PrimaryAppState {
-            db,
+            db: db.clone(),
+            db_handles: crate::db::DbHandles::single(db),
             driver_registry: Arc::new(DriverRegistry::new()),
             runtime_config,
             policy_snapshot: Arc::new(PolicySnapshot::new()),
@@ -257,6 +308,10 @@ mod tests {
         assert_eq!(
             state.db.get_database_backend(),
             follower.db().get_database_backend()
+        );
+        assert_eq!(
+            state.reader_db().get_database_backend(),
+            follower.reader_db().get_database_backend()
         );
     }
 

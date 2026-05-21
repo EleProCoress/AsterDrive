@@ -26,7 +26,7 @@ async fn query_models(
     flush_global_audit_log_manager().await;
     load_offset_page(limit, offset, 200, |limit, offset| async move {
         audit_log_repo::find_with_filters(
-            &state.db,
+            state.reader_db(),
             audit_log_repo::AuditLogQuery {
                 user_id: filters.user_id,
                 action: filters.action.as_deref(),

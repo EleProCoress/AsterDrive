@@ -114,7 +114,7 @@ pub(crate) async fn list_in_scope(
     }
 
     if let Some(parent_id) = parent_id {
-        workspace_storage_service::verify_folder_access(state, scope, parent_id).await?;
+        workspace_storage_service::verify_folder_access_for_read(state, scope, parent_id).await?;
     }
 
     // 目录和文件分开查询，是因为它们的分页策略不同：
@@ -126,7 +126,7 @@ pub(crate) async fn list_in_scope(
                     Ok((
                         vec![],
                         folder_repo::find_children_paginated(
-                            &state.db,
+                            state.reader_db(),
                             user_id,
                             parent_id,
                             0,
@@ -139,7 +139,7 @@ pub(crate) async fn list_in_scope(
                     ))
                 } else {
                     folder_repo::find_children_paginated(
-                        &state.db,
+                        state.reader_db(),
                         user_id,
                         parent_id,
                         params.folder_limit,
@@ -155,7 +155,7 @@ pub(crate) async fn list_in_scope(
                     Ok((
                         vec![],
                         file_repo::find_by_folder_cursor(
-                            &state.db,
+                            state.reader_db(),
                             user_id,
                             parent_id,
                             0,
@@ -168,7 +168,7 @@ pub(crate) async fn list_in_scope(
                     ))
                 } else {
                     file_repo::find_by_folder_cursor(
-                        &state.db,
+                        state.reader_db(),
                         user_id,
                         parent_id,
                         params.file_limit,
@@ -190,7 +190,7 @@ pub(crate) async fn list_in_scope(
                     Ok((
                         vec![],
                         folder_repo::find_team_children_paginated(
-                            &state.db,
+                            state.reader_db(),
                             team_id,
                             parent_id,
                             0,
@@ -203,7 +203,7 @@ pub(crate) async fn list_in_scope(
                     ))
                 } else {
                     folder_repo::find_team_children_paginated(
-                        &state.db,
+                        state.reader_db(),
                         team_id,
                         parent_id,
                         params.folder_limit,
@@ -219,7 +219,7 @@ pub(crate) async fn list_in_scope(
                     Ok((
                         vec![],
                         file_repo::find_by_team_folder_cursor(
-                            &state.db,
+                            state.reader_db(),
                             team_id,
                             parent_id,
                             0,
@@ -232,7 +232,7 @@ pub(crate) async fn list_in_scope(
                     ))
                 } else {
                     file_repo::find_by_team_folder_cursor(
-                        &state.db,
+                        state.reader_db(),
                         team_id,
                         parent_id,
                         params.file_limit,
@@ -306,11 +306,11 @@ pub async fn list_shared(
         sort_order = ?params.sort_order,
         "listing shared folder contents"
     );
-    let folder = folder_repo::find_by_id(&state.db, folder_id).await?;
+    let folder = folder_repo::find_by_id(state.reader_db(), folder_id).await?;
     let contents = if let Some(team_id) = folder.team_id {
         // 公开分享页不再校验“当前用户是不是团队成员”，但数据边界仍然是团队空间。
         let (folders, folders_total) = folder_repo::find_team_children_paginated(
-            &state.db,
+            state.reader_db(),
             team_id,
             Some(folder_id),
             params.folder_limit,
@@ -320,7 +320,7 @@ pub async fn list_shared(
         )
         .await?;
         let (files, files_total) = file_repo::find_by_team_folder_cursor(
-            &state.db,
+            state.reader_db(),
             team_id,
             Some(folder_id),
             params.file_limit,
@@ -348,7 +348,7 @@ pub async fn list_shared(
             crate::errors::AsterError::auth_forbidden("folder has no personal owner")
         })?;
         let (folders, folders_total) = folder_repo::find_children_paginated(
-            &state.db,
+            state.reader_db(),
             owner_user_id,
             Some(folder_id),
             params.folder_limit,
@@ -358,7 +358,7 @@ pub async fn list_shared(
         )
         .await?;
         let (files, files_total) = file_repo::find_by_folder_cursor(
-            &state.db,
+            state.reader_db(),
             owner_user_id,
             Some(folder_id),
             params.file_limit,
