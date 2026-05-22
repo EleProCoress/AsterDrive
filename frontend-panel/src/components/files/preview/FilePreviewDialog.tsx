@@ -1,25 +1,14 @@
-import { useCallback, useMemo } from "react";
+import { useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
-import {
-	FilePreviewChooserContent,
-	FilePreviewPanelContent,
-} from "./FilePreviewDialogContent";
-import type { FilePreviewDialogProps } from "./filePreviewDialogTypes";
-import {
-	getDialogContentClassName,
-	optionFillsViewportHeight,
-	optionUsesInnerScroll,
-} from "./filePreviewDialogUtils";
-import { resolveOpenWithOptionLabel } from "./openWithLabel";
-import type { OpenWithOption } from "./types";
+import { FilePreviewBody } from "./FilePreviewBody";
+import { FilePreviewMethodChooser } from "./FilePreviewMethodChooser";
+import { FilePreviewPanel } from "./FilePreviewPanel";
 import { UnsavedChangesGuard } from "./UnsavedChangesGuard";
 import {
-	useActiveArchivePreviewFactory,
-	useFilePreviewDialogUi,
-	useFilePreviewOptions,
-	useResolvedPreviewSources,
-} from "./useFilePreviewDialog";
+	type FilePreviewDialogProps,
+	useFilePreviewDialogModel,
+} from "./useFilePreviewDialogModel";
 
 export function FilePreviewDialog({
 	open,
@@ -39,158 +28,106 @@ export function FilePreviewDialog({
 	openMode = "auto",
 }: FilePreviewDialogProps) {
 	const { i18n, t } = useTranslation(["core", "files"]);
-	const {
-		resolvedDownloadPath,
-		resolvedImagePreviewPath,
-		resolvedThumbnailPath,
-		resolvedLoadMusicBackendMetadata,
-	} = useResolvedPreviewSources({
+	const translateFileLabel = useCallback(
+		(key: string) => t(`files:${key}`),
+		[t],
+	);
+	const model = useFilePreviewDialogModel({
+		open,
 		file,
+		onClose,
 		downloadPath,
 		imagePreviewPath,
 		thumbnailPath,
-		loadMusicBackendMetadata,
-	});
-	const {
-		allOptions,
-		hiddenOptions,
-		preferredMode,
-		previewAppsLoaded,
-		profile,
-		shouldAutoOpenPreferredMode,
-		visibleOptions,
-	} = useFilePreviewOptions({
-		file,
+		editable,
+		previewLinkFactory,
 		archivePreviewFactory,
+		loadMusicBackendMetadata,
+		mediaStreamLinkFactory,
 		wopiSessionFactory,
 		openMode,
-	});
-	const {
-		activeMode,
-		closeWithGuard,
-		handleConfirmOpenChange,
-		handleDialogOpenChange,
-		handleDirtyChange,
-		handleDiscardChanges,
-		handleExpandToggle,
-		handleOpenMethodPickerOpen,
-		handleOpenMethodSelect,
-		handleShowAllOpenMethods,
-		showOpenMethodChooser,
-		state: uiState,
-	} = useFilePreviewDialogUi({
-		allOptionsCount: allOptions.length,
-		fileId: file.id,
-		hasMultipleVisibleOpenMethods: visibleOptions.length > 1,
-		hiddenOptions,
-		onClose,
-		open,
-		openMode,
-		preferredMode,
-		previewAppsLoaded,
-		shouldAutoOpenPreferredMode,
-	});
-	const {
-		isDialogAnimationEnabled,
-		isExpanded,
-		isDirty,
-		confirmOpen,
-		showAllOpenMethods,
-	} = uiState;
-
-	const activeOption = useMemo(() => {
-		if (!profile || !activeMode) return null;
-		return allOptions.find((option) => option.key === activeMode) ?? null;
-	}, [activeMode, allOptions, profile]);
-	const getOptionLabel = useCallback(
-		(option: OpenWithOption) =>
-			resolveOpenWithOptionLabel(option, i18n?.language, (key) =>
-				t(`files:${key}`),
-			),
-		[i18n?.language, t],
-	);
-	const activeWopiSessionFactory = useCallback(() => {
-		if (!activeOption || activeOption.mode !== "wopi" || !wopiSessionFactory) {
-			return Promise.reject(new Error("wopi session factory unavailable"));
-		}
-
-		return wopiSessionFactory(activeOption.key);
-	}, [activeOption, wopiSessionFactory]);
-	const activeArchivePreviewFactory = useActiveArchivePreviewFactory({
-		activeOption,
-		archivePreviewFactory,
-		open,
-	});
-	const usesInnerScroll = optionUsesInnerScroll(activeOption);
-	const fillsViewportHeight = optionFillsViewportHeight(activeOption);
-	const dialogContentClassName = getDialogContentClassName({
-		fillsViewportHeight,
-		isExpanded,
-		showOpenMethodChooser,
+		language: i18n?.language,
+		translateFileLabel,
 	});
 
 	return (
 		<>
 			<Dialog
 				open={open}
-				onOpenChange={handleDialogOpenChange}
+				onOpenChange={model.handleDialogOpenChange}
 				onOpenChangeComplete={onOpenChangeComplete}
 			>
 				<DialogContent
-					animated={showOpenMethodChooser ? true : isDialogAnimationEnabled}
+					animated={
+						model.showOpenMethodChooser ? true : model.isDialogAnimationEnabled
+					}
 					keepMounted
 					showCloseButton={false}
-					className={dialogContentClassName}
+					className={model.dialogContentClassName}
 				>
-					{showOpenMethodChooser ? (
-						<FilePreviewChooserContent
+					{model.showOpenMethodChooser ? (
+						<FilePreviewMethodChooser
 							file={file}
-							activeMode={activeMode}
-							allOptions={allOptions}
-							visibleOptions={visibleOptions}
-							hiddenOptions={hiddenOptions}
-							showAllOpenMethods={showAllOpenMethods}
-							getOptionLabel={getOptionLabel}
+							activeMode={model.activeMode}
+							allOptions={model.allOptions}
+							visibleOptions={model.visibleOptions}
+							hiddenOptions={model.hiddenOptions}
+							showAllOpenMethods={model.showAllOpenMethods}
+							getOptionLabel={model.getOptionLabel}
 							onClose={onClose}
-							onSelect={handleOpenMethodSelect}
-							onShowAllOpenMethods={handleShowAllOpenMethods}
+							onSelect={model.handleOpenMethodSelect}
+							onShowAllOpenMethods={model.onShowAllOpenMethods}
+							chooseOpenMethodLabel={t("files:choose_open_method")}
+							closeLabel={t("core:close")}
+							moreOpenMethodsLabel={t("files:more_open_methods")}
 						/>
 					) : (
-						<FilePreviewPanelContent
+						<FilePreviewPanel
 							file={file}
-							activeOption={activeOption}
-							profile={profile}
-							previewAppsLoaded={previewAppsLoaded}
-							downloadPath={resolvedDownloadPath}
-							imagePreviewPath={resolvedImagePreviewPath}
-							thumbnailPath={resolvedThumbnailPath}
-							getOptionLabel={getOptionLabel}
-							previewLinkFactory={previewLinkFactory}
-							archivePreviewFactory={activeArchivePreviewFactory}
-							loadMusicBackendMetadata={resolvedLoadMusicBackendMetadata}
-							mediaStreamLinkFactory={mediaStreamLinkFactory}
-							createWopiSession={
-								wopiSessionFactory ? activeWopiSessionFactory : null
+							body={
+								<FilePreviewBody
+									file={file}
+									activeOption={model.activeOption}
+									profile={model.profile}
+									previewAppsLoaded={model.previewAppsLoaded}
+									downloadPath={model.resolvedDownloadPath}
+									imagePreviewPath={model.resolvedImagePreviewPath}
+									thumbnailPath={model.resolvedThumbnailPath}
+									getOptionLabel={model.getOptionLabel}
+									previewLinkFactory={previewLinkFactory}
+									archivePreviewFactory={model.activeArchivePreviewFactory}
+									loadMusicBackendMetadata={
+										model.resolvedLoadMusicBackendMetadata
+									}
+									mediaStreamLinkFactory={mediaStreamLinkFactory}
+									createWopiSession={model.wopiSessionFactory}
+									onFileUpdated={onFileUpdated}
+									onDirtyChange={model.setIsDirty}
+									editable={model.editable}
+									isExpanded={model.isExpanded}
+									formattedCategory={model.formattedCategory}
+								/>
 							}
-							onFileUpdated={onFileUpdated}
-							onDirtyChange={handleDirtyChange}
-							editable={editable}
-							allOptionsCount={allOptions.length}
-							usesInnerScroll={usesInnerScroll}
-							fillsViewportHeight={fillsViewportHeight}
-							isExpanded={isExpanded}
-							isDirty={isDirty}
-							onChooseOpenMethod={handleOpenMethodPickerOpen}
-							onToggleExpand={handleExpandToggle}
-							onClose={closeWithGuard}
+							allOptionsCount={model.allOptions.length}
+							usesInnerScroll={model.usesInnerScroll}
+							fillsViewportHeight={model.fillsViewportHeight}
+							isExpanded={model.isExpanded}
+							isDirty={model.isDirty}
+							onChooseOpenMethod={model.handleOpenMethodPickerOpen}
+							onToggleExpand={model.handleExpandToggle}
+							onClose={model.closeWithGuard}
+							chooseOpenMethodLabel={t("files:choose_open_method")}
+							enterFullscreenLabel={t("files:preview_enter_fullscreen")}
+							exitFullscreenLabel={t("files:preview_exit_fullscreen")}
+							closeLabel={t("core:close")}
 						/>
 					)}
 				</DialogContent>
 			</Dialog>
 			<UnsavedChangesGuard
-				open={confirmOpen}
-				onOpenChange={handleConfirmOpenChange}
-				onConfirm={handleDiscardChanges}
+				open={model.confirmOpen}
+				onOpenChange={model.setConfirmOpen}
+				onConfirm={model.handleDiscardChanges}
 			/>
 		</>
 	);
