@@ -4,7 +4,10 @@ import { EmptyState } from "@/components/common/EmptyState";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import type { PreviewLinkInfo } from "@/types/api";
-import { EmbeddedWebAppPreview } from "./EmbeddedWebAppPreview";
+import {
+	EmbeddedWebAppPreview,
+	EXTERNAL_WEB_APP_IFRAME_SANDBOX,
+} from "./EmbeddedWebAppPreview";
 import { PreviewLoadingState } from "./PreviewLoadingState";
 import {
 	type ResolvedVideoBrowserTarget,
@@ -114,6 +117,7 @@ export function UrlTemplatePreview({
 			}
 			iframeAllow="autoplay; fullscreen; picture-in-picture"
 			iframeReferrerPolicy="same-origin"
+			iframeSandbox={EXTERNAL_WEB_APP_IFRAME_SANDBOX}
 		/>
 	);
 }

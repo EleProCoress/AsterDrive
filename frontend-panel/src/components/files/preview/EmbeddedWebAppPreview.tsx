@@ -1,6 +1,9 @@
 import type { ComponentProps, ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
+export const EXTERNAL_WEB_APP_IFRAME_SANDBOX =
+	"allow-scripts allow-forms allow-popups allow-downloads allow-same-origin";
+
 interface EmbeddedWebAppPreviewProps {
 	actions?: ReactNode;
 	errorOverlay?: ReactNode;
@@ -10,6 +13,7 @@ interface EmbeddedWebAppPreviewProps {
 	iframeHidden?: boolean;
 	iframeName?: string;
 	iframeReferrerPolicy?: ComponentProps<"iframe">["referrerPolicy"];
+	iframeSandbox?: ComponentProps<"iframe">["sandbox"];
 	loadingOverlay?: ReactNode;
 	onLoad?: () => void;
 	src: string | null;
@@ -25,6 +29,7 @@ export function EmbeddedWebAppPreview({
 	iframeHidden = false,
 	iframeName,
 	iframeReferrerPolicy = "same-origin",
+	iframeSandbox = "",
 	loadingOverlay,
 	onLoad,
 	src,
@@ -61,6 +66,7 @@ export function EmbeddedWebAppPreview({
 						)}
 						allow={iframeAllow}
 						referrerPolicy={iframeReferrerPolicy}
+						sandbox={iframeSandbox}
 						onLoad={onLoad}
 					/>
 				) : null}

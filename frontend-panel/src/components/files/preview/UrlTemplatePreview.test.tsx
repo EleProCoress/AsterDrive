@@ -132,6 +132,15 @@ describe("UrlTemplatePreview", () => {
 			"src",
 			"https://viewer.example.com/open?id=7",
 		);
+		expect(iframe).toHaveAttribute(
+			"sandbox",
+			"allow-scripts allow-forms allow-popups allow-downloads allow-same-origin",
+		);
+		expect(iframe).toHaveAttribute(
+			"allow",
+			"autoplay; fullscreen; picture-in-picture",
+		);
+		expect(iframe).toHaveAttribute("referrerpolicy", "same-origin");
 		expect(
 			screen.getByRole("button", { name: /url_template_open/i }),
 		).toBeInTheDocument();
