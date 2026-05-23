@@ -34,10 +34,6 @@ impl DbHandles {
     }
 }
 
-pub async fn connect(cfg: &DatabaseConfig) -> Result<DatabaseConnection> {
-    connect_with_metrics(cfg, crate::metrics_core::NoopMetrics::arc()).await
-}
-
 pub async fn connect_with_metrics(
     cfg: &DatabaseConfig,
     metrics: SharedMetricsRecorder,
@@ -47,19 +43,6 @@ pub async fn connect_with_metrics(
         ..Default::default()
     };
     crate::db::retry::with_retry(&retry_config, || connect_once(cfg, metrics.clone())).await
-}
-
-pub async fn connect_handles(cfg: &DatabaseConfig) -> Result<DbHandles> {
-    let writer = connect(cfg).await?;
-    connect_reader_for_writer(cfg, writer).await
-}
-
-pub async fn connect_reader_for_writer(
-    cfg: &DatabaseConfig,
-    writer: DatabaseConnection,
-) -> Result<DbHandles> {
-    connect_reader_for_writer_with_metrics(cfg, writer, crate::metrics_core::NoopMetrics::arc())
-        .await
 }
 
 pub async fn connect_reader_for_writer_with_metrics(
@@ -305,11 +288,14 @@ mod tests {
             "sqlite://windows\\sqlite-url-{}?mode=memory&cache=shared",
             uuid::Uuid::new_v4()
         );
-        let db = super::connect(&DatabaseConfig {
-            url,
-            pool_size: 10,
-            retry_count: 3,
-        })
+        let db = super::connect_with_metrics(
+            &DatabaseConfig {
+                url,
+                pool_size: 10,
+                retry_count: 3,
+            },
+            crate::metrics_core::NoopMetrics::arc(),
+        )
         .await
         .expect("sqlite connection should succeed for Windows-style URL");
 
@@ -320,11 +306,19 @@ mod tests {
 
     #[tokio::test]
     async fn sqlite_memory_handles_use_single_connection() {
-        let handles = super::connect_handles(&DatabaseConfig {
+        let cfg = DatabaseConfig {
             url: "sqlite::memory:".to_string(),
             pool_size: 4,
             retry_count: 0,
-        })
+        };
+        let writer = super::connect_with_metrics(&cfg, crate::metrics_core::NoopMetrics::arc())
+            .await
+            .expect("sqlite memory writer should connect");
+        let handles = super::connect_reader_for_writer_with_metrics(
+            &cfg,
+            writer,
+            crate::metrics_core::NoopMetrics::arc(),
+        )
         .await
         .expect("sqlite memory handles should connect");
 
@@ -341,11 +335,19 @@ mod tests {
             "sqlite:///tmp/asterdrive-reader-pool-{}.db?mode=rwc",
             uuid::Uuid::new_v4()
         );
-        let handles = super::connect_handles(&DatabaseConfig {
+        let cfg = DatabaseConfig {
             url,
             pool_size: 4,
             retry_count: 0,
-        })
+        };
+        let writer = super::connect_with_metrics(&cfg, crate::metrics_core::NoopMetrics::arc())
+            .await
+            .expect("sqlite writer should connect");
+        let handles = super::connect_reader_for_writer_with_metrics(
+            &cfg,
+            writer,
+            crate::metrics_core::NoopMetrics::arc(),
+        )
         .await
         .expect("sqlite handles should connect");
         assert!(handles.sqlite_read_write_split());
@@ -369,11 +371,19 @@ mod tests {
             "sqlite:///tmp/asterdrive-reader-writer-split-{}.db?mode=rwc",
             uuid::Uuid::new_v4()
         );
-        let handles = super::connect_handles(&DatabaseConfig {
+        let cfg = DatabaseConfig {
             url,
             pool_size: 4,
             retry_count: 0,
-        })
+        };
+        let writer = super::connect_with_metrics(&cfg, crate::metrics_core::NoopMetrics::arc())
+            .await
+            .expect("sqlite writer should connect");
+        let handles = super::connect_reader_for_writer_with_metrics(
+            &cfg,
+            writer,
+            crate::metrics_core::NoopMetrics::arc(),
+        )
         .await
         .expect("sqlite handles should connect");
         assert!(handles.sqlite_read_write_split());

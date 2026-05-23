@@ -34,6 +34,12 @@ pub(crate) struct ZipScanLimits {
     pub(crate) max_entry_compression_ratio: u64,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ZipScanNamePolicy {
+    StrictAsterName,
+    PreviewDisplayName,
+}
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
@@ -75,6 +81,7 @@ pub(crate) fn scan_zip_archive<R, F>(
     limits: ZipScanLimits,
     deadline: Option<Instant>,
     filename_encoding: ArchiveFilenameEncoding,
+    name_policy: ZipScanNamePolicy,
     mut ensure_file_size_allowed: F,
 ) -> Result<ZipScanResult>
 where
@@ -102,7 +109,7 @@ where
         let entry = archive.by_index_raw(index).map_err(map_zip_entry_error)?;
         let decoded_name = decode_zip_entry_name(&entry, filename_encoding)?;
         validate_zip_entry_supported(&entry, &decoded_name)?;
-        let relative_path = normalize_archive_entry_path(&decoded_name)?;
+        let relative_path = normalize_archive_entry_path(&decoded_name, name_policy)?;
         validate_archive_entry_path_limits(&relative_path, limits)?;
         ensure_archive_entry_path_not_conflicting(
             &relative_path,
@@ -579,7 +586,7 @@ fn compression_ratio_exceeds(
     Ok(u128::from(uncompressed_size) > allowed)
 }
 
-fn normalize_archive_entry_path(path: &str) -> Result<PathBuf> {
+fn normalize_archive_entry_path(path: &str, name_policy: ZipScanNamePolicy) -> Result<PathBuf> {
     if path.contains('\0')
         || path.starts_with('/')
         || path.starts_with('\\')
@@ -604,7 +611,7 @@ fn normalize_archive_entry_path(path: &str) -> Result<PathBuf> {
                 }
             }
             name => {
-                let name = crate::utils::normalize_validate_name(name)?;
+                let name = normalize_archive_entry_name(name, name_policy)?;
                 normalized.push(name);
             }
         }
@@ -613,6 +620,31 @@ fn normalize_archive_entry_path(path: &str) -> Result<PathBuf> {
     if normalized.as_os_str().is_empty() {
         return Err(AsterError::validation_error(
             "archive entry path cannot be empty",
+        ));
+    }
+    Ok(normalized)
+}
+
+fn normalize_archive_entry_name(name: &str, name_policy: ZipScanNamePolicy) -> Result<String> {
+    match name_policy {
+        ZipScanNamePolicy::StrictAsterName => crate::utils::normalize_validate_name(name),
+        ZipScanNamePolicy::PreviewDisplayName => normalize_preview_entry_name(name),
+    }
+}
+
+fn normalize_preview_entry_name(name: &str) -> Result<String> {
+    let normalized = crate::utils::normalize_name(name);
+    if normalized.is_empty() {
+        return Err(AsterError::validation_error(
+            "archive entry path cannot contain empty names",
+        ));
+    }
+    if normalized
+        .chars()
+        .any(|c| c == '\0' || c.is_ascii_control())
+    {
+        return Err(AsterError::validation_error(
+            "archive entry name contains control characters",
         ));
     }
     Ok(normalized)
@@ -977,9 +1009,32 @@ mod tests {
         let cursor = Cursor::new(bytes);
         let mut archive = zip::ZipArchive::new(cursor).expect("zip should open");
 
-        scan_zip_archive(&mut archive, scan_limits(), None, filename_encoding, |_| {
-            Ok(())
-        })
+        scan_zip_archive(
+            &mut archive,
+            scan_limits(),
+            None,
+            filename_encoding,
+            ZipScanNamePolicy::StrictAsterName,
+            |_| Ok(()),
+        )
+        .map(|result| result.entries)
+    }
+
+    fn scan_preview_entries_with_encoding(
+        bytes: Vec<u8>,
+        filename_encoding: ArchiveFilenameEncoding,
+    ) -> Result<Vec<ZipScanEntry>> {
+        let cursor = Cursor::new(bytes);
+        let mut archive = zip::ZipArchive::new(cursor).expect("zip should open");
+
+        scan_zip_archive(
+            &mut archive,
+            scan_limits(),
+            None,
+            filename_encoding,
+            ZipScanNamePolicy::PreviewDisplayName,
+            |_| Ok(()),
+        )
         .map(|result| result.entries)
     }
 
@@ -993,6 +1048,7 @@ mod tests {
             scan_limits(),
             None,
             ArchiveFilenameEncoding::Auto,
+            ZipScanNamePolicy::StrictAsterName,
             |_| Ok(()),
         )
         .expect_err("scan should reject archive")
@@ -1014,6 +1070,7 @@ mod tests {
             scan_limits(),
             None,
             ArchiveFilenameEncoding::Auto,
+            ZipScanNamePolicy::StrictAsterName,
             |_| Ok(()),
         )
         .expect("parent directory after child file should be valid");
@@ -1198,7 +1255,7 @@ mod tests {
             "../escape.txt",
             "a/../../escape.txt",
         ] {
-            let error = normalize_archive_entry_path(path)
+            let error = normalize_archive_entry_path(path, ZipScanNamePolicy::StrictAsterName)
                 .expect_err("unsafe archive path should be rejected");
             assert!(
                 error.message().contains("unsafe path"),
@@ -1211,20 +1268,37 @@ mod tests {
     #[test]
     fn normalize_archive_entry_path_keeps_valid_relative_boundaries() {
         assert_eq!(
-            normalize_archive_entry_path("folder/C/file.txt")
+            normalize_archive_entry_path("folder/C/file.txt", ZipScanNamePolicy::StrictAsterName)
                 .expect("plain relative path should be valid"),
             PathBuf::from("folder").join("C").join("file.txt")
         );
         assert_eq!(
-            normalize_archive_entry_path("folder/../safe.txt")
+            normalize_archive_entry_path("folder/../safe.txt", ZipScanNamePolicy::StrictAsterName)
                 .expect("contained parent traversal should normalize safely"),
             PathBuf::from("safe.txt")
         );
         assert_eq!(
-            normalize_archive_entry_path("./folder//file.txt")
+            normalize_archive_entry_path("./folder//file.txt", ZipScanNamePolicy::StrictAsterName)
                 .expect("current and empty path components should be ignored"),
             PathBuf::from("folder").join("file.txt")
         );
+    }
+
+    #[test]
+    fn preview_name_policy_allows_display_names_for_preview_only() {
+        let bytes =
+            create_stored_zip_bytes(&[("folder/name:with-colon.txt", Some(b"payload".as_slice()))]);
+
+        let strict_error = scan_entries_with_encoding(bytes.clone(), ArchiveFilenameEncoding::Auto)
+            .expect_err("strict extract scan should reject colon in path segment");
+        assert!(strict_error.message().contains("forbidden character ':'"));
+
+        let entries = scan_preview_entries_with_encoding(bytes, ArchiveFilenameEncoding::Auto)
+            .expect("preview scan should allow display-only names");
+
+        assert_eq!(entries[0].path, "folder/name:with-colon.txt");
+        assert_eq!(entries[0].name, "name:with-colon.txt");
+        assert_eq!(entries[0].parent.as_deref(), Some("folder"));
     }
 
     #[test]
@@ -1276,6 +1350,7 @@ mod tests {
             limits,
             None,
             ArchiveFilenameEncoding::Auto,
+            ZipScanNamePolicy::StrictAsterName,
             |_| Ok(()),
         )
         .expect_err("implicit directories should count toward directory limit");

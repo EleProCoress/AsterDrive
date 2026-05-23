@@ -10,7 +10,7 @@ pub(crate) struct DownloadRangeRequest {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct ResolvedDownloadRange {
+pub struct ResolvedDownloadRange {
     pub(crate) start: u64,
     pub(crate) end: u64,
     pub(crate) length: u64,

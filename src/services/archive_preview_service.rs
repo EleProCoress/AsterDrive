@@ -20,7 +20,7 @@ use crate::errors::{
 use crate::runtime::PrimaryAppState;
 use crate::services::archive_service::range_reader::StorageRangeReader;
 use crate::services::archive_service::zip_scan::{
-    ZipScanEntryKind, ZipScanLimits, scan_zip_archive,
+    ZipScanEntryKind, ZipScanLimits, ZipScanNamePolicy, scan_zip_archive,
 };
 use crate::services::workspace_storage_service::WorkspaceStorageScope;
 use crate::services::{share_service, task_service, workspace_storage_service};
@@ -264,7 +264,7 @@ impl ArchivePreviewLimits {
             configured_max_manifest_bytes.min(ARCHIVE_PREVIEW_MAX_CACHEABLE_MANIFEST_BYTES);
         let max_source_bytes = operations::archive_preview_max_source_bytes(runtime_config);
         let signature = format!(
-            "source={};manifest={};entries={};files={};dirs={};uncompressed={};depth={};path={};ratio={};entry_ratio={};filename_encoding={}",
+            "source={};manifest={};entries={};files={};dirs={};uncompressed={};depth={};path={};ratio={};entry_ratio={};filename_encoding={};name_policy=preview-display-v1",
             max_source_bytes,
             max_manifest_bytes,
             scan_limits.max_entries,
@@ -475,6 +475,7 @@ where
             scan_limits,
             deadline,
             filename_encoding,
+            ZipScanNamePolicy::PreviewDisplayName,
             |_| Ok(()),
         )
         .map_err(map_archive_preview_scan_error)?;
