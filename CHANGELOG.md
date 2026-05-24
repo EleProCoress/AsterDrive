@@ -5,6 +5,85 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.2.0-rc.1] - 2026-05-24
+
+### Release Highlights
+
+**`0.2.0` 系列进入 RC 阶段。** 本版本把账号安全、多因素认证、监控指标、数据库连接模型和媒体/归档预览继续收口；前端同步补齐 MFA 登录与安全设置，压缩包编码兼容、媒体元数据展示和分享页加载体验也做了集中打磨。
+
+- **MFA 多因素认证** — 新增 TOTP、恢复码、登录二次验证和管理员重置能力
+- **Prometheus 指标体系** — 引入 `MetricsRecorder`，覆盖 API、数据库、存储、上传、运行时与 WOPI 等关键链路
+- **SQLite 读写分离** — 引入 `DbHandles` 和 reader pool，修复只读连接权限校验引发的一致性问题
+- **归档预览编码兼容** — ZIP 清单缓存升级至 v2，支持自动/手动选择 GB18030、UTF-8、CP437 等文件名编码
+- **媒体元数据增强** — 扩展 RAW / TIFF / GPS / 音视频元数据提取与公开媒体能力接口
+- **前端质量收口** — 文件预览、分享页、信息面板、MFA、上传和团队/远端节点补齐大量 Vitest / E2E 覆盖
+
+### Added
+
+- **多因素认证（MFA）**
+  - 新增 TOTP 因子绑定、验证、禁用和删除流程
+  - 新增恢复码生成、展示、复制、下载和重新生成流程
+  - 登录流程支持 `mfa_required` challenge，密码登录与外部认证均可进入二次验证
+  - 管理后台用户详情支持重置用户 MFA
+  - 新增 `mfa_factors`、`mfa_recovery_codes`、`mfa_login_flows`、`mfa_totp_setup_flows` 表
+- **监控指标**
+  - 新增 `MetricsRecorder` trait 和 Prometheus recorder
+  - 覆盖 HTTP API、数据库查询、存储驱动、上传、后台任务和 WOPI 等指标
+  - 新增监控部署文档、Grafana dashboard 和生产检查项
+- **媒体与预览能力**
+  - 新增公开媒体数据能力接口及前端缓存
+  - RAW 图片元数据支持提取基础 EXIF 与 GPS 信息
+  - TIFF 原始格式增加 EXIF fallback 解析
+  - ZIP 归档预览新增文件名编码选择
+- **前端体验**
+  - 登录页新增 MFA challenge 面板
+  - 安全设置新增 MFA 管理区块
+  - 分享页拆分密码面板、控制器和无限滚动加载逻辑
+  - 文件信息面板扩展媒体元数据展示
+
+### Changed
+
+- **数据库连接模型**
+  - `AppState` 移除冗余 `db` 字段，统一通过 `writer_db()` / reader handles 访问数据库
+  - SQLite 引入读写分离连接池，减少读请求对写连接的占用
+- **归档预览架构**
+  - ZIP 原始扫描与显示层限制签名拆分
+  - 归档清单缓存升级到 v2，记录编码、兼容性提示和更细的错误分类
+  - 前端压缩包预览拆成状态模型、内容组件和交互控制
+- **媒体元数据与预览**
+  - 媒体元数据提取支持 range 读取，降低远程存储场景下的读取成本
+  - 文件预览、音乐播放器、分享播放队列和信息面板统一读取后端媒体能力
+- **前端结构与质量**
+  - Shell、分享视图、文件信息面板、预览对话框等模块继续拆分 controller / hook / view
+  - 多处补齐 `aria-label`、`aria-expanded` 与屏幕阅读器辅助文本
+  - 移除不再使用的前端依赖并升级 Vite、Vitest、Base UI、Hono、shadcn 等依赖
+
+### Fixed
+
+- 修复 MFA 登录、恢复码、TOTP 设置和异常状态处理中的多项边界问题
+- 修复下载指标记录与存储驱动缓存失效问题
+- 修复使用只读数据库连接做权限校验时可能导致的一致性问题
+- 修复部分媒体文件在元数据提取、预览和详情展示中的兼容问题
+- 修复压缩包预览在非 UTF-8 文件名、编码探测和错误展示上的兼容性问题
+
+### Security
+
+- 新增 MFA secret 加密配置与 TOTP 密钥保护
+- Web 应用嵌入式预览 iframe 增加 `sandbox` 限制
+- `SECURITY.md` 扩展安全政策、报告流程和支持版本说明
+- 指标文档明确 `/health/metrics` 需要内网或白名单保护
+
+### Notes
+
+- 本版本为 `0.2.0` 系列第一个 RC 版本
+- 新增数据库迁移：`m20260523_000001_add_mfa`
+- 新增配置项：`[auth].mfa_secret_key`；替换该密钥会导致已启用 MFA 的认证器密钥无法解密，升级前必须备份配置和数据库
+- 登录 API 响应调整为带 `status` 的 tagged enum；自定义客户端需要处理 `mfa_required` 分支
+- Prometheus 指标需要启用 `metrics` feature 后重新编译，并谨慎暴露 `/health/metrics`
+- Docker 默认引导 `ffprobe` CLI，用于媒体元数据能力探测
+- 统计数据：707 files changed, 40,624 insertions(+), 10,506 deletions(-)
+- 本次范围共 39 个提交
+
 ## [v0.2.0-beta.3] - 2026-05-21
 
 ### Release Highlights
@@ -3299,7 +3378,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 66 commits
 - Rust Edition 2024, MSRV 1.91.1
 
-[Unreleased]: https://github.com/AptS-1547/AsterDrive/compare/v0.2.0-beta.3...HEAD
+[Unreleased]: https://github.com/AptS-1547/AsterDrive/compare/v0.2.0-rc.1...HEAD
+[v0.2.0-rc.1]: https://github.com/AptS-1547/AsterDrive/compare/v0.2.0-beta.3...v0.2.0-rc.1
 [v0.2.0-beta.3]: https://github.com/AptS-1547/AsterDrive/compare/v0.2.0-beta.2...v0.2.0-beta.3
 [v0.2.0-beta.2]: https://github.com/AptS-1547/AsterDrive/compare/v0.2.0-beta.1...v0.2.0-beta.2
 [v0.2.0-beta.1]: https://github.com/AptS-1547/AsterDrive/compare/v0.1.0...v0.2.0-beta.1
