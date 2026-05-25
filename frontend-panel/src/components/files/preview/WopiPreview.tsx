@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+	useCallback,
+	useEffect,
+	useMemo,
+	useRef,
+	useState,
+	useSyncExternalStore,
+} from "react";
 import { useTranslation } from "react-i18next";
 import { EmptyState } from "@/components/common/EmptyState";
 import { Button } from "@/components/ui/button";
@@ -6,14 +13,25 @@ import { Icon } from "@/components/ui/icon";
 import type { PreviewOpenMode, WopiLaunchSession } from "@/types/api";
 import {
 	EmbeddedWebAppPreview,
-	EXTERNAL_WEB_APP_SAME_ORIGIN_IFRAME_SANDBOX,
+	TRUSTED_DOCUMENT_VIEWER_IFRAME_ALLOW,
+	TRUSTED_DOCUMENT_VIEWER_IFRAME_SANDBOX,
 } from "./EmbeddedWebAppPreview";
 import { PreviewLoadingState } from "./PreviewLoadingState";
+import type { WopiSessionResource } from "./wopiSessionResource";
 
 interface WopiPreviewProps {
-	createSession: () => Promise<WopiLaunchSession>;
 	label: string;
 	rawConfig: Record<string, unknown> | null | undefined;
+	sessionResource: WopiSessionResource;
+}
+
+interface WopiSessionRequestKey {
+	sessionResource: WopiSessionResource;
+}
+
+interface WopiFrameSubmission {
+	key: string;
+	requestKey: WopiSessionRequestKey;
 }
 
 function normalizeWopiMode(
@@ -39,69 +57,30 @@ function buildWopiFormFields(
 	};
 }
 
-function isValidActionUrl(value: string) {
-	try {
-		const parsed = new URL(value);
-		return parsed.protocol === "http:" || parsed.protocol === "https:";
-	} catch {
-		return false;
-	}
-}
-
 export function WopiPreview({
-	createSession,
 	label,
 	rawConfig,
+	sessionResource,
 }: WopiPreviewProps) {
 	const { t } = useTranslation("files");
 	const iframeNameRef = useRef(
 		`wopi-preview-${Math.random().toString(36).slice(2, 10)}`,
 	);
 	const formRef = useRef<HTMLFormElement | null>(null);
-	const submittedKeyRef = useRef<string | null>(null);
-	const [isLoading, setIsLoading] = useState(true);
-	const [isFrameLoaded, setIsFrameLoaded] = useState(false);
-	const [session, setSession] = useState<WopiLaunchSession | null>(null);
-
-	useEffect(() => {
-		let cancelled = false;
-
-		setIsLoading(true);
-		setIsFrameLoaded(false);
-		setSession(null);
-		submittedKeyRef.current = null;
-
-		void createSession()
-			.then((nextSession) => {
-				if (cancelled) {
-					return;
-				}
-				if (
-					!nextSession.action_url ||
-					!isValidActionUrl(nextSession.action_url)
-				) {
-					setSession(null);
-					return;
-				}
-				setSession(nextSession);
-			})
-			.catch(() => {
-				if (cancelled) {
-					return;
-				}
-				setSession(null);
-			})
-			.finally(() => {
-				if (cancelled) {
-					return;
-				}
-				setIsLoading(false);
-			});
-
-		return () => {
-			cancelled = true;
-		};
-	}, [createSession]);
+	const submittedFrameRef = useRef<WopiFrameSubmission | null>(null);
+	const [loadedFrameSubmission, setLoadedFrameSubmission] =
+		useState<WopiFrameSubmission | null>(null);
+	const requestKey = useMemo<WopiSessionRequestKey>(
+		() => ({ sessionResource }),
+		[sessionResource],
+	);
+	const sessionState = useSyncExternalStore(
+		sessionResource.subscribe,
+		sessionResource.getSnapshot,
+		sessionResource.getSnapshot,
+	);
+	const isLoading = sessionState.loading;
+	const session = isLoading ? null : sessionState.session;
 
 	const mode = useMemo(
 		() => normalizeWopiMode(rawConfig, session),
@@ -111,6 +90,15 @@ export function WopiPreview({
 		() => (session ? buildWopiFormFields(session) : {}),
 		[session],
 	);
+	const frameSubmissionKey =
+		session && mode !== "new_tab"
+			? `${session.action_url}\u0000${session.access_token}\u0000${mode}`
+			: null;
+	const isFrameLoaded =
+		submittedFrameRef.current?.requestKey === requestKey &&
+		submittedFrameRef.current.key === frameSubmissionKey &&
+		loadedFrameSubmission?.requestKey === requestKey &&
+		loadedFrameSubmission.key === frameSubmissionKey;
 
 	const submitToTarget = useCallback(
 		(target: string) => {
@@ -127,15 +115,18 @@ export function WopiPreview({
 	);
 
 	useEffect(() => {
-		if (!session || mode === "new_tab") {
+		if (!session || !frameSubmissionKey || mode === "new_tab") {
+			submittedFrameRef.current = null;
 			return;
 		}
 
-		const submissionKey = `${session.action_url}\u0000${session.access_token}\u0000${mode}`;
-		if (submittedKeyRef.current === submissionKey) {
+		if (
+			submittedFrameRef.current?.requestKey === requestKey &&
+			submittedFrameRef.current.key === frameSubmissionKey
+		) {
 			return;
 		}
-		submittedKeyRef.current = submissionKey;
+		submittedFrameRef.current = { key: frameSubmissionKey, requestKey };
 
 		const frameTarget = iframeNameRef.current;
 		const timer = window.requestAnimationFrame(() => {
@@ -145,7 +136,7 @@ export function WopiPreview({
 		return () => {
 			window.cancelAnimationFrame(timer);
 		};
-	}, [mode, session, submitToTarget]);
+	}, [frameSubmissionKey, mode, requestKey, session, submitToTarget]);
 
 	const openExternally = useCallback(() => {
 		const target = `wopi-external-${Math.random().toString(36).slice(2, 10)}`;
@@ -212,14 +203,19 @@ export function WopiPreview({
 				src="about:blank"
 				iframeName={iframeNameRef.current}
 				onLoad={() => {
-					if (submittedKeyRef.current === null) {
+					if (
+						!frameSubmissionKey ||
+						submittedFrameRef.current?.requestKey !== requestKey ||
+						submittedFrameRef.current.key !== frameSubmissionKey
+					) {
 						return;
 					}
-					setIsFrameLoaded(true);
+					setLoadedFrameSubmission({ key: frameSubmissionKey, requestKey });
 				}}
 				iframeHidden={!isFrameLoaded}
+				iframeAllow={TRUSTED_DOCUMENT_VIEWER_IFRAME_ALLOW}
 				iframeReferrerPolicy="no-referrer"
-				iframeSandbox={EXTERNAL_WEB_APP_SAME_ORIGIN_IFRAME_SANDBOX}
+				iframeSandbox={TRUSTED_DOCUMENT_VIEWER_IFRAME_SANDBOX}
 				actions={
 					<Button variant="outline" size="sm" onClick={openExternally}>
 						<Icon name="ArrowSquareOut" className="mr-2 size-4" />

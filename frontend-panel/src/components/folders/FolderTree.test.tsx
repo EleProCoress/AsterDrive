@@ -102,6 +102,14 @@ function createFolder(id: number, name: string) {
 	};
 }
 
+function getFolderRow(name: string) {
+	const row = screen.getByText(name).closest("[data-folder-tree-row]");
+	if (!row) {
+		throw new Error(`${name} row not found`);
+	}
+	return row;
+}
+
 interface FolderTreeProps {
 	onMoveToFolder?: (
 		fileIds: number[],
@@ -189,6 +197,63 @@ describe("FolderTree", () => {
 		expect(mockState.listRoot).toHaveBeenCalledTimes(1);
 	});
 
+	it("collapses and expands the root folder list without navigating", async () => {
+		mockState.fileStore.folders = [
+			createFolder(1, "Alpha"),
+			createFolder(2, "Beta"),
+		];
+		mockState.listRoot.mockResolvedValue({
+			folders: [createFolder(1, "Alpha"), createFolder(2, "Beta")],
+		});
+
+		await renderTree();
+
+		expect(await screen.findByText("Alpha")).toBeInTheDocument();
+		const rootRow = screen.getByRole("button", { name: /root/i });
+		expect(rootRow).toHaveAttribute("aria-expanded", "true");
+
+		const collapseButton = screen.getByRole("button", {
+			name: "collapse_tree",
+		});
+
+		fireEvent.keyDown(collapseButton, { key: "Enter" });
+
+		expect(mockState.navigate).not.toHaveBeenCalled();
+		expect(rootRow).toHaveAttribute("aria-expanded", "true");
+		expect(screen.getByText("Alpha").closest("[aria-hidden]")).toHaveAttribute(
+			"aria-hidden",
+			"false",
+		);
+
+		fireEvent.click(collapseButton);
+
+		expect(mockState.navigate).not.toHaveBeenCalled();
+		expect(rootRow).toHaveAttribute("aria-expanded", "false");
+		expect(screen.getByText("Alpha")).toBeInTheDocument();
+		expect(screen.getByText("Alpha").closest("[aria-hidden]")).toHaveAttribute(
+			"aria-hidden",
+			"true",
+		);
+
+		const expandButton = screen.getByRole("button", { name: "expand_tree" });
+
+		fireEvent.keyDown(expandButton, { key: " " });
+
+		expect(mockState.navigate).not.toHaveBeenCalled();
+		expect(rootRow).toHaveAttribute("aria-expanded", "false");
+		expect(screen.getByText("Alpha").closest("[aria-hidden]")).toHaveAttribute(
+			"aria-hidden",
+			"true",
+		);
+
+		fireEvent.click(expandButton);
+
+		expect(rootRow).toHaveAttribute("aria-expanded", "true");
+		expect(screen.getByText("Alpha")).toBeInTheDocument();
+		expect(screen.getByText("Beta")).toBeInTheDocument();
+		expect(mockState.navigate).not.toHaveBeenCalled();
+	});
+
 	it("uses the current file sorting preferences for folder requests", async () => {
 		mockState.fileStore.sortBy = "updated_at";
 		mockState.fileStore.sortOrder = "desc";
@@ -224,14 +289,9 @@ describe("FolderTree", () => {
 
 		await renderTree();
 
-		const alphaRow = (await screen.findByText("Alpha Root")).closest(
-			'[role="button"]',
-		);
-		if (!alphaRow) {
-			throw new Error("Alpha Root row not found");
-		}
+		await screen.findByText("Alpha Root");
 
-		fireEvent.click(alphaRow);
+		fireEvent.click(screen.getByRole("button", { name: "Alpha Root" }));
 
 		await waitFor(() => {
 			expect(mockState.listFolder).toHaveBeenCalledWith(1, {
@@ -246,14 +306,7 @@ describe("FolderTree", () => {
 		);
 		expect(await screen.findByText("Project Space")).toBeInTheDocument();
 
-		const childRow = screen
-			.getByText("Project Space")
-			.closest('[role="button"]');
-		if (!childRow) {
-			throw new Error("Project Space row not found");
-		}
-
-		fireEvent.keyDown(childRow, { key: "Enter" });
+		fireEvent.click(screen.getByRole("button", { name: "Project Space" }));
 
 		await waitFor(() => {
 			expect(mockState.listFolder).toHaveBeenCalledWith(2, {
@@ -328,12 +381,8 @@ describe("FolderTree", () => {
 
 		await renderTree();
 
-		const alphaRow = (await screen.findByText("Alpha")).closest(
-			'[role="button"]',
-		);
-		if (!alphaRow) {
-			throw new Error("Alpha row not found");
-		}
+		await screen.findByText("Alpha");
+		const alphaRow = getFolderRow("Alpha");
 
 		vi.useFakeTimers();
 
@@ -383,12 +432,8 @@ describe("FolderTree", () => {
 
 		await renderTree();
 
-		const alphaRow = (await screen.findByText("Alpha")).closest(
-			'[role="button"]',
-		);
-		if (!alphaRow) {
-			throw new Error("Alpha row not found");
-		}
+		await screen.findByText("Alpha");
+		const alphaRow = getFolderRow("Alpha");
 
 		const toggleButton = alphaRow.querySelector("button");
 		if (!toggleButton) {

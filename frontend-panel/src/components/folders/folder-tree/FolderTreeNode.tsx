@@ -14,6 +14,7 @@ import {
 	writeInternalDragData,
 } from "@/lib/dragDrop";
 import { folderTreeRowClass } from "@/lib/utils";
+import { AnimatedTreeGroup } from "./AnimatedTreeGroup";
 import type { TreeNodeProps } from "./types";
 
 export function FolderTreeNodeRow({
@@ -29,7 +30,7 @@ export function FolderTreeNodeRow({
 	onDrop,
 	onNavigate,
 	onToggle,
-	renderChildren,
+	children,
 }: TreeNodeProps) {
 	const node = nodeMap.get(nodeId);
 	const [dragOver, setDragOver] = useState(false);
@@ -96,25 +97,17 @@ export function FolderTreeNodeRow({
 
 	return (
 		<div>
-			{/* biome-ignore lint/a11y/useSemanticElements: outer row needs drag-drop target and contains a nested toggle button */}
+			{/* biome-ignore lint/a11y/noStaticElementInteractions: row is a drag/drop target that contains semantic child buttons for actions */}
 			<div
 				ref={rowRef}
-				role="button"
-				tabIndex={0}
 				draggable
 				className={folderTreeRowClass(
 					isActive,
 					dragOver && "ring-2 ring-primary bg-accent/30",
 				)}
+				data-folder-tree-row={node.folder.id}
 				style={{
 					paddingLeft: `${depth * FOLDER_TREE_INDENT_PX + FOLDER_TREE_ROW_OFFSET_PX}px`,
-				}}
-				onClick={() => onNavigate(node.folder.id, node.folder.name)}
-				onKeyDown={(e) => {
-					if (e.key === "Enter" || e.key === " ") {
-						e.preventDefault();
-						onNavigate(node.folder.id, node.folder.name);
-					}
 				}}
 				onDragStart={handleDragStart}
 				onDragOver={handleDragOver}
@@ -134,36 +127,44 @@ export function FolderTreeNodeRow({
 					>
 						{isLoading ? (
 							<div className="size-3 animate-spin rounded-full border-2 border-t-muted-foreground border-muted-foreground/30" />
-						) : isExpanded ? (
-							<Icon name="CaretDown" className="size-3 text-muted-foreground" />
 						) : (
 							<Icon
 								name="CaretRight"
-								className="size-3 text-muted-foreground"
+								className={`size-3 text-muted-foreground transition-transform duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none ${
+									isExpanded ? "rotate-90" : "rotate-0"
+								}`}
 							/>
 						)}
 					</button>
 				) : (
 					<span className="size-4 shrink-0" aria-hidden="true" />
 				)}
-				<div className="flex min-w-0 flex-1 items-center gap-2 px-1">
+				<button
+					type="button"
+					aria-label={node.folder.name}
+					aria-expanded={showToggle ? isExpanded : undefined}
+					className="flex min-w-0 flex-1 items-center gap-2 rounded-sm px-1 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+					onClick={() => onNavigate(node.folder.id, node.folder.name)}
+				>
 					{isExpanded ? (
 						<Icon
 							name="FolderOpen"
+							aria-hidden="true"
 							className="size-4 shrink-0 text-muted-foreground"
 						/>
 					) : (
 						<Icon
 							name="Folder"
+							aria-hidden="true"
 							className="size-4 shrink-0 text-muted-foreground"
 						/>
 					)}
 					<span className="truncate">{node.folder.name}</span>
-				</div>
+				</button>
 			</div>
-			{isExpanded &&
-				node.childIds.length > 0 &&
-				renderChildren(node.childIds, depth + 1)}
+			<AnimatedTreeGroup open={isExpanded && node.childIds.length > 0}>
+				{children}
+			</AnimatedTreeGroup>
 		</div>
 	);
 }

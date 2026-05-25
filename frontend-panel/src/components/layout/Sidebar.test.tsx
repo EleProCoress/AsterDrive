@@ -4,6 +4,7 @@ import { Sidebar } from "@/components/layout/Sidebar";
 import { STORAGE_KEYS } from "@/config/app";
 
 const mockState = vi.hoisted(() => ({
+	scrollAreaTestIds: [] as Array<string | undefined>,
 	pathname: "/",
 	auth: {
 		user: {
@@ -123,18 +124,26 @@ vi.mock("@/components/ui/scroll-area", () => ({
 	ScrollArea: ({
 		children,
 		className,
+		"data-testid": testId,
 	}: {
 		children: React.ReactNode;
 		className?: string;
+		"data-testid"?: string;
 	}) => (
-		<div data-testid="scroll-area" className={className}>
+		<div
+			data-testid={testId ?? "scroll-area"}
+			className={className}
+			ref={() => {
+				mockState.scrollAreaTestIds.push(testId);
+			}}
+		>
 			{children}
 		</div>
 	),
 }));
 
 vi.mock("@/components/ui/separator", () => ({
-	Separator: () => <hr />,
+	Separator: () => <hr data-testid="separator" />,
 }));
 
 vi.mock("@/lib/format", () => ({
@@ -164,6 +173,7 @@ describe("Sidebar", () => {
 		mockState.readInternalDragData.mockReset();
 		mockState.hasInternalDragData.mockReturnValue(false);
 		mockState.readInternalDragData.mockReturnValue(null);
+		mockState.scrollAreaTestIds = [];
 	});
 
 	it("renders navigation, folder tree, and storage quota usage", () => {
@@ -173,10 +183,24 @@ describe("Sidebar", () => {
 			"data-has-move",
 			"false",
 		);
-		expect(screen.getByTestId("scroll-area")).toHaveClass("min-h-32", "flex-1");
+		expect(mockState.scrollAreaTestIds).toEqual(["user-sidebar-scroll"]);
+		const scrollArea = screen.getByTestId("user-sidebar-scroll");
+		expect(scrollArea).toHaveClass("min-h-0", "flex-1");
+		expect(scrollArea).toContainElement(screen.getByTestId("folder-tree"));
+		expect(scrollArea.firstElementChild).toHaveClass("flex", "min-h-full");
+		expect(
+			screen
+				.getByText("translated:search:quick_categories")
+				.closest(".mt-auto"),
+		).not.toBeNull();
 		expect(screen.getByTestId("workspace-switcher")).toHaveAttribute(
 			"data-variant",
 			"sidebar",
+		);
+		expect(scrollArea).toContainElement(
+			screen.getByRole("button", {
+				name: /translated:search:category_image/i,
+			}),
 		);
 		expect(
 			screen.getByRole("button", { name: /translated:share:my_shares_title/i }),
@@ -193,6 +217,12 @@ describe("Sidebar", () => {
 		expect(
 			screen.getByText("translated:files:storage_space"),
 		).toBeInTheDocument();
+		expect(
+			screen.getByText("translated:files:storage_space").parentElement,
+		).toHaveClass("pb-[calc(0.75rem+env(safe-area-inset-bottom))]", "md:pb-3");
+		expect(scrollArea).not.toContainElement(
+			screen.getByText("translated:files:storage_space"),
+		);
 		expect(screen.getByTestId("progress")).toHaveAttribute("data-value", "25");
 		expect(
 			screen.getByText("files:storage_quota:formatted:25/formatted:100"),
@@ -272,17 +302,22 @@ describe("Sidebar", () => {
 		expect(trashButton.className).not.toContain("bg-destructive/10");
 	});
 
-	it("uses full-height mobile overlay positioning below the top bar", () => {
-		render(<Sidebar mobileOpen onMobileClose={vi.fn()} />);
+	it("uses dynamic viewport mobile overlay positioning below the top bar", () => {
+		const { container } = render(
+			<Sidebar mobileOpen onMobileClose={vi.fn()} />,
+		);
 
 		expect(
 			screen.getByRole("button", { name: "translated:close_sidebar" })
 				.className,
-		).toContain("bottom-0");
+		).toContain("h-[calc(100dvh-4rem)]");
 		expect(
 			screen.getByRole("button", { name: "translated:close_sidebar" })
 				.className,
 		).toContain("top-16");
+		expect(container.querySelector("aside")?.className).toContain(
+			"h-[calc(100dvh-4rem)]",
+		);
 	});
 
 	it("resizes the desktop sidebar by dragging the divider and persists the width", () => {
@@ -296,13 +331,13 @@ describe("Sidebar", () => {
 		});
 
 		expect(aside).toHaveStyle("--user-sidebar-width: 240px");
-		expect(resizer).toHaveAttribute("aria-valuenow", "240");
+		expect(resizer).toHaveValue("240");
 
 		fireEvent.pointerDown(resizer, { button: 0, clientX: 240 });
 		fireEvent.pointerMove(window, { clientX: 320 });
 
 		expect(aside).toHaveStyle("--user-sidebar-width: 320px");
-		expect(resizer).toHaveAttribute("aria-valuenow", "320");
+		expect(resizer).toHaveValue("320");
 		expect(document.body.style.cursor).toBe("col-resize");
 
 		fireEvent.pointerUp(window);
@@ -323,12 +358,12 @@ describe("Sidebar", () => {
 
 		fireEvent.keyDown(resizer, { key: "End" });
 		expect(aside).toHaveStyle("--user-sidebar-width: 420px");
-		expect(resizer).toHaveAttribute("aria-valuenow", "420");
+		expect(resizer).toHaveValue("420");
 		expect(localStorage.getItem(STORAGE_KEYS.userSidebarWidth)).toBe("420");
 
 		fireEvent.keyDown(resizer, { key: "Home" });
 		expect(aside).toHaveStyle("--user-sidebar-width: 220px");
-		expect(resizer).toHaveAttribute("aria-valuenow", "220");
+		expect(resizer).toHaveValue("220");
 		expect(localStorage.getItem(STORAGE_KEYS.userSidebarWidth)).toBe("220");
 	});
 
