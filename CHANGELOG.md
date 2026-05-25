@@ -5,6 +5,57 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.2.0] - 2026-05-25
+
+### Release Highlights
+
+**AsterDrive `0.2.0` 正式发布。** 在 `v0.2.0-rc.1` 的账号安全、MFA、监控指标、SQLite 读写分离、媒体元数据和归档预览基础上，本版本继续收口前端体验、移动端布局、文档预览 iframe 权限和测试覆盖，把 `0.2.0` 系列从 RC 阶段推进到稳定发布。
+
+- **正式版稳定性收口** — 根 crate 版本升级到 `0.2.0`，前端包版本与产品名同步为 `asterdrive-panel` / `0.2.0`
+- **文档预览权限增强** — 受信任文档查看器 iframe 支持剪贴板、全屏、画中画、自动播放和安全弹窗逃逸，Office / Google 等在线预览交互更完整
+- **文件夹树交互打磨** — 侧栏文件夹树新增平滑展开 / 收起动画，根目录支持独立折叠，并补齐键盘与 ARIA 语义
+- **移动端布局修复** — 全面适配动态视口高度和底部安全区域，修复短视口下侧边栏目录树被压缩或无法滚动的问题
+- **MFA 设置体验增强** — 安全设置中的 MFA 绑定流程加入步骤切换、Presence 和高度测量动画，减少面板跳动
+- **测试覆盖补齐** — 新增短视口侧边栏 E2E、文件夹树动画生命周期和 MFA 动画组件测试
+
+### Added
+
+- 文件夹树新增展开 / 收起过渡动画，子树高度与图标状态同步过渡
+- 根目录行新增独立展开 / 收起控制，不再需要通过导航动作影响折叠状态
+- MFA 设置流程新增步骤切换动画、Presence 动画和动态高度测量组件
+- 新增短视口侧边栏 E2E 测试，覆盖移动端浏览器地址栏和小屏布局下的滚动可用性
+- 新增文件夹树动画、根目录折叠和 MFA 动画相关单元测试
+
+### Changed
+
+- 文档查看器 iframe 权限按受信任场景细分，Office / Google 等文档预览获得更完整的交互能力
+- 前端布局从固定 `vh` 逐步调整为 `dvh` 与安全区域适配，改善移动端地址栏变化时的可用空间计算
+- 侧边栏拆分为导航、快捷分类、容量展示、内容区和拖拽调整等子组件，降低主组件复杂度
+- 文件夹树控制逻辑迁移到 reducer 与 controller hook，主组件只保留渲染编排
+- WOPI 预览会话管理改为资源订阅模式，预览生命周期和清理路径更可控
+- 分享创建 / 编辑对话框状态管理迁移到 reducer，减少表单状态分散和重复更新逻辑
+
+### Fixed
+
+- 修复短视口和移动端场景下侧边栏目录树滚动区域被内容挤压的问题
+- 修复文件夹树收起状态下仍可能保留可交互子内容的无障碍问题
+- 修复密码输入框缺少 `autocomplete="new-password"` 导致的浏览器自动填充语义问题
+- 修复部分预览、分享和 MFA 交互测试中的异步状态边界
+
+### Security
+
+- 细化 iframe sandbox 策略：外部 Web App 预览继续使用更收紧的沙箱权限，只有受信任文档查看器获得同源、顶层导航和弹窗逃逸能力
+- 文档预览 iframe `allow` 策略显式限定剪贴板、全屏、画中画和自动播放能力，减少无意扩权
+
+### Notes
+
+- 本版本为 `0.2.0` 系列正式发布版
+- 从 `v0.2.0-rc.1` 升级到 `v0.2.0` 没有新增数据库 migration
+- 生产配置 schema 未新增必需项；`src/config/loader.rs` 仅补齐测试配置中的 auth 示例
+- Docker 用户建议使用 `v0.2.0`、`stable` 或 `latest` 镜像标签；`edge` 继续保留给后续预发布版本
+- 统计数据：55 files changed, 2,720 insertions(+), 1,060 deletions(-)
+- 本次范围共 5 个提交
+
 ## [v0.2.0-rc.1] - 2026-05-24
 
 ### Release Highlights
@@ -3378,7 +3429,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 66 commits
 - Rust Edition 2024, MSRV 1.91.1
 
-[Unreleased]: https://github.com/AptS-1547/AsterDrive/compare/v0.2.0-rc.1...HEAD
+[Unreleased]: https://github.com/AptS-1547/AsterDrive/compare/v0.2.0...HEAD
+[v0.2.0]: https://github.com/AptS-1547/AsterDrive/compare/v0.2.0-rc.1...v0.2.0
 [v0.2.0-rc.1]: https://github.com/AptS-1547/AsterDrive/compare/v0.2.0-beta.3...v0.2.0-rc.1
 [v0.2.0-beta.3]: https://github.com/AptS-1547/AsterDrive/compare/v0.2.0-beta.2...v0.2.0-beta.3
 [v0.2.0-beta.2]: https://github.com/AptS-1547/AsterDrive/compare/v0.2.0-beta.1...v0.2.0-beta.2
