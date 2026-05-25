@@ -6,9 +6,9 @@
 </p>
 
 <p align="center">
-  A lightweight self-hosted cloud drive built with Rust and React.
+  A lightweight, hackable file infrastructure for self-hosters and small teams.
   <br />
-  Personal and team workspaces, local / S3 / remote-node storage policies, sharing, WebDAV, previews, WOPI, version history, trash, thumbnails, and large-file uploads.
+  Reliable uploads, storage policies, local / S3 / remote-node backends, sharing, WebDAV, WOPI, version history, trash, and operations tooling in one Rust + React service.
 </p>
 
 <p align="center">
@@ -23,28 +23,81 @@
 
 ## What is AsterDrive?
 
-AsterDrive is an MIT-licensed self-hosted cloud drive for people who want to own their files without running a heavyweight collaboration suite. It focuses on the core drive experience: upload files, organize folders, recover mistakes, share links, mount WebDAV clients, and decide where objects are stored.
+AsterDrive is an MIT-licensed self-hosted file service for people who want control over where files live and how they move through the system. It is built around the core drive workflow: upload reliably, organize folders, recover mistakes, share access, connect WebDAV clients, open Office files through WOPI-compatible services, and route objects to the right storage backend.
 
-It is built as a Rust backend plus a React frontend, shipped as one server binary or an Alpine-based container image. The current `v0.1.x` line is an early stable release: usable for personal and small-team deployments, but still evolving quickly.
+It is not trying to become a full private-cloud suite. AsterDrive focuses on file infrastructure: storage policies, large-file upload paths, team and personal workspaces, sharing, version history, WebDAV, WOPI, auditability, and deployment/operations tooling.
 
-## Scope
+The current `v0.2.x` line is an early stable release. It is usable for personal and small-team deployments, but still evolving quickly.
 
-AsterDrive is not trying to clone the whole Nextcloud ecosystem. It focuses on being a lightweight, hackable cloud drive for personal and small-team self-hosting.
+## Where it fits
 
-It currently does not aim to provide calendars, contacts, plugin marketplaces, multi-primary clustering, automatic failover, real-time desktop sync clients, or enterprise compliance guarantees.
+AsterDrive is a good fit when you want:
 
-## Highlights
+- a single self-hosted service with embedded frontend assets
+- SQLite out of the box, with optional PostgreSQL / MySQL later
+- local filesystem, S3-compatible object storage, or remote AsterDrive follower-node storage
+- upload strategies for both small files and large objects: direct, resumable chunked, S3 presigned, and S3 multipart
+- personal and team workspaces with quotas, shares, trash, tasks, audit logs, and storage policy groups
+- WebDAV access with independent accounts and scoped root folders
+- Office preview/editing through external WOPI services such as OnlyOffice or Collabora
+- a codebase that is meant to be read, modified, and deployed without a plugin marketplace or enterprise stack
 
-- **Self-hosted by default** - single service, embedded frontend assets, SQLite out of the box, optional PostgreSQL / MySQL
-- **Personal and team workspaces** - separate files, shares, trash, tasks, quotas, audit trail, and storage policy groups per workspace
-- **Flexible storage routing** - local filesystem, S3-compatible object storage, or another AsterDrive follower node; route uploads by user, team, and file size
-- **Large-file friendly uploads** - direct uploads, resumable chunked uploads, S3 presigned uploads, and S3 multipart uploads, negotiated by policy and file size
-- **Sharing and direct links** - file and folder shares with optional password, expiration time, download limits, public pages, nested folder browsing, and single-file direct links
-- **WebDAV support** - dedicated WebDAV accounts, independent passwords, scoped root folders, database-backed locks, custom properties, and a small DeltaV subset
-- **Preview and editing** - built-in preview for common browser-readable files, Monaco-based text editing, version history, thumbnails, and WOPI integration for external Office editors
-- **Operations built in** - admin console, runtime settings, storage policy testing, health checks, audit logs, background tasks, mail queue, cleanup jobs, and `doctor` / migration CLI commands
+AsterDrive is probably not the right first choice when you need:
+
+- a complete collaboration suite with calendars, contacts, chat, mail, and an app ecosystem
+- mature native desktop and mobile sync clients today
+- an ultra-minimal web UI over a single server directory
+- multi-primary clustering, automatic failover, or enterprise compliance guarantees
+- a vendor-managed SaaS where someone else owns the deployment and data responsibility
+
+## Design focus
+
+- **File safety first** - trash, version history, locks, quota checks, and cleanup tasks are part of the core workflow, not decorative extras.
+- **Storage control** - policies can route uploads to local storage, S3-compatible storage, or remote follower nodes by user, team, and file size.
+- **Large-file paths** - the backend negotiates direct uploads, chunked uploads, S3 presigned uploads, and S3 multipart uploads based on policy and object size.
+- **Interoperability without sprawl** - WebDAV and WOPI cover practical client and Office workflows without turning the project into an all-in-one cloud suite.
+- **Operations built in** - health checks, runtime configuration, audit logs, background tasks, storage tests, `doctor`, and migration commands are first-class features.
+- **Hackable core** - Rust backend, React frontend, SeaORM migrations, explicit error codes, API docs, and clear service/repository boundaries.
 
 ## Quick start
+
+### Run with Docker
+
+For a local HTTP trial, prepare a writable data directory and start the official image:
+
+```bash
+mkdir -p ./data
+sudo chown -R 10001:10001 ./data
+
+docker run -d \
+  --name asterdrive \
+  -p 3000:3000 \
+  -e ASTER__SERVER__HOST=0.0.0.0 \
+  -e ASTER__AUTH__BOOTSTRAP_INSECURE_COOKIES=true \
+  -e "ASTER__DATABASE__URL=sqlite:///data/asterdrive.db?mode=rwc" \
+  -v "$(pwd)/data:/data" \
+  ghcr.io/apts-1547/asterdrive:latest
+```
+
+Open:
+
+```text
+http://127.0.0.1:3000
+```
+
+The first registered user becomes `admin`.
+
+`ASTER__AUTH__BOOTSTRAP_INSECURE_COOKIES=true` is only for local or internal HTTP testing. For production, put AsterDrive behind HTTPS and keep secure cookies enabled.
+
+You can also use the included Compose file:
+
+```bash
+mkdir -p ./data
+sudo chown -R 10001:10001 ./data
+docker compose up -d
+```
+
+See [`docs/deployment/docker.md`](docs/deployment/docker.md) for the full Docker guide.
 
 ### Run from source
 
@@ -65,95 +118,63 @@ On first startup, AsterDrive will automatically:
 - generate `data/config.toml` under the current working directory if it does not exist
 - create the default SQLite database when using the default database URL
 - run all database migrations
-- create the default local storage policy
+- create the default local storage policy and default policy group
 - initialize built-in runtime configuration items in `system_config`
 
-Default address:
+## Production notes
 
-```text
-http://127.0.0.1:3000
-```
-
-The first registered user becomes `admin`.
-
-Do not expose `:3000` directly to the public Internet in production. Put AsterDrive behind a reverse proxy and let the proxy handle HTTPS, page-level `Content-Security-Policy` and related security headers, upload limits, and WebDAV / WOPI passthrough. Do not replace the whole site's CSP with `sandbox`; script-capable inline file responses are sandboxed separately by the app.
-
-### Run with Docker
-
-```bash
-# Build image
-docker build -t asterdrive .
-
-# Run container
-docker run -d \
-  --name asterdrive \
-  -p 3000:3000 \
-  -e ASTER__SERVER__HOST=0.0.0.0 \
-  -e "ASTER__DATABASE__URL=sqlite:///data/asterdrive.db?mode=rwc" \
-  -v asterdrive-data:/data \
-  asterdrive
-
-# Or use Compose
-docker compose up -d
-```
-
-The current container image is an **Alpine runtime image** that runs as a non-root user and includes a `/health/ready` health check. The recommended persistent volume is `/data`.
-
-Default SQLite search acceleration now depends on `FTS5 + trigram tokenizer` support. After deployment, run `./aster_drive doctor` at least once and make sure the `SQLite search acceleration` check reports `ok`.
-
-See [`docker-compose.yml`](docker-compose.yml) and [`docs/deployment/docker.md`](docs/deployment/docker.md) for a complete deployment example.
-
-If you need offline deployment checks, runtime-config changes from the command line, or cross-database migration from SQLite to PostgreSQL / MySQL, start with [`docs/deployment/ops-cli.md`](docs/deployment/ops-cli.md).
+- Do not expose `:3000` directly to the public Internet. Put AsterDrive behind a reverse proxy that handles HTTPS, upload limits, WebDAV/WOPI passthrough, and security headers.
+- Configure public site URLs before relying on share links, WebDAV URLs, mail links, or WOPI callbacks.
+- Run `./aster_drive doctor` after deployment and upgrades. The default SQLite search acceleration expects `FTS5 + trigram tokenizer` support.
+- Plan backups for the database, uploaded blobs, config, and any external object-storage credentials. Start with [`docs/deployment/backup.md`](docs/deployment/backup.md).
+- If you enable WOPI, test real `docx`, `xlsx`, and `pptx` files through the final public URL and confirm that edits save back into AsterDrive.
 
 ## Core capabilities
 
 ### File management
 
-- hierarchical folders, directory tree navigation, list / grid views, and breadcrumb navigation
-- file upload, folder upload, download, rename, move, copy, delete, restore, and permanent deletion
-- search within the current workspace, multi-select, batch move / copy / delete, and archive download
-- online archive compression / extraction and background task progress tracking
-- thumbnails, browser-native previews, archive previews, and configurable external preview apps
-- version history, version restore / deletion, and Monaco-based text editing with lock awareness
-- browser-side storage-change events for refreshing the current view when files change
+- folders, breadcrumbs, list/grid views, search, multi-select, and batch operations
+- file upload, folder upload, download, rename, move, copy, delete, restore, and purge
+- archive download, online archive compression/extraction, and background task progress
+- thumbnails, browser-native previews, ZIP manifest preview, and configurable external preview apps
+- Monaco-based text editing, lock awareness, version history, restore, and version deletion
 
-### Workspaces, sharing, and access
+### Workspaces and sharing
 
-- personal workspace plus team workspaces with independent files, shares, trash, tasks, quotas, and audit records
-- team membership with owner / admin / member roles, team archive / restore, and team policy-group assignment
-- public share pages at `/s/:token` for files and folders
-- password-protected shares, expiration time, download limits, share open / download counters, and share management pages
-- shared-folder browsing with child-file download, preview, and thumbnail access inside the shared tree
-- single-file direct links with inline and forced-download variants
-- WebDAV accounts with independent passwords, root-folder restriction, database-backed locks, custom properties, and DeltaV subset support
+- personal workspace plus team workspaces
+- independent files, shares, trash, tasks, quotas, audit records, and policy groups per workspace
+- public file and folder shares at `/s/:token`
+- optional share password, expiration time, download limits, open/download counters, and direct links
+- shared-folder browsing with child-file download, preview, and thumbnail access
+
+### Access and editing
+
+- HttpOnly cookie auth plus Bearer JWT for API clients
+- first-user setup, registration controls, activation, password reset, and email-change confirmation
+- WebDAV accounts with independent passwords, scoped root folders, database-backed locks, custom properties, and a small DeltaV subset
+- WOPI launch sessions and file endpoints for Office preview/editing through external WOPI hosts
+- optional Passkey / WebAuthn registration and login endpoints
 
 ### Storage and delivery
 
 - local storage, S3-compatible storage, and remote follower-node storage policies
 - policy groups that route uploads by user, team, and file size
-- optional local-only blob deduplication with SHA-256 + reference counting
-- S3 upload / download strategies: `relay_stream` and `presigned`, including multipart uploads for large files
-- remote-node upload / download strategies: `relay_stream` and `presigned`, with follower ingress profiles backed by local or S3 storage
-- streaming upload / download paths to avoid full-buffer transfers where the selected strategy allows it
+- optional local-only blob deduplication using SHA-256 and reference counting
+- S3 upload/download strategies: `relay_stream`, `presigned`, and multipart uploads
+- remote-node upload/download strategies: `relay_stream` and `presigned`
+- streaming upload/download paths where the selected strategy allows it
 
-### Authentication and user settings
+### Administration and operations
 
-- HttpOnly cookie auth plus Bearer JWT support for API clients
-- first-user setup, public registration switch, registration activation, password reset, and email-change confirmation flows
-- user profiles, uploaded avatars, Gravatar avatars, theme / language / timezone / view preferences, and session management
-- optional Passkey / WebAuthn registration and login endpoints
-
-### Operations and administration
-
-- admin overview, user management, team management, storage policies, policy groups, remote nodes, shares, tasks, locks, runtime settings, and audit logs
-- runtime config stored in `system_config`, with schema-driven admin UI and CLI access for offline operations
-- health endpoints: `/health`, `/health/ready`, optional `/health/memory` (`debug_assertions + openapi`), `/health/metrics` (`metrics` feature, not enabled by default)
-- storage policy and remote-node connection testing
-- background task records for archive jobs, thumbnail generation, mail dispatch, cleanup, and system runtime tasks
+- admin overview, users, teams, storage policies, policy groups, remote nodes, shares, tasks, locks, runtime settings, and audit logs
+- schema-driven runtime configuration stored in `system_config`
+- health endpoints: `/health`, `/health/ready`, optional `/health/memory`, and optional `/health/metrics`
+- storage policy and remote-node connection tests
+- background task records for archive jobs, thumbnail generation, mail dispatch, cleanup, and runtime tasks
 - periodic cleanup for uploads, trash, locks, audit logs, teams, WOPI sessions, and orphaned blobs
-- Swagger UI in debug builds with the `openapi` feature, plus static OpenAPI export via `cargo test --features openapi --test generate_openapi`
+- Swagger UI in debug builds with the `openapi` feature, plus static OpenAPI export
 
-## Documentation map
+## Documentation
 
 - [Getting started](docs/guide/getting-started.md)
 - [User guide](docs/guide/user-guide.md)
@@ -163,6 +184,8 @@ If you need offline deployment checks, runtime-config changes from the command l
 - [Storage backends](docs/storage/index.md)
 - [Remote follower storage](docs/storage/remote-follower.md)
 - [Docker deployment](docs/deployment/docker.md)
+- [Production checklist](docs/deployment/production-checklist.md)
+- [Backup and restore](docs/deployment/backup.md)
 - [Operations CLI](docs/deployment/ops-cli.md)
 - [Developer docs](developer-docs/README.md)
 - [Architecture](developer-docs/architecture.md)
@@ -200,33 +223,14 @@ bun run check
 - TypeScript `enum` is not allowed; use `as const` objects
 - Type-only imports must use `import type`
 
-## Configuration
-
-Static configuration is loaded with this priority:
-
-```text
-Environment variables > data/config.toml > built-in defaults
-```
-
-Examples:
-
-```bash
-ASTER__SERVER__HOST=0.0.0.0
-ASTER__SERVER__PORT=3000
-ASTER__DATABASE__URL="postgres://aster:secret@127.0.0.1:5432/asterdrive"
-ASTER__WEBDAV__PREFIX="/webdav"
-```
-
-Runtime configuration is stored in the database and can be updated from the admin API / admin panel.
-
 ## Project structure
 
 ```text
 src/                    Rust backend
-migration/              Sea-ORM migrations
+migration/              SeaORM migrations
 frontend-panel/         React admin/file panel
 docs/                   Deployment and end-user documentation
-developer-docs/         API and architecture docs for contributors
+developer-docs/         API, architecture, testing, and internal positioning docs
 tests/                  Integration tests
 ```
 

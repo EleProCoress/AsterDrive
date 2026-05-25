@@ -24,7 +24,7 @@ async fn test_jwt_auth_missing_token_returns_api_error() {
 
     let body = to_bytes(resp.into_body()).await.unwrap();
     let body: Value = serde_json::from_slice(&body).unwrap();
-    assert_eq!(body["code"], 2000);
+    assert_eq!(body["code"], 2007);
     assert_eq!(body["msg"], "missing token");
     assert!(body["data"].is_null());
 }

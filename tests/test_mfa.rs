@@ -312,7 +312,7 @@ async fn test_regenerate_recovery_codes_wrong_code_returns_mfa_subcode() {
     let status = resp.status();
     let body: Value = test::read_body_json(resp).await;
     assert_eq!(status, StatusCode::UNAUTHORIZED, "{body:#?}");
-    assert_eq!(body["error"]["internal_code"], "E010");
+    assert_eq!(body["error"]["internal_code"], "E018");
     assert_eq!(body["error"]["subcode"], "auth.mfa_code_invalid");
 }
 

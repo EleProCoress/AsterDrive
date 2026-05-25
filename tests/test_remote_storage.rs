@@ -1552,7 +1552,7 @@ async fn test_internal_storage_invalid_signature_does_not_consume_hmac_nonce() {
 
     assert_eq!(bad_resp.status(), actix_web::http::StatusCode::UNAUTHORIZED);
     let body: serde_json::Value = test::read_body_json(bad_resp).await;
-    assert_eq!(body["code"], 2000);
+    assert_eq!(body["code"], 2008);
     assert_eq!(body["msg"], "internal auth signature mismatch");
 
     let signature = sign_internal_request(&secret_key, "GET", path, timestamp, nonce, None);
@@ -4610,7 +4610,7 @@ async fn test_remote_presigned_upload_browser_cors_keeps_headers_on_signature_mi
         Some("ETag")
     );
     let body: serde_json::Value = test::read_body_json(resp).await;
-    assert_eq!(body["code"], 2000);
+    assert_eq!(body["code"], 2008);
     assert_eq!(body["msg"], "remote presigned signature mismatch");
 }
 
