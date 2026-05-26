@@ -34,7 +34,7 @@ Important notes:
 - If mail is configured, you can request a password reset email directly from the login page
 - If you have added a passkey, you can log in directly from the login page with device unlock or a security key
 - If the administrator configured external authentication, the login page shows the corresponding external login entries
-- If your account has MFA enabled, after password or external identity login, you must also enter an authenticator code or recovery code
+- If your account has MFA enabled, after password or external identity login, you must complete second-factor verification. Common methods are authenticator codes and recovery codes; administrators can also enable email codes.
 
 ## Understand Workspaces First
 
@@ -151,6 +151,7 @@ In the current UI, the most common actions that enter `Task Center` include:
 - Online compression after selecting a batch of files or folders
 - Online extraction of an archive
 - Generating a listing the first time a ZIP archive preview opens
+- Emptying the whole trash
 
 If the site later adds other background file tasks, they will appear here in the same way.
 
@@ -178,6 +179,8 @@ In trash, you can:
 - Batch permanently delete
 
 If the original parent directory no longer exists, the item returns to the root directory during restore.
+
+Emptying the whole trash creates a background task instead of freezing the page until everything is deleted synchronously. After confirming, open the current workspace's `Task Center` and check the `Trash purge` task progress. A team-space trash purge task appears only in that team space's task center.
 
 ## Share Links
 
@@ -303,7 +306,7 @@ You can also change the login password here. Changing the password requires ente
 
 In the current version, after a password change succeeds, the current browser session stays logged in, while login sessions on other devices become invalid and must log in again.
 
-The `Multi-factor authentication` tab can add a second factor to the account. TOTP authenticator apps are currently supported, such as 1Password, Bitwarden, Google Authenticator, and Microsoft Authenticator.
+The `Multi-factor authentication` tab can add a second factor to the account. The factor users can bind themselves is a TOTP authenticator app, such as 1Password, Bitwarden, Google Authenticator, or Microsoft Authenticator.
 
 When enabling MFA, the system asks you to:
 
@@ -315,7 +318,11 @@ Recovery codes are shown in plaintext only once when generated, and each can be 
 
 After MFA is enabled, password login and external identity login both require the second factor. Passkey login itself relies on device unlock or a security key to complete user verification, so it does not enter this TOTP challenge. Disabling MFA or regenerating recovery codes also requires entering the current TOTP code or an unused recovery code to confirm.
 
-If both authenticator and recovery codes are lost, contact an administrator to reset MFA in user details.
+If the administrator enables email-code MFA and your email address is verified, the login second-factor page may also show `Email code`. After you send one, AsterDrive sends an 8-digit one-time code to your verified email address. Codes are valid for 10 minutes by default, but never longer than the remaining lifetime of the current MFA login flow; the same user cannot resend within 60 seconds by default.
+
+If you already have an authenticator enabled, whether email code can be used as a backup method depends on administrator configuration. Security-sensitive sites may disable this fallback and allow only authenticator codes or recovery codes.
+
+If the authenticator and recovery codes are both lost, and the current site has no usable email-code path, contact an administrator to reset MFA in user details.
 
 The `Passkey` tab manages passwordless login methods:
 

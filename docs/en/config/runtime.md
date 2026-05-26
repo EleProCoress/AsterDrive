@@ -16,14 +16,14 @@ Admin -> System Settings
 | Goal | Check This Group First | If It Is Still Wrong |
 | --- | --- | --- |
 | Site links, share links, or mail link domains are wrong | Site Configuration | Then check [reverse proxy](/en/deployment/reverse-proxy) |
-| Login cookie, token, or activation link TTL is unsuitable | Authentication and Cookies | Then check [login and sessions](/en/config/auth) |
+| Login cookie, token, activation link, or email-code MFA timing is unsuitable | Authentication and Cookies | Then check [login and sessions](/en/config/auth) |
 | Registration, avatars, or Gravatar behavior is unexpected | User Management | Then check [admin console](/en/guide/admin-console) |
 | Passkey, MFA, external login, or external identity binding is unexpected | Site Configuration / Admin -> External Authentication / Authentication and Cookies | Then check [login and sessions](/en/config/auth) |
 | Mail cannot be received, or links are wrong | Mail Delivery | Then check [mail](/en/config/mail) |
 | Browser blocks cross-origin API calls | Network Access | First confirm it is not a `Public Site URL` issue |
 | Background tasks, thumbnails, ZIP preview, or trash retention behaves abnormally | Runtime and Scheduling / Storage and Retention | Then check [operations CLI](/en/deployment/ops-cli) |
 | Audio/video playback links on share pages expire too quickly or too slowly | Runtime and Scheduling | Then check [sharing and public access](/en/guide/sharing) |
-| WebDAV global switch or behavior is abnormal | WebDAV | Then check [WebDAV](/en/config/webdav) |
+| WebDAV global switch, system-file blocking, or connection behavior is abnormal | WebDAV | Then check [WebDAV](/en/config/webdav) |
 | You need to see who changed what | Audit Logs | Then check [admin console](/en/guide/admin-console#audit-logs) |
 
 ## Places Administrators Change Most Often
@@ -39,12 +39,14 @@ Admin -> System Settings
 | Change the default quota for new users, then recheck actual team quotas after creating teams | `Storage and Retention -> New User Default Storage Quota` |
 | Tune cookie security requirements and Access / Refresh Token TTLs | `Authentication and Cookies` |
 | Tune activation, email-change, and password reset link TTLs | `Authentication and Cookies` |
+| Enable email-code MFA, or allow TOTP users to use email codes as fallback | `Authentication and Cookies` |
 | Tune the external login email verification mail template | `Mail Delivery -> External Login Email Verification` |
+| Tune the login email code mail template | `Mail Delivery -> Login Email Code` |
 | Configure SMTP, send test mail, or edit transactional mail templates | `Mail Delivery` |
 | Tune retention for trash, version history, team archives, and task artifacts | `Storage and Retention` |
 | Tune the online extraction staging size limit | `Storage and Retention -> Online Extraction Staging Size Limit` |
 | Tune thumbnail size limits and vips / ffmpeg / ffprobe processors | `Storage and Retention -> Media Processing` |
-| Disable WebDAV | `WebDAV -> Enable WebDAV` |
+| Disable WebDAV, or adjust blocking for system files such as `.DS_Store` and `Thumbs.db` | `WebDAV` |
 | Tune mail dispatch, background task dispatch, concurrency, retry, and periodic cleanup frequency | `Runtime and Scheduling` |
 | Tune the temporary audio/video streaming session TTL on share pages | `Runtime and Scheduling -> Share Streaming Playback Session TTL` |
 | Enable or disable audit logs | `Audit Logs` |
@@ -53,12 +55,12 @@ Admin -> System Settings
 
 - **Site Configuration** - Public site URL, title, logo, favicon, preview apps
 - **User Management** - Public registration, registration activation, avatars, Gravatar
-- **Authentication and Cookies** - Cookie security rules, token TTLs, activation/email-change/reset link TTLs
-- **Mail Delivery** - SMTP, sender, test mail, registration activation/email-change/password reset/external login email verification mail templates
+- **Authentication and Cookies** - Cookie security rules, token TTLs, activation/email-change/reset link TTLs, email-code MFA
+- **Mail Delivery** - SMTP, sender, test mail, registration activation/email-change/password reset/external login email verification/login email code mail templates
 - **Network Access** - Browser cross-site access rules (CORS)
 - **Runtime and Scheduling** - Mail queue, background tasks, task-lane concurrency, share streaming playback sessions, periodic cleanup, low-level consistency checks, follower node health checks, list limits
 - **Storage and Retention** - Trash, version history, default quotas, task artifacts, online extraction staging, ZIP archive preview, media processing
-- **WebDAV** - Global switch
+- **WebDAV** - Global switch and common system-file blocking
 - **Audit Logs** - Switch and retention time
 - **Custom Configuration**, **Other** - Advanced scenarios only
 
@@ -123,8 +125,16 @@ This group decides browser login behavior and session safety.
 - **`Password Reset Link TTL`**
 - **`Verification Email Resend Cooldown`**
 - **`Password Reset Request Cooldown`**
+- **`Require Email Code MFA`** - Requires working mail delivery. After enabling it, verified-email users without TOTP can complete second-factor verification with an 8-digit email code after password or external identity login.
+- **`Allow TOTP Email Fallback`** - Allows users who already have an authenticator to choose email code on the MFA login page. Security-sensitive sites can keep it disabled.
+- **`Email Login Code TTL`** - Default is `10` minutes; actual validity never exceeds the remaining lifetime of the current MFA login flow.
+- **`Email Login Code Resend Cooldown`** - Default is `60` seconds.
 
 For normal deployments, you usually only need to confirm cookie security requirements and link TTLs match your site policy.
+
+::: warning Email codes depend on mail security
+Email-code MFA is useful only when SMTP delivery is reliable and user email addresses are verified. Before enabling it, send a test mail under `Mail Delivery` and confirm the `Login Email Code` template matches your site's wording.
+:::
 
 ## Mail Delivery
 
@@ -134,7 +144,7 @@ This group decides whether registration activation, password reset, and email ad
 - Sender address and sender name
 - Whether to enable SMTP encryption
 - Test mail
-- Registration activation, password reset, email address change, and external login email verification mail templates
+- Registration activation, password reset, email address change, external login email verification, and login email code mail templates
 
 ::: warning Check before enabling registration
 If the site will allow registration, password recovery, or email address changes, check mail configuration and `Public Site URL` **together**. Do not configure only one of them.
@@ -283,11 +293,17 @@ If server-side `ffprobe` has been renamed, is not in PATH, or needs a custom ins
 
 ## WebDAV
 
-The most important item here is currently:
+This group controls site-wide WebDAV runtime behavior:
 
 - **`Enable WebDAV`**
+- **`Block WebDAV System Files`**
+- **`Blocked WebDAV System-File Patterns`**
 
 After disabling it, desktop clients can no longer access files through WebDAV immediately.
+
+By default, AsterDrive blocks WebDAV clients from creating common operating-system metadata files and folders, including `.DS_Store`, `._*`, `.Spotlight-V100`, `.Trashes`, `.fseventsd`, `Thumbs.db`, `desktop.ini`, `$RECYCLE.BIN`, and `System Volume Information`. These are usually written automatically by Finder, Windows Explorer, or sync tools, and most deployments do not want them scattered through the drive.
+
+The patterns match basenames, ignore case, and support simple `*` wildcards. Disable this behavior or remove a pattern only when you explicitly need to sync those system files.
 
 ::: tip Change the path prefix in the site configuration page
 If you only want to change the WebDAV path prefix or the hard WebDAV upload size limit, that is not on this page. Change `[webdav]` in [`config.toml`](/en/config/webdav) instead, then restart.
@@ -313,7 +329,8 @@ If you want to later investigate "who deleted files, who created shares, who cha
 | WOPI access token / lock / discovery cache | Applied to new WOPI sessions opened later |
 | Public registration, registration activation, mail templates | Applied to later login flows and newly sent emails |
 | External login providers | Applied to the login page and later external login flows after saving |
-| External login email verification mail template | Applied to newly sent external login verification emails |
+| External login email verification mail template, login email code mail template | Applied to newly sent matching emails |
+| Email-code MFA switch, fallback policy, TTL, and resend cooldown | Applied to later MFA login flows and newly sent email codes |
 | Cookie security, token TTLs | Applied to later login, refresh, and share password verification |
 | Avatar directory, avatar size limit | Applied to avatar uploads after the change |
 | Default quota | Only affects objects created later |
@@ -327,7 +344,7 @@ If you want to later investigate "who deleted files, who created shares, who cha
 | Mail dispatch, background tasks, periodic cleanup, follower node health check frequency | Applied to later background polling |
 | Background task lane concurrency and maximum attempts | Applied to background tasks scheduled or retried later |
 | Share streaming playback session TTL | Applied to audio/video playback sessions created later on share pages |
-| WebDAV switch, CORS | New requests respond with the new rules immediately |
+| WebDAV switch, system-file blocking rules, CORS | New requests respond with the new rules immediately |
 
 ## About "Custom Configuration"
 

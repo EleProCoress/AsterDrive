@@ -127,7 +127,8 @@ The most common flow is:
 
 1. Go directly to the trash and restore after mistaken deletion
 2. Permanently delete items that are no longer needed from the trash
-3. Administrators regularly confirm that trash retention days are reasonable
+3. If you need to empty the whole trash, confirm it and then check the `Trash purge` task progress in the current workspace's `Task Center`
+4. Administrators regularly confirm that trash retention days are reasonable
 
 ## Handle Lock Problems
 

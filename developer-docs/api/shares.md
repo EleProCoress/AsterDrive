@@ -104,6 +104,7 @@
 - `/download` 只适用于文件分享
 - `/preview-link` 只适用于文件分享；返回的 `PreviewLinkInfo.path` 最终指向根路径 `/pv/{token}/{filename}`
 - `/archive-preview` 只适用于 ZIP 文件分享；缓存未生成时返回 `202` 并排队 `archive_preview_generate` 任务
+- `/archive-preview` 和 `/files/{file_id}/archive-preview` 支持 `filename_encoding` query，取值与登录态文件接口一致：`auto`、`utf8`、`gb18030`、`cp437`、`cp850`、`shift_jis`、`big5`、`euc_kr`、`windows_1252`
 - `/stream-session` 只适用于文件分享；返回的 `ShareStreamSessionInfo.path` 最终指向 `/api/v1/s/{token}/stream/{session_token}/{filename}`
 - `/media-metadata` 只适用于文件分享；缓存未生成时返回 `202` 并排队 `media_metadata_extract` 任务
 - `/image-preview` 只适用于服务端当前支持图片预览的文件分享；返回 WebP 原始响应，带 `ETag`
@@ -166,4 +167,4 @@
 /s/:token
 ```
 
-分享归档预览和登录用户文件归档预览使用同一个 manifest 结构；区别是需要 `archive_preview_share_enabled = true`，并且公开响应使用 `Cache-Control: private, max-age=0, must-revalidate`。受密码保护的分享仍需先通过 `/verify` 写入分享 Cookie。
+分享归档预览和登录用户文件归档预览使用同一个 manifest 结构；区别是需要 `archive_preview_share_enabled = true`，并且公开响应使用 `Cache-Control: public, max-age=0, must-revalidate`。受密码保护的分享仍需先通过 `/verify` 写入分享 Cookie。

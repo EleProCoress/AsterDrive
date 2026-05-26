@@ -32,17 +32,25 @@
 - `GET /teams/{team_id}/files/{id}/archive-preview`
 - `GET /s/{token}/archive-preview`
 - `GET /s/{token}/files/{file_id}/archive-preview`
+- `GET /files/{id}/thumbnail`
+- `GET /teams/{team_id}/files/{id}/thumbnail`
+- `GET /s/{token}/thumbnail`
+- `GET /s/{token}/files/{file_id}/thumbnail`
+- `GET /files/{id}/media-metadata`
+- `GET /teams/{team_id}/files/{id}/media-metadata`
+- `GET /s/{token}/media-metadata`
+- `GET /s/{token}/files/{file_id}/media-metadata`
 - `DELETE /trash`
 - `DELETE /teams/{team_id}/trash`
 
-另外，系统内部还会创建：
+另外，系统内部还会创建或记录：
 
 - `thumbnail_generate`
 - `media_metadata_extract`
 - `storage_policy_temp_cleanup`
 - `system_runtime`
 
-这些任务通常没有创建者，API 返回的 `creator` 为 `null`，普通用户 `/tasks` 列表通常看不到；管理员可以在 `/api/v1/admin/tasks` 看全部任务。
+缩略图和媒体元数据任务虽然常由用户访问接口触发，但仍按 blob 级缓存任务处理，通常没有创建者，API 返回的 `creator` 为 `null`，普通用户 `/tasks` 列表通常看不到；管理员可以在 `/api/v1/admin/tasks` 看全部任务。
 
 `storage_policy_temp_cleanup` 只在管理员用 `DELETE /admin/policies/{id}?force=true` 强制删除存储策略，且仍有临时对象或 multipart upload 需要延后清理时创建。它会先等待预签名 URL 的安全窗口过期，再按删除前保存的策略快照清理对象。
 

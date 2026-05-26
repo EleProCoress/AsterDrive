@@ -2,7 +2,7 @@
 
 WebDAV 相关内容可以分成三块：账号、挂载入口、协议能力。
 
-当前 HTTP 协议层主要还在 `src/webdav/mod.rs`；`developer-docs/dev-plan-webdav-rewrite.md` 是尚未落地的拆分计划，不代表当前目录结构。
+当前协议层已经拆在 `src/webdav/**` 下：`mod.rs` 负责 Actix 挂载和方法分派，认证在 `auth.rs`，文件系统适配在 `fs.rs` / `file.rs` / `dir_entry.rs`，路径解析在 `path_resolver.rs`，锁系统在 `db_lock_system.rs`，DeltaV 子集在 `deltav.rs`。
 
 ## 账号接口
 
@@ -90,5 +90,6 @@ http://localhost:3000/webdav
 - Basic Auth：使用 WebDAV 专用账号，可限制到 `root_folder_id`
 - Bearer JWT：复用普通登录态，不受 `root_folder_id` 限制
 - `webdav_enabled = false` 时，WebDAV 请求会直接返回 `503`
+- `webdav_block_system_files_enabled = true` 时，WebDAV 写入 / 移动 / 复制会按 `webdav_block_system_file_patterns` 拦截系统文件名，默认包含 `.DS_Store`、`._*`、`Thumbs.db`、`desktop.ini`、`$RECYCLE.BIN` 等常见客户端垃圾文件；REST 文件夹列表不会应用这层过滤
 
 如果部署在反向代理后面，还要确认代理层允许 WebDAV 方法和相关请求头，见 [反向代理部署](../../docs/deployment/reverse-proxy.md)。

@@ -130,8 +130,10 @@
 - 团队文件的 WOPI 启动入口虽然是 `/teams/{team_id}/files/{id}/wopi/open`，但真正回调时仍然走统一的 `/api/v1/wopi/files/{id}`；团队作用域信息保存在 access token 里
 - 团队批量打包下载 ticket 只能在对应团队路由下消费，不能拿去个人 `/batch/archive-download/{token}` 复用
 - 团队 `GET /teams/{team_id}/files/upload/sessions` 和个人空间恢复接口返回相同结构，但只列出该团队作用域下当前用户发起、仍未过期且可恢复的 session
+- 团队上传初始化同样支持 `frontend_client_id`；恢复接口也支持同名 query 过滤，只列出同一前端实例创建的 session
 - 团队 `POST /teams/{team_id}/files/{id}/extract` 语义和个人空间一致：创建 `archive_extract` 任务，不会同步阻塞到解包完成
-- 团队 `POST /teams/{team_id}/batch/archive-compress` 语义和个人空间一致：创建 `archive_compress` 任务，把打包结果写回团队工作空间
+- 团队 `POST /teams/{team_id}/files/{id}/extract` 支持 `filename_encoding`，且 `target_folder_id = null` 时默认解包到源 ZIP 所在目录
+- 团队 `POST /teams/{team_id}/batch/archive-compress` 语义和个人空间一致：创建 `archive_compress` 任务，把打包结果写回团队工作空间；`target_folder_id = null` 时优先写回选中项的共同父目录，没有共同父目录时写回团队根目录
 - 团队 `GET /teams/{team_id}/files/{id}/archive-preview` 语义和个人空间一致：只支持 ZIP，只读返回 manifest；缓存未生成时创建或复用 `archive_preview_generate` 任务并返回 `202`
 
 团队文件的 `GET /teams/{team_id}/files/{id}/direct-link` 语义和个人空间一致：接口只返回 token，真正下载仍然走根路径 `/d/{token}/{filename}`。默认 inline 直链由 AsterDrive 流式返回；追加 `?download=1` 后会复用附件下载分流，命中 `presigned` 策略时返回 `302`。

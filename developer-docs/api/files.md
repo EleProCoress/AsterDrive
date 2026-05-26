@@ -48,8 +48,11 @@
 - `POST /files/upload` 可通过 query 传 `relative_path`
 - `POST /files/upload` 可通过 query 传 `declared_size`
 - `POST /files/upload/init` 可在请求体里传 `relative_path`
+- `POST /files/upload/init` 可在请求体里传 `frontend_client_id`
+- `GET /files/upload/sessions` 可通过 query 传 `frontend_client_id`，只列出同一前端实例创建的可恢复 session
 - `folder_id = null` 或不传时表示上传到根目录
 - `declared_size` 是可选的客户端声明大小；当前前端普通 multipart 直传会带上它
+- `frontend_client_id` 是前端实例 UUID，只用于断点续传列表过滤；用户 / 团队作用域仍然由登录态和路由决定
 - 服务端会按相对路径自动创建缺失目录、复用已存在目录
 - `relative_path` 中的空 segment 会被拒绝，例如 `docs//bad.txt`
 
@@ -73,7 +76,7 @@
 
 - `POST /files/upload`：普通 multipart 上传；空文件会报错，同目录同名文件不会覆盖。若命中的 S3 / Remote 策略是 `relay_stream`，这里会直接把请求体中继到对应驱动
 - `POST /files/new`：创建一个 0 字节空文件，适合“新建文本文件”这类前端动作
-- `GET /files/upload/sessions`：列出当前用户个人空间下未过期、状态为 `uploading` / `assembling` / `presigned` 的 session，按 `updated_at` 倒序返回
+- `GET /files/upload/sessions`：列出当前用户个人空间下未过期、状态为 `uploading` / `assembling` / `presigned` 的 session，按 `updated_at` 和 `upload_id` 倒序返回；传 `frontend_client_id` 时只返回同一前端实例创建的 session
 - `PUT /files/upload/{upload_id}/{chunk_number}`：上传单个分片，`chunk_number` 从 `0` 开始
 - `POST /files/upload/{upload_id}/presign-parts`：只用于 `presigned_multipart`，请求体里传 `part_numbers`
 - `GET /files/upload/{upload_id}`：查询上传进度，也是前端断点续传依赖的接口；返回会带 `status`、`received_count`、`chunks_on_disk`、`chunk_size`、`total_chunks`、`filename`
@@ -120,7 +123,7 @@
 - `GET /files/{id}/image-preview`：为图片预览返回 WebP 原始响应，不走统一 JSON 包装；成功响应带 `ETag`，支持 `If-None-Match` 命中返回 `304`
 - `GET /files/{id}/media-metadata`：读取按 blob 缓存的媒体元数据；缓存未生成时返回 `202` 和 `Retry-After`
 - `PUT /files/{id}/content`：覆盖已有文件内容，是当前编辑现有文件的核心接口
-- `POST /files/{id}/extract`：把 ZIP 等受支持归档文件解包成后台任务，结果会出现在 `/tasks`
+- `POST /files/{id}/extract`：把 ZIP 文件解包成后台任务，结果会出现在 `/tasks`
 - `PATCH /files/{id}`：改名或移动
 - `DELETE /files/{id}`：软删除到回收站
 
@@ -331,15 +334,18 @@
 ```json
 {
   "target_folder_id": 12,
-  "output_folder_name": "docs-unpacked"
+  "output_folder_name": "docs-unpacked",
+  "filename_encoding": "auto"
 }
 ```
 
 要点：
 
 - 这条接口不会同步返回解包结果，而是创建一个 `archive_extract` 后台任务
-- `target_folder_id = null` 时，按当前实现会在默认作用域下解析目标目录
+- 当前只支持 `.zip` 文件名的源文件
+- `target_folder_id = null` 时，解包结果会写到源 ZIP 所在目录；如果源 ZIP 在根目录，就写到根目录
 - `output_folder_name` 不传时，服务端会为解包结果推导输出目录名
+- `filename_encoding` 可选，默认 `auto`；支持值和 `GET /files/{id}/archive-preview` 的同名 query 参数一致，用于兼容非 UTF-8 ZIP entry name
 - 真正的解包进度、失败原因和最终输出目录信息，要去 [`后台任务 API`](./tasks.md) 里看对应 `TaskInfo`
 
 ## 锁与复制

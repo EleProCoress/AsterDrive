@@ -169,7 +169,7 @@ Passkey 相关问题通常仍归在 `bad_request`、`auth_failed` 或 `token_inv
 
 ### MFA 相关子错误
 
-MFA 相关问题通常发生在登录二次验证、启用认证器、禁用 MFA 或重新生成恢复码时：
+MFA 相关问题通常发生在登录二次验证、发送邮箱验证码、启用认证器、禁用 MFA 或重新生成恢复码时：
 
 - `auth.mfa_flow_invalid`：MFA 登录或设置流程无效，返回登录页或重新开始设置
 - `auth.mfa_flow_expired`：流程已过期，默认大约 5 分钟，重新开始即可
@@ -178,8 +178,12 @@ MFA 相关问题通常发生在登录二次验证、启用认证器、禁用 MFA
 - `auth.mfa_factor_required`：账号需要已启用的 MFA 因子，但当前状态不完整，联系管理员重置 MFA
 - `auth.mfa_factor_already_exists`：当前账号已经启用 TOTP，不能重复添加同类因子
 - `auth.mfa_recovery_code_used`：恢复码已经用过，登录后重新生成恢复码
+- `auth.mfa_email_code_required`：选择了邮箱验证码方式，但还没有先发送验证码，先点发送
+- `auth.mfa_email_code_expired`：邮箱验证码已过期，重新发送一封
 
-如果认证器和恢复码都丢了，普通用户无法自行绕过 MFA。联系管理员到 `管理 -> 用户 -> 用户详情 -> 安全操作` 重置 MFA。
+邮箱验证码 MFA 还依赖邮件投递配置和已验证邮箱。如果登录页没有邮箱验证码入口，通常是管理员没有开启、当前账号邮箱未验证，或者站点不允许 TOTP 用户用邮箱兜底。
+
+如果认证器和恢复码都丢了，且当前没有可用的邮箱验证码方式，普通用户无法自行绕过 MFA。联系管理员到 `管理 -> 用户 -> 用户详情 -> 安全操作` 重置 MFA。
 
 ### 外部认证相关问题
 
@@ -488,7 +492,7 @@ ZIP 预览错误通常会挂在 `bad_request` 或 `forbidden` 下，具体看 `e
 WebDAV 客户端通常不会显示 `error_code`，只会显示 HTTP 状态码：
 
 - `401`：鉴权失败；用 WebDAV 专用账号，不是普通登录账号
-- `403`：账号有效但没权限访问该路径
+- `403`：账号有效但没权限访问该路径；也可能是管理员开启了 WebDAV 系统文件拦截，客户端正在创建 `.DS_Store`、`Thumbs.db`、`desktop.ini` 这类系统元数据文件
 - `404`：路径不存在
 - `423`：资源被锁；对应 `resource_locked`
 - `412`：前置条件失败；对应 `precondition_failed`

@@ -53,7 +53,7 @@ bootstrap_insecure_cookies = false
 - **系统里已有用户，输入的是新账号，且管理员允许公开注册** —— 创建普通账号
 - **管理员启用了外部认证提供商** —— 登录页会出现对应的外部登录入口
 - **当前浏览器支持 Passkey** —— 登录页会显示 Passkey 登录入口，已登记 Passkey 的账号可以直接用设备解锁或安全密钥登录
-- **账号启用了 MFA** —— 密码或外部身份通过后，还需要输入认证器验证码或恢复码
+- **账号需要 MFA** —— 密码或外部身份通过后，还需要完成二次验证；可能是认证器验证码、恢复码，或管理员开启的邮箱验证码
 
 需要注意：
 
@@ -69,7 +69,7 @@ MFA 由用户自己在这里启用：
 设置 -> 安全 -> 多因素认证
 ```
 
-当前支持 TOTP 认证器应用。常见应用包括 1Password、Bitwarden、Google Authenticator、Microsoft Authenticator 等。
+当前用户自己能绑定的是 TOTP 认证器应用。常见应用包括 1Password、Bitwarden、Google Authenticator、Microsoft Authenticator 等。
 
 启用流程大致是：
 
@@ -89,6 +89,27 @@ MFA 由用户自己在这里启用：
 Passkey 登录不会进入这里描述的 MFA 挑战。它本身依赖设备解锁或安全密钥完成用户验证，和“密码/外部身份 + TOTP”是两条不同登录路径。
 
 MFA 登录验证流程默认 `5` 分钟内有效，最多允许 `5` 次尝试。验证过期或尝试次数用完后，返回登录页重新开始即可。
+
+### 邮箱验证码 MFA
+
+管理员可以在后台开启邮箱验证码 MFA：
+
+```text
+管理 -> 系统设置 -> 认证与 Cookie -> 要求邮箱验证码 MFA
+```
+
+开启后，已验证邮箱的用户在密码或外部身份通过后，可以通过 8 位邮箱验证码完成二次验证。这个功能依赖完整可用的邮件投递配置；SMTP 主机和发件人地址不能为空，SMTP 用户名和密码必须同时填写或同时留空。
+
+默认规则：
+
+- 邮箱验证码默认 `10` 分钟有效，但不会超过当前 MFA 登录流程剩余时间
+- 同一用户默认 `60` 秒内不能重复发送
+- 只开启 `要求邮箱验证码 MFA` 时，未启用 TOTP 且邮箱已验证的用户会走邮箱验证码
+- 如果还开启 `允许 TOTP 使用邮箱兜底`，已经启用认证器的用户也可以把邮箱验证码作为额外登录验证方式
+
+::: warning 谨慎开启邮箱兜底
+邮箱验证码依赖邮箱账号安全。安全要求高的部署，通常只把它用于没有认证器的已验证邮箱用户；是否允许 TOTP 用户用邮箱兜底，要按你的安全策略决定。
+:::
 
 如果用户丢失认证器和恢复码，管理员可以在这里重置：
 
@@ -162,6 +183,7 @@ Passkey 不替代本地密码。用户仍然可以继续使用密码登录；删
 - 登录页的找回密码
 - `设置 -> 安全` 里的邮箱改绑确认邮件
 - 外部认证无法直接匹配本地账号时的邮箱验证流程
+- 邮箱验证码 MFA
 
 ::: warning 先配通邮件，再开放注册
 顺序反了的话，新用户账号已经创建出来，却收不到激活邮件，只会卡在"等待激活"。
@@ -210,8 +232,12 @@ ASTER__AUTH__BOOTSTRAP_INSECURE_COOKIES=false
 - `auth_password_reset_ttl_secs` —— 密码重置链接有效期
 - `auth_contact_verification_resend_cooldown_secs` —— 验证邮件重发冷却
 - `auth_password_reset_request_cooldown_secs` —— 密码重置请求冷却
+- `auth_email_code_login_enabled` —— 是否启用邮箱验证码 MFA
+- `auth_email_code_login_allow_totp_fallback` —— 是否允许已启用 TOTP 的用户用邮箱验证码兜底
+- `auth_email_code_login_ttl_secs` —— 邮箱登录验证码有效期
+- `auth_email_code_login_resend_cooldown_secs` —— 邮箱登录验证码重发冷却
 - `auth_allow_user_registration` —— 公开注册开关
 - `auth_register_activation_enabled` —— 新注册用户是否必须先完成邮箱激活
-- 外部认证邮箱验证邮件模版 —— 在 `邮件投递` 分组里，供外部身份无法直接匹配本地账号时使用
+- 外部认证邮箱验证、登录邮箱验证码等邮件模版 —— 在 `邮件投递` 分组里维护
 
 具体说明见 [系统设置](/config/runtime)。

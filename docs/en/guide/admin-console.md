@@ -278,8 +278,9 @@ Commonly changed items include:
 - Whether browser cookies must be sent through HTTPS
 - Access / Refresh Token lifetimes
 - Expiration for registration activation, email-change, and password-reset links
+- Email-code MFA switch, TOTP fallback policy, code TTL, and resend cooldown
 - MFA encryption key is not changed here; it belongs to `[auth].mfa_secret_key` in `config.toml`
-- WebDAV switch
+- WebDAV switch, system-file blocking, and blocking rules
 - Trash retention, version count, and team archive retention
 - Default quota for new users
 - Task retention and thumbnail source file size limit
@@ -296,7 +297,7 @@ Commonly changed items include:
 
 For actual quota after creating a team space, verify it again on the `Teams` page.
 
-If you plan to enable public registration, password recovery, or email change, configure the `Mail Delivery` group first.  
+If you plan to enable public registration, password recovery, email change, or email-code MFA, configure the `Mail Delivery` group first.  
 If you plan to enable external authentication, configure `Public site URL` correctly first and copy the redirect URI from `Admin -> External Auth` to the identity provider.
 If you plan to connect online preview or online editing such as OnlyOffice, focus on:
 

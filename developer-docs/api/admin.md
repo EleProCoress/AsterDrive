@@ -279,7 +279,7 @@
 - 当前实现禁止禁用初始管理员 `id = 1`
 - 当前实现也禁止把初始管理员 `id = 1` 降级为非管理员
 - `PUT /admin/users/{id}/password` 使用 `{ "password": "new-secret" }`
-- `DELETE /admin/users/{id}/mfa` 会删除该用户全部 MFA factor、恢复码、待处理 MFA 登录 flow 和 TOTP setup flow，并递增 `session_version`、删除该用户现有 refresh session；用户需要重新登录并重新配置 MFA
+- `DELETE /admin/users/{id}/mfa` 会删除该用户全部 MFA factor、恢复码、待处理 MFA 登录 flow、邮箱验证码和 TOTP setup flow，并递增 `session_version`、删除该用户现有 refresh session；用户需要重新登录并重新配置 MFA
 - `POST /admin/users/{id}/sessions/revoke` 会让这个用户现有 JWT / Cookie 会话全部失效
 - `GET /admin/users/{id}/avatar/{size}` 只会返回“已上传头像”的二进制资源；Gravatar 应看用户详情里的 `profile.avatar.url_*`
 - `DELETE /admin/users/{id}` 是物理删除，不是软删除；当前也不允许删除管理员用户
@@ -378,11 +378,17 @@
 - 具体定义以 `/admin/config/schema` 和 `src/config/definitions.rs` 为准；下面只列一批当前高频项，不是完整清单。邮件 SMTP、邮件模板、头像上传限制、注册/找回 TTL、分页上限等键也都在 schema 里
 - `default_storage_quota`
 - `webdav_enabled`
+- `webdav_block_system_files_enabled`
+- `webdav_block_system_file_patterns`
 - `trash_retention_days`
 - `team_archive_retention_days`
 - `max_versions_per_file`
 - `auth_allow_user_registration`
 - `auth_register_activation_enabled`
+- `auth_email_code_login_enabled`
+- `auth_email_code_login_allow_totp_fallback`
+- `auth_email_code_login_ttl_secs`
+- `auth_email_code_login_resend_cooldown_secs`
 - `audit_log_enabled`
 - `audit_log_retention_days`
 - `public_site_url`
@@ -433,10 +439,14 @@
 - `media_metadata_enabled`
 - `media_metadata_max_source_bytes`
 - `media_processing_registry_json`
+- `mail_template_login_email_code_subject`
+- `mail_template_login_email_code_html`
 
 `media_processing_registry_json` 是统一媒体处理注册表，用来管理内置 `images`、内置 `lofty`、VIPS CLI、FFmpeg CLI、FFprobe CLI 的启用状态、能力用途、后缀绑定和命令路径。缩略图与媒体元数据都走这条注册表；`media_metadata_enabled` 只保留为媒体元数据总开关，单类媒体是否启用由对应处理器控制。
 
 `POST /admin/config/media_processing_registry_json/action` 支持 `test_vips_cli`、`test_ffmpeg_cli` 和 `test_ffprobe_cli`，会用当前草稿注册表或已保存注册表里的命令执行探测，适用于二进制文件改名、不在 PATH 下，或安装在自定义路径的环境。
+
+邮箱验证码 MFA 由 `auth_email_code_login_*` 四个键控制。启用 `auth_email_code_login_enabled` 前，SMTP host、发件人地址必须完整，SMTP 用户名和密码也必须成对配置；如果后续邮件关键配置被改到不可投递状态，服务端会自动把 `auth_email_code_login_enabled` 写回 `false`。邮件正文和主题使用 `mail_template_login_email_code_subject` / `mail_template_login_email_code_html`。
 
 - `wopi_access_token_ttl_secs`
 - `wopi_lock_ttl_secs`

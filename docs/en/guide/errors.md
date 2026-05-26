@@ -169,7 +169,7 @@ If the login page says the current browser does not support passkeys, the browse
 
 ### MFA-Related Suberrors
 
-MFA problems usually happen during login second-factor verification, authenticator setup, MFA disable, or recovery-code regeneration:
+MFA problems usually happen during login second-factor verification, sending email codes, authenticator setup, MFA disable, or recovery-code regeneration:
 
 - `auth.mfa_flow_invalid`: MFA login or setup flow is invalid; return to the login page or restart setup
 - `auth.mfa_flow_expired`: flow expired, about 5 minutes by default; start again
@@ -178,8 +178,12 @@ MFA problems usually happen during login second-factor verification, authenticat
 - `auth.mfa_factor_required`: account requires an enabled MFA factor but current state is incomplete; contact an administrator to reset MFA
 - `auth.mfa_factor_already_exists`: this account already has TOTP enabled; cannot add the same factor again
 - `auth.mfa_recovery_code_used`: recovery code has already been used; regenerate recovery codes after login
+- `auth.mfa_email_code_required`: email-code verification was selected, but no code has been sent yet; send one first
+- `auth.mfa_email_code_expired`: the email code has expired; send a new one
 
-If both authenticator and recovery codes are lost, regular users cannot bypass MFA themselves. Contact an administrator to reset MFA from `Admin -> Users -> User Details -> Security Actions`.
+Email-code MFA also depends on mail delivery and a verified email address. If the login page does not show an email-code option, the usual causes are that the administrator has not enabled it, the account email is not verified, or the site does not allow TOTP users to fall back to email.
+
+If both authenticator and recovery codes are lost and there is no usable email-code path, regular users cannot bypass MFA themselves. Contact an administrator to reset MFA from `Admin -> Users -> User Details -> Security Actions`.
 
 ### External Authentication Problems
 
@@ -488,7 +492,7 @@ Force-refresh the page once. If it remains, check the concrete browser console e
 WebDAV clients usually do not show `error_code`; they only show HTTP status codes:
 
 - `401`: authentication failed; use a dedicated WebDAV account, not the normal login account
-- `403`: account is valid but has no permission to access the path
+- `403`: account is valid but has no permission to access the path; it may also mean the administrator enabled WebDAV system-file blocking and the client is trying to create metadata files such as `.DS_Store`, `Thumbs.db`, or `desktop.ini`
 - `404`: path does not exist
 - `423`: resource is locked; corresponds to `resource_locked`
 - `412`: precondition failed; corresponds to `precondition_failed`

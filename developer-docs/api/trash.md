@@ -48,4 +48,4 @@
 
 ## 自动清理
 
-除了手动清空或永久删除，系统还会根据 `trash_retention_days` 每小时清理一次过期条目。
+除了手动清空或永久删除，系统还会根据 `trash_retention_days` 清理过期条目；后台周期由运行时配置 `maintenance_cleanup_interval_secs` 控制，并带有少量 jitter，避免多个维护任务同时打到数据库和存储。

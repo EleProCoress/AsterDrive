@@ -5,6 +5,110 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.2.1] - 2026-05-26
+
+### Release Highlights
+
+**AsterDrive `0.2.1` 聚焦账号安全、团队容量管理、上传恢复隔离和文档体系完善。** 本版本新增邮箱验证码 MFA 登录方式，管理员可在团队创建和编辑流程中直接配置存储配额；上传会话恢复按前端实例隔离，避免多标签页或多浏览器实例互相抢占恢复任务；同时补齐完整英文文档、现代化 VitePress 文档站主题，并同步更新 API、配置和用户文档。
+
+- **邮箱验证码 MFA 登录** — 在 TOTP 和恢复码之外新增邮箱验证码二次验证方式，支持发送冷却、有效期、TOTP fallback 策略和专用邮件模板
+- **团队存储配额管理** — 管理员创建或编辑团队时可直接设置存储配额，团队详情页展示配额与用量进度
+- **上传会话实例隔离** — 上传会话记录前端实例 ID，可恢复上传列表按浏览器实例过滤，减少多标签页恢复冲突
+- **英文文档体系与文档站改版** — 新增完整英文文档目录，VitePress 支持中英文站点、深色模式、现代化视觉变量和主题切换动画
+- **配置与邮件投递保护** — 邮箱验证码 MFA 启用前校验 SMTP 配置，邮件配置失效时自动关闭相关 MFA 能力，降低用户被锁定风险
+- **开发者文档同步** — API、运行时配置、WebDAV、认证、上传、团队、错误码和架构文档同步补齐新能力说明
+
+### Added
+
+- **邮箱验证码 MFA**
+  - 新增 `email_code` MFA challenge 方法，向用户已验证邮箱发送 8 位数字一次性验证码
+  - 新增 `POST /api/v1/auth/mfa/challenge/email-code/send` 发送邮箱验证码接口
+  - 新增邮箱验证码有效期和重发冷却运行时配置
+  - 新增是否允许已启用 TOTP 用户使用邮箱验证码 fallback 的运行时配置
+  - 新增邮箱验证码登录邮件主题与 HTML 模板
+  - 新增 `mfa_email_codes` 数据表、实体、仓库和清理 / 消费逻辑
+  - 审计日志新增邮箱验证码发送动作
+- **团队存储配额**
+  - 管理后台创建团队对话框支持设置团队存储配额
+  - 管理后台团队详情编辑流程支持修改团队存储配额
+  - 团队详情 Overview 区域新增配额数值和使用进度展示
+  - 后端管理员创建 / 更新团队 API 支持可选 `storage_quota` 字段
+- **上传会话恢复隔离**
+  - 上传会话新增 `frontend_client_id` 字段
+  - 上传初始化请求和上传会话查询支持传入前端实例 ID
+  - 前端按浏览器实例生成并持久化上传客户端 ID
+  - 上传面板新增已取消上传任务状态展示
+- **文档与文档站**
+  - 新增完整英文文档体系，覆盖配置、部署、运维、用户指南、存储和故障排查
+  - VitePress 配置新增中英文 locale、导航、描述和 Open Graph 信息
+  - 文档站新增品牌色、阴影、网格背景、深色模式变量和首页视觉优化
+  - 文档站新增导航栏、下拉菜单、搜索框、侧边栏和主题切换动画
+  - 支持基于 View Transition API 的主题切换圆形扩散动画，并兼容 `prefers-reduced-motion`
+
+### Changed
+
+- 根 crate 版本从 `0.2.0-hotfix.1` 升级到 `0.2.1`
+- 上传初始化内部参数统一封装为 `InitUploadParams`，个人空间和团队空间上传初始化共享同一参数模型
+- 上传会话恢复查询默认按当前前端实例过滤，旧客户端不传 `frontend_client_id` 时保留原有兼容行为
+- 系统配置写入改为事务化保存，联动配置和审计日志记录保持原子性
+- 配置审计日志记录实际存储的归一化值，而不是原始输入值
+- 开启邮箱验证码 MFA 时会校验 SMTP 邮件投递配置是否完整
+- 邮件投递配置被修改为不可用状态时，会自动关闭邮箱验证码 MFA 登录能力
+- 邮件模板渲染上下文新增 `{{lang}}` 变量，登录验证码邮件可输出正确 HTML 语言标签
+- 管理后台设置页改为分页加载完整配置列表，避免超过单页上限后部分配置项不可见
+- 团队配额输入和展示统一走存储配额解析工具，支持更精确地从 bytes 转换为 MB
+- 登录页 MFA challenge 面板支持 TOTP、恢复码和邮箱验证码方法切换
+- TOTP 验证码前端校验收紧为 6 位纯数字
+- 缩略图和 blob URL hook 增加当前用户命名空间隔离与竞态保护
+- README 与关于页面更新产品定位，强调自托管文件基础设施和 Docker 优先快速启动
+- 开发者 API 文档同步补齐邮箱验证码 MFA、上传实例隔离、团队配额、WebDAV 系统文件拦截和错误码说明
+- 配置文档同步补齐邮箱验证码 MFA、邮件模板、运行时配置和 WebDAV 系统文件保护配置
+
+### Fixed
+
+- 修复团队配额为 `0` 时在编辑对话框中被误判为存在未保存变更的问题
+- 修复团队配额输入在小数、负值、非数字和溢出场景下校验不一致的问题
+- 修复邮箱验证码生成和邮件发送之间的事务边界，避免哈希或入库失败后仍可能发送不可用验证码
+- 修复过期邮箱验证码仍可能被消费的问题
+- 修复管理员设置页因配置分页限制导致邮件模板等配置项不可见的问题
+- 修复前端重复定义邮件投递配置就绪判断的问题
+- 修复 blob URL 在快速切换资源时可能产生孤立 object URL 的竞态问题
+- 修复缩略图缓存未按当前用户隔离可能导致状态串扰的问题
+- 修正 README / 关于页面中的测试错误码断言说明
+
+### Security
+
+- 邮箱验证码 MFA 默认关闭，必须由管理员显式开启
+- 邮箱验证码只保存哈希值，发送新验证码会使旧的未消费验证码失效
+- 单用户同一时间只允许存在一条未消费邮箱验证码记录，通过数据库唯一索引约束
+- 邮箱验证码有效期不会超过当前 MFA 登录 flow 剩余时间
+- 邮箱验证码 MFA 启用前强制检查邮件投递配置，避免用户进入无法完成验证的登录路径
+- 邮件投递配置变为不可用时自动关闭邮箱验证码 MFA，降低配置变更导致账号锁定的风险
+- WebDAV 文档补齐系统文件拦截配置说明，明确可拦截 `.DS_Store`、`Thumbs.db` 等系统文件写入
+
+### Notes
+
+- 本版本为 `0.2.1` 功能与文档维护版本
+- 新增数据库迁移：
+  - `m20260526_000001_add_upload_session_frontend_client`
+  - `m20260526_000002_add_mfa_email_codes`
+- 新增运行时配置项：
+  - `auth_email_code_login_enabled`
+  - `auth_email_code_login_allow_totp_fallback`
+  - `auth_email_code_login_ttl_secs`
+  - `auth_email_code_login_resend_cooldown_secs`
+- 新增邮件模板配置项：
+  - `mail_template_login_email_code_subject`
+  - `mail_template_login_email_code_html`
+- API 枚举扩展：
+  - `MfaChallengeMethodType` 新增 `email_code`
+  - `MfaChallengeRequestMethod` 新增 `email_code`
+  - `ApiSubcode` 新增邮箱验证码 MFA 相关子码
+- 上传相关客户端如需启用实例隔离，应在初始化上传和查询上传会话时传入稳定的 `frontend_client_id`
+- 强类型 API 客户端建议重新生成，以同步 MFA 方法、错误子码、团队配额和上传会话字段
+- 统计数据：168 files changed, 15,701 insertions(+), 737 deletions(-)
+- 本次范围共 10 个提交
+
 ## [v0.2.0-hotfix.1] - 2026-05-25
 
 ### Release Highlights
@@ -3466,7 +3570,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 66 commits
 - Rust Edition 2024, MSRV 1.91.1
 
-[Unreleased]: https://github.com/AptS-1547/AsterDrive/compare/v0.2.0-hotfix.1...HEAD
+[Unreleased]: https://github.com/AptS-1547/AsterDrive/compare/v0.2.1...HEAD
+[v0.2.1]: https://github.com/AptS-1547/AsterDrive/compare/v0.2.0-hotfix.1...v0.2.1
 [v0.2.0-hotfix.1]: https://github.com/AptS-1547/AsterDrive/compare/v0.2.0...v0.2.0-hotfix.1
 [v0.2.0]: https://github.com/AptS-1547/AsterDrive/compare/v0.2.0-rc.1...v0.2.0
 [v0.2.0-rc.1]: https://github.com/AptS-1547/AsterDrive/compare/v0.2.0-beta.3...v0.2.0-rc.1

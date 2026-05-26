@@ -53,7 +53,7 @@ The login page is not a fixed "login" or "register" page. It follows the current
 - **Users already exist, the entered account is new, and the administrator allows public registration** - create a normal account
 - **The administrator enabled an external authentication provider** - the login page shows the corresponding external login entry
 - **The current browser supports Passkey** - the login page shows the Passkey login entry, and accounts with registered Passkeys can log in directly with device unlock or a security key
-- **The account enabled MFA** - after password or external identity succeeds, the user must also enter an authenticator code or recovery code
+- **The account needs MFA** - after password or external identity succeeds, the user must complete a second verification step. This may be an authenticator code, a recovery code, or an email code enabled by the administrator.
 
 Important details:
 
@@ -69,7 +69,7 @@ Users enable MFA themselves here:
 Settings -> Security -> Multi-Factor Authentication
 ```
 
-AsterDrive currently supports TOTP authenticator apps. Common apps include 1Password, Bitwarden, Google Authenticator, and Microsoft Authenticator.
+The factor users can bind themselves is a TOTP authenticator app. Common apps include 1Password, Bitwarden, Google Authenticator, and Microsoft Authenticator.
 
 The enablement flow is roughly:
 
@@ -89,6 +89,27 @@ After MFA is enabled, these login methods enter second-step verification:
 Passkey login does not enter the MFA challenge described here. It relies on device unlock or a security key for user verification, and is a separate login path from "password/external identity + TOTP".
 
 The MFA login verification flow is valid for `5` minutes by default and allows at most `5` attempts. If verification expires or attempts are exhausted, return to the login page and start again.
+
+### Email Code MFA
+
+Administrators can enable email-code MFA in the admin console:
+
+```text
+Admin -> System Settings -> Authentication and Cookies -> Require Email Code MFA
+```
+
+After it is enabled, users with a verified email address can complete the MFA step with an 8-digit email code after password or external identity login. This feature depends on working mail delivery: SMTP host and sender address must be set, and SMTP username and password must either both be filled or both be empty.
+
+Default rules:
+
+- Email codes are valid for `10` minutes by default, but never longer than the remaining lifetime of the current MFA login flow
+- The same user cannot resend a code within `60` seconds by default
+- With only `Require Email Code MFA` enabled, users who do not have TOTP enabled and have a verified email can use email codes
+- If `Allow TOTP Email Fallback` is also enabled, users who already have an authenticator can also use email codes as an additional login verification method
+
+::: warning Be careful with email fallback
+Email codes depend on the security of the user's mailbox. For stricter deployments, email-code MFA is usually used only for verified-email users without an authenticator. Whether TOTP users may fall back to email should follow your site's security policy.
+:::
 
 If a user loses both the authenticator and recovery codes, an administrator can reset it here:
 
@@ -162,6 +183,7 @@ These features do not work without mail:
 - Password recovery on the login page
 - Email address change confirmation email in `Settings -> Security`
 - Email verification flow when external authentication cannot directly match a local account
+- Email-code MFA
 
 ::: warning Configure mail before enabling registration
 If you do it in the wrong order, new user accounts may already be created but cannot receive activation emails, so they remain stuck at "waiting for activation".
@@ -210,8 +232,12 @@ The following settings are not in `config.toml`; they are all maintained in the 
 - `auth_password_reset_ttl_secs` - Password reset link TTL
 - `auth_contact_verification_resend_cooldown_secs` - Verification email resend cooldown
 - `auth_password_reset_request_cooldown_secs` - Password reset request cooldown
+- `auth_email_code_login_enabled` - Whether email-code MFA is enabled
+- `auth_email_code_login_allow_totp_fallback` - Whether users with TOTP enabled may use email codes as a fallback
+- `auth_email_code_login_ttl_secs` - Email login code TTL
+- `auth_email_code_login_resend_cooldown_secs` - Email login code resend cooldown
 - `auth_allow_user_registration` - Public registration switch
 - `auth_register_activation_enabled` - Whether newly registered users must complete email activation first
-- External authentication email verification mail template - In the `Mail Delivery` group, used when an external identity cannot directly match a local account
+- External authentication email verification, login email code, and related mail templates - maintained in the `Mail Delivery` group
 
 See [runtime system settings](/en/config/runtime) for details.

@@ -33,7 +33,7 @@
 | 数据怎么查怎么写 | `src/db/repository/**` | repo 层封装数据库访问和跨库兼容细节 |
 | 文件内容怎么落盘 / 上 S3 / 走远端节点 | `src/storage/**` | 驱动抽象、具体驱动和远端协议都在这里 |
 | WebDAV 为什么和 REST 不一样 | `src/webdav/**` | 这是单独的协议接入层 |
-| 团队空间为什么复用个人空间语义 | `src/services/workspace_scope_service.rs`、`src/services/workspace_storage_service/`、`src/services/folder_service/`、`src/services/file_service/` | scope 切换和统一存储链路都在这里 |
+| 团队空间为什么复用个人空间语义 | `src/services/workspace_scope_service.rs`、`src/services/workspace_storage_service/`、`src/services/workspace_storage_core.rs`、`src/services/workspace_storage_core/`、`src/services/folder_service/`、`src/services/file_service/` | scope 切换、上传编排和统一存储核心链路都在这里 |
 | 表结构怎么演进 | `migration/`、`src/entities/**` | migration 和 entity 必须一起看 |
 
 追一个具体功能时，最省时间的路径通常是：
@@ -263,7 +263,7 @@ primary 后台工作由 `src/runtime/tasks.rs` 注册，分成一个常驻 worke
   - `lock-cleanup`
   - `auth-session-cleanup`
   - `external-auth-flow-cleanup`
-  - `mfa-flow-cleanup`
+  - `mfa-flow-cleanup`（MFA 登录 flow、TOTP setup flow 和邮箱验证码）
   - `audit-cleanup`
   - `task-cleanup`
   - `wopi-session-cleanup`
@@ -310,12 +310,15 @@ primary 后台工作由 `src/runtime/tasks.rs` 注册，分成一个常驻 worke
 单一数据源在 `src/config/definitions.rs`，常见键包括：
 
 - `webdav_enabled`
+- `webdav_block_system_files_enabled`
+- `webdav_block_system_file_patterns`
 - `default_storage_quota`
 - `trash_retention_days`
 - `team_archive_retention_days`
 - `max_versions_per_file`
 - `auth_cookie_secure`
 - `auth_*_ttl_secs`
+- `auth_email_code_login_*`
 - `public_site_url`
 - `cors_*`
 - `mail_outbox_dispatch_interval_secs`

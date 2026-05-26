@@ -10,6 +10,8 @@ Features that depend on mail:
 - Email activation after public registration
 - Password recovery on the login page
 - Email address changes in `Settings -> Security`
+- Email verification when external authentication cannot directly match a local account
+- Email-code MFA during login second-factor verification
 - Test emails sent by administrators
 
 Entry point:
@@ -25,6 +27,7 @@ Admin -> System Settings -> Mail Delivery
 3. Fill in sender address and sender name
 4. **Send a test email to yourself first**
 5. Then test registration activation, password reset, and email address changes
+6. If you will enable external-auth email verification or email-code MFA, run each real flow once too
 
 ::: warning The cost of doing this in the wrong order
 If you enable public registration first and configure mail later, a batch of user accounts may already have been created but cannot receive activation emails. They will all be stuck at "waiting for activation".
@@ -67,13 +70,15 @@ After the test passes, do two more things:
 
 ## What Can Mail Templates Change?
 
-AsterDrive currently has 5 built-in template groups:
+AsterDrive currently has 7 built-in template groups:
 
 - Registration activation
 - Email address change confirmation
 - Password reset
 - Password reset result notification
 - Old email address change notification
+- External login email verification
+- Login email code
 
 Each group can change:
 
@@ -113,6 +118,8 @@ Do not include a path. Do not include `/api`. Enter only the origin, such as `ht
 | New users can register but do not receive activation emails | SMTP cannot connect, or the recipient side rejects the email |
 | The forgot-password button works, but no reset link appears in the mailbox | Same as above, or `Public Site URL` is missing |
 | Users can start an email address change, but the new mailbox does not receive confirmation | Same as above |
+| External login reaches email verification but no mail arrives | SMTP is not working, or the external login email verification template / public site URL is wrong |
+| The MFA page can send an email code but no mail arrives | SMTP is not working, or the login email code template is broken |
 | Test email fails | SMTP configuration is wrong, or outbound network access is blocked |
 
 Troubleshooting checklist:

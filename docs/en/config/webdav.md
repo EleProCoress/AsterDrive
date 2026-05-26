@@ -3,7 +3,7 @@
 ::: tip This page has two layers
 
 - **`[webdav]` in `config.toml`** - Path prefix and hard upload size limit. **Requires a restart after changes.**
-- **`Admin -> System Settings -> WebDAV`** - The global switch. Disabling it takes effect immediately without a restart.
+- **`Admin -> System Settings -> WebDAV`** - The global switch and system-file blocking rules. Saved changes affect new requests immediately without a restart.
 
 Regular WebDAV users usually only need to create a dedicated account on the `WebDAV` page in the left sidebar of their personal space, then enter the address in Finder, Windows, or rclone.
 :::
@@ -25,9 +25,37 @@ payload_limit = 10737418240
 Unlike the runtime global switch, static configuration is read only once during startup.
 :::
 
-## Runtime Switch in the Admin Console
+## Runtime Settings in the Admin Console
 
-`Admin -> System Settings -> WebDAV -> Enable WebDAV`. After it is disabled, desktop clients disconnect immediately. **No restart is required.**
+Entry point:
+
+```text
+Admin -> System Settings -> WebDAV
+```
+
+There are three settings:
+
+- **Enable WebDAV**: the global switch. After it is disabled, desktop clients can no longer access files. **No restart is required.**
+- **Block WebDAV System Files**: enabled by default. Blocks operating-system metadata files automatically created by Finder, Windows Explorer, and sync tools.
+- **Blocked WebDAV System-File Patterns**: matches file or directory basenames, ignores case, and supports simple `*` wildcards.
+
+The default blocked names are:
+
+- `.DS_Store`
+- `._*`
+- `.Spotlight-V100`
+- `.Trashes`
+- `.fseventsd`
+- `Thumbs.db`
+- `desktop.ini`
+- `$RECYCLE.BIN`
+- `System Volume Information`
+
+These files are usually not content users intentionally want to keep. When blocking is enabled, clients receive `403` if they try to create them through WebDAV. Normal file uploads are unaffected.
+
+::: tip When to change the rules
+Most sites should keep the defaults. Change them only if you explicitly want to back up these system metadata files, or if a client repeatedly fails because of a blocked pattern and that affects normal sync behavior.
+:::
 
 ## Standard Usage for Regular Users
 
