@@ -1,6 +1,6 @@
 # Admin Console
 
-This page covers the daily actions administrators can perform in the admin console: user and team management, storage policies and policy groups, follower-node enrollment, background tasks, manual intervention for shares and locks, system settings, audit logs, and version information.  
+This page covers the daily actions administrators can perform in the admin console: user and team management, storage policies and policy groups, follower-node enrollment, file and blob observability, background tasks, manual intervention for shares and locks, system settings, audit logs, and version information.  
 Jump to the section for what you need to do; you do not have to read it all.
 
 The first successfully created account automatically becomes an administrator.  
@@ -19,6 +19,7 @@ After logging in, administrators can enter `Admin` from the user menu in the top
 | A user lost authenticator and recovery codes | `Admin -> Users -> User Details` | This page: [Users](#users) |
 | Route different users or teams to different storage paths | `Admin -> Policy Groups` | [Storage Policies](/en/config/storage#how-to-understand-policy-groups) |
 | Inspect share links or stop abnormal shares | `Admin -> Shares` | This page: [Shares](#shares) |
+| Inspect file records, blob locations, and version references | `Admin -> Files` / `Admin -> File Blob` | This page: [Files and File Blobs](#files-and-file-blobs) |
 | See why background tasks failed | `Admin -> Tasks` | This page: [Tasks](#tasks) |
 | Clean abnormal WebDAV / WOPI locks | `Admin -> Locks` | This page: [Locks](#locks) |
 | Change registration, mail, public site URL, WOPI, trash | `Admin -> System Settings` | [System Settings](/en/config/runtime) |
@@ -48,6 +49,8 @@ The current left-side admin menu includes:
 - External Auth
 - Policy Groups
 - Shares
+- Files
+- File Blob
 - Tasks
 - Locks
 - System Settings
@@ -133,8 +136,9 @@ Here you can:
 - Control the single-file size limit
 - Control chunk size
 - Choose `relay_stream` or `presigned` for S3
+- Create a storage policy data migration task that copies existing objects from a source policy to a target policy
 
-For policies already used by files, do not directly modify options that decide the real storage location, such as `base_path`, `bucket`, `endpoint`, or the bound follower node. To move locations, migrate old data first, then switch to the new policy.
+For policies already used by files, do not directly modify options that decide the real storage location, such as `base_path`, `bucket`, `endpoint`, or the bound follower node. To move locations, create the target policy first, use `Migrate Data` in the page to run preflight checks and create a background migration task, then switch policy groups after completion is confirmed.
 
 ## Follower Nodes
 
@@ -215,6 +219,33 @@ Common uses:
 
 Administrators can delete any share directly here.
 
+## Files and File Blobs
+
+`Files` and `File Blob` are observability pages for administrators who need to troubleshoot storage. They are not a regular file manager.
+
+The `Files` page shows file records. You can filter and inspect:
+
+- file name, size, MIME type, and deletion state
+- owner user, owning team, current policy, and current blob
+- the current blob hash, storage path, and policy location
+- version references for that file
+
+The `File Blob` page shows underlying objects. You can filter and inspect:
+
+- blob hash, size, policy ID, and storage path
+- reference count
+- which current files reference this blob
+- which historical versions reference this blob
+
+These pages are useful when you need to answer questions such as:
+
+- which policy a file currently lands on
+- whether file records point to the target policy after storage migration
+- whether a blob is still referenced by current files or historical versions
+- which file, blob, and policy to inspect after `doctor --deep` or logs report storage inconsistency
+
+They do not replace backups, migration, or repair tools. If you see an anomaly, first confirm the symptom and backup state, then decide whether to continue with the CLI or a background migration task.
+
 ## Tasks
 
 The `Tasks` page lists recorded background tasks in the system, including system periodic tasks, personal workspace tasks, and team tasks.
@@ -222,8 +253,10 @@ The `Tasks` page lists recorded background tasks in the system, including system
 You will see:
 
 - Task name, type, source, and status
-- Current progress, recent activity time, and error summary
+- current progress, recent activity time, and error summary in the summary row
+- expanded step details, elapsed time, checkpoints, and retry information
 - Online compression, online extraction, package download, and system runtime task records
+- storage policy data migration task records
 - Thumbnail generation task records
 - Archive preview generation task records
 
@@ -235,6 +268,8 @@ This page is best for:
 - Conditionally cleaning finished historical task records
 
 Cleaning historical tasks only handles completed, failed, or canceled records. Queued, processing, and retrying tasks are not deleted.
+
+For storage policy data migration tasks, the expanded details are usually more important. Start with the summary row to see whether the task failed, then expand it to check whether it stopped during preflight, copy, verification, or commit.
 
 ## Locks
 

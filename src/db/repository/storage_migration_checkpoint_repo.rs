@@ -2,7 +2,7 @@
 
 use chrono::Utc;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, ExprTrait, QueryFilter,
+    ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, EntityTrait, ExprTrait, QueryFilter,
     RelationTrait, Set, sea_query::Expr,
 };
 
@@ -169,7 +169,7 @@ pub async fn set_stage<C: ConnectionTrait>(
     get_by_task_id(db, task_id).await
 }
 
-pub async fn has_active_for_pair<C: ConnectionTrait>(
+pub async fn has_active_conflict<C: ConnectionTrait>(
     db: &C,
     source_policy_id: i64,
     target_policy_id: i64,
@@ -183,8 +183,16 @@ pub async fn has_active_for_pair<C: ConnectionTrait>(
             sea_orm::JoinType::InnerJoin,
             storage_migration_checkpoint::Relation::BackgroundTask.def(),
         )
-        .filter(storage_migration_checkpoint::Column::SourcePolicyId.eq(source_policy_id))
-        .filter(storage_migration_checkpoint::Column::TargetPolicyId.eq(target_policy_id))
+        .filter(
+            Condition::any()
+                // A policy that is the source of a new migration must not be
+                // participating in any active migration.
+                .add(storage_migration_checkpoint::Column::SourcePolicyId.eq(source_policy_id))
+                .add(storage_migration_checkpoint::Column::TargetPolicyId.eq(source_policy_id))
+                // A policy that is the target of a new migration may accept
+                // multiple inbound migrations, but cannot already be migrating out.
+                .add(storage_migration_checkpoint::Column::SourcePolicyId.eq(target_policy_id)),
+        )
         .filter(background_task::Column::Status.is_in([
             BackgroundTaskStatus::Pending,
             BackgroundTaskStatus::Processing,

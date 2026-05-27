@@ -138,6 +138,7 @@ The password is shown only once after successful creation. Save it to a password
 - `Admin -> Teams`
 - `Admin -> Storage Policies`
 - `Admin -> Policy Groups`
+- `Admin -> Files` and `Admin -> File Blob`
 - `Admin -> Tasks`
 - `Admin -> System Settings`
 - After returning to your personal space, left-side `WebDAV`
@@ -156,6 +157,7 @@ Focus on confirming:
 - Trash retention days, version count, and team archive retention days match expectations
 - Whether WebDAV should stay enabled
 - Whether files should continue landing locally, or move to S3 / MinIO / follower nodes; if using follower nodes, whether the follower already has a default ingress target
+- If you plan to migrate existing files to a new policy, run `Admin -> Storage Policies -> Migrate Data` and check the plan first, then watch progress under `Admin -> Tasks`; use `Admin -> Files` and `Admin -> File Blob` to spot-check results when needed
 - Whether the Gravatar avatar URL is reachable from the current network
 
 ## 7. Validate Before Production Launch

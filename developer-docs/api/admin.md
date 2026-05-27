@@ -14,6 +14,8 @@
 - `/admin/teams/{id}/members`
 - `/admin/shares`
 - `/admin/tasks`
+- `/admin/files`
+- `/admin/file-blobs`
 - `/admin/config`
 - `/admin/locks`
 - `/admin/audit-logs`
@@ -68,6 +70,35 @@
 - 当前 `PATCH` 不能修改 `driver_type`
 - `GET /admin/policies` 支持 `limit`、`offset`、`sort_by`、`sort_order`
 - `DELETE /admin/policies/{id}` 支持 `?force=true`；这只会强制清理仍引用该策略的上传 session，仍有 blob 或策略组项引用时照样拒绝删除。若清理后还有临时对象或 multipart upload 需要延后处理，会创建 `storage_policy_temp_cleanup` 后台任务
+
+## 存储迁移
+
+管理员可以通过这组接口创建和恢复跨存储策略的 blob 迁移任务。
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| `POST` | `/admin/storage-migrations` | 创建存储策略迁移任务 |
+| `POST` | `/admin/storage-migrations/dry-run` | 预检查迁移计划，不创建任务 |
+| `POST` | `/admin/storage-migrations/{task_id}/resume` | 继续执行已有迁移任务 |
+
+创建请求体：
+
+```json
+{
+  "source_policy_id": 1,
+  "target_policy_id": 2,
+  "delete_source_after_success": false
+}
+```
+
+当前实现注意点：
+
+- `source_policy_id` 和 `target_policy_id` 都必须大于 0，而且不能相同
+- `delete_source_after_success` 目前只保留在请求体里，第一版实现会直接拒绝 `true`
+- `dry-run` 会检查目标策略是否支持 stream upload，并尝试对目标存储做一次写删探测
+- 任务本身会落到 `BackgroundTaskKind::StoragePolicyMigration`
+- 这类任务有独立 checkpoint，恢复入口只接受该 kind
+- 迁移任务完成后，结果里会包含扫描、迁移、合并、跳过、失败和迁移字节数
 
 ## 远端节点
 
@@ -150,6 +181,24 @@
 - `auto_link_verified_email_enabled` 允许用已验证邮箱自动绑定已有本地用户
 - `require_email_verified` 打开后，未验证邮箱的外部身份需要走 `/auth/external-auth/email-verification/*`
 - 创建、更新、删除和测试都会写管理员审计日志
+
+## 文件与 Blob 可观测
+
+这组接口是管理员侧的只读观测入口，不是业务 API。
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| `GET` | `/admin/files` | 查看文件记录、所属 blob 和版本摘要 |
+| `GET` | `/admin/files/{id}` | 查看单个文件和该文件的版本摘要 |
+| `GET` | `/admin/file-blobs` | 查看 blob 记录、hash 类型和引用计数 |
+| `GET` | `/admin/file-blobs/{id}` | 查看单个 blob 的文件与版本引用 |
+
+当前实现注意点：
+
+- `GET /admin/files` 支持 `name`、`blob_id`、`policy_id`、`owner_user_id`、`team_id`、`deleted`、`limit`、`offset`、`sort_by`、`sort_order`
+- `GET /admin/file-blobs` 支持 `hash`、`policy_id`、`storage_path`、`ref_count_min`、`ref_count_max`、`size_min`、`size_max`、`limit`、`offset`、`sort_by`、`sort_order`
+- `hash_kind` 只是观测派生字段：64 位十六进制 SHA-256 记为 `content_sha256`，其他值记为 `opaque`
+- 这两组接口都走只读查询，不会触发写入
 
 ## 策略组
 
@@ -361,6 +410,17 @@
 - `status` 只能清理终态值：`succeeded`、`failed`、`canceled`
 - 清理接口只删除终态任务，响应返回 `{ "removed": 3 }`
 
+`GET /admin/tasks` 现在能看到两类记录：
+
+- 用户后台任务，例如归档、缩略图、媒体元数据、回收站清空
+- 系统运行时留痕任务，例如 `mail-outbox-dispatch`、`background-task-dispatch`、`upload-cleanup`、`completed-upload-cleanup`、`blob-reconcile`、`system-health-check`、`trash-cleanup`、`team-archive-cleanup`、`lock-cleanup`、`auth-session-cleanup`、`external-auth-flow-cleanup`、`mfa-flow-cleanup`、`audit-cleanup`、`task-cleanup`、`wopi-session-cleanup`
+
+系统运行时任务有几个特殊点：
+
+- `kind = system_runtime`
+- 空轮询不会写表
+- `system-health-check` 健康成功时会刷新最近一条成功记录，而不是每次新增一行
+
 ## 系统运行时配置
 
 | 方法 | 路径 | 说明 |
@@ -410,6 +470,7 @@
 - `task_list_max_limit`
 - `background_task_archive_max_concurrency`
 - `background_task_thumbnail_max_concurrency`
+- `background_task_storage_migration_max_concurrency`
 - `share_download_rollback_queue_capacity`
 - `share_stream_session_ttl_secs`
 - `archive_extract_max_source_bytes`

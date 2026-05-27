@@ -35,6 +35,8 @@ Typical admin-console workflow:
 2. Create policy group rules
 3. Bind users or teams to the target policy group
 
+If you are migrating existing data, do not directly change the old policy path, bucket, endpoint, or follower node to the new location. Create the target policy first, use `Admin -> Storage Policies -> Migrate Data` to create a migration task, and only then adjust policy groups.
+
 ## Common Storage Policy Options
 
 | Item | Purpose |
@@ -218,9 +220,44 @@ Old files are read from their original locations. Changing the location directly
 A safer approach:
 
 1. Create a new policy
-2. Migrate old data
-3. Switch users or teams to the policy group containing the new policy
+2. Select the source and target policies under `Admin -> Storage Policies -> Migrate Data`
+3. Click `Check Plan` first, and confirm target probing, stream-upload capability, and capacity checks do not have blocking issues
+4. Create the migration task and confirm completion under `Admin -> Tasks`
+5. Switch users or teams to the policy group containing the new policy
 
+:::
+
+## Migrating Existing Policy Data
+
+`Migrate Data` creates a background task that copies existing blobs from the source policy to the target policy, and updates file records and version references during migration.
+
+This is suitable when you need to:
+
+- move from local disk to S3 / MinIO
+- move from one S3 policy to another S3 policy
+- move from local or S3 storage to a follower-node policy
+- change the real storage location without directly editing the old policy
+
+Before the task is created, the page runs `Check Plan`:
+
+- count source-policy objects and total size
+- probe whether the target policy can be written
+- check whether the target supports stream upload required for migration
+- try to verify target free capacity
+- estimate how many objects already exist on the target and can be reused
+
+If the capacity check is unavailable, it does not always mean migration is impossible. It means the current driver cannot reliably report free space. Before creating the real task, confirm target capacity yourself.
+
+After the task is created, check progress under `Admin -> Tasks`. The task row shows a summary first; expand it to see detailed phases, checkpoints, and errors. For large migrations, reserve a maintenance window and avoid writing many new files to the source policy while migration is running.
+
+After migration completes:
+
+1. Spot-check file records under `Admin -> Files` and confirm they point to the target policy.
+2. Spot-check blob references under `Admin -> File Blob` and confirm target-policy blobs look as expected.
+3. Switch relevant users or teams to policy group rules that use the new policy.
+
+::: warning Migration is not backup
+Migration tasks move file objects and references known to AsterDrive. They do not replace database, configuration, or object-storage backups. For production migrations, read [Backup and Restore](/en/deployment/backup) first.
 :::
 
 ## Daily Maintenance

@@ -87,7 +87,7 @@ pub(crate) async fn create_storage_policy_migration_task(
         let second_policy_id = input.source_policy_id.max(input.target_policy_id);
         policy_repo::lock_by_id(txn, first_policy_id).await?;
         policy_repo::lock_by_id(txn, second_policy_id).await?;
-        if storage_migration_checkpoint_repo::has_active_for_pair(
+        if storage_migration_checkpoint_repo::has_active_conflict(
             txn,
             input.source_policy_id,
             input.target_policy_id,
@@ -95,7 +95,7 @@ pub(crate) async fn create_storage_policy_migration_task(
         .await?
         {
             return Err(AsterError::validation_error(
-                "an active storage policy migration already exists for this source and target",
+                "a conflicting active storage policy migration already exists",
             ));
         }
 
@@ -237,7 +237,7 @@ async fn ensure_no_active_storage_policy_migration<C: sea_orm::ConnectionTrait>(
     db: &C,
     input: CreateStoragePolicyMigrationInput,
 ) -> Result<()> {
-    if storage_migration_checkpoint_repo::has_active_for_pair(
+    if storage_migration_checkpoint_repo::has_active_conflict(
         db,
         input.source_policy_id,
         input.target_policy_id,
@@ -245,7 +245,7 @@ async fn ensure_no_active_storage_policy_migration<C: sea_orm::ConnectionTrait>(
     .await?
     {
         return Err(AsterError::validation_error(
-            "an active storage policy migration already exists for this source and target",
+            "a conflicting active storage policy migration already exists",
         ));
     }
     Ok(())

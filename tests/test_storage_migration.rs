@@ -331,6 +331,28 @@ async fn create_migration_task_via_api(
     target_policy_id: i64,
     delete_source_after_success: bool,
 ) -> Value {
+    let (_, body) = create_migration_task_via_api_with_status(
+        app,
+        token,
+        source_policy_id,
+        target_policy_id,
+        delete_source_after_success,
+    )
+    .await;
+    body
+}
+
+async fn create_migration_task_via_api_with_status(
+    app: &impl actix_web::dev::Service<
+        actix_http::Request,
+        Response = actix_web::dev::ServiceResponse,
+        Error = actix_web::Error,
+    >,
+    token: &str,
+    source_policy_id: i64,
+    target_policy_id: i64,
+    delete_source_after_success: bool,
+) -> (actix_web::http::StatusCode, Value) {
     let req = test::TestRequest::post()
         .uri("/api/v1/admin/storage-migrations")
         .insert_header(("Cookie", common::access_cookie_header(token)))
@@ -342,7 +364,9 @@ async fn create_migration_task_via_api(
         }))
         .to_request();
     let resp = test::call_service(app, req).await;
-    test::read_body_json(resp).await
+    let status = resp.status();
+    let body = test::read_body_json(resp).await;
+    (status, body)
 }
 
 async fn dry_run_migration_via_api(
@@ -368,6 +392,40 @@ async fn dry_run_migration_via_api(
     let status = resp.status();
     let body = test::read_body_json(resp).await;
     (status, body)
+}
+
+fn assert_conflicting_storage_migration_response(
+    status: actix_web::http::StatusCode,
+    body: &Value,
+) {
+    assert_eq!(status, actix_web::http::StatusCode::BAD_REQUEST);
+    assert_ne!(body["code"], 0);
+    assert!(
+        body["msg"]
+            .as_str()
+            .expect("error message should exist")
+            .contains("conflicting active storage policy migration")
+    );
+}
+
+async fn set_background_task_status(
+    state: &PrimaryAppState,
+    task_id: i64,
+    status: BackgroundTaskStatus,
+) {
+    let mut task_update: aster_drive::entities::background_task::ActiveModel =
+        background_task_repo::find_by_id(state.writer_db(), task_id)
+            .await
+            .expect("task should exist")
+            .into();
+    task_update.status = Set(status);
+    if status.is_terminal() {
+        task_update.finished_at = Set(Some(Utc::now()));
+    }
+    task_update
+        .update(state.writer_db())
+        .await
+        .expect("task status should update");
 }
 
 #[actix_web::test]
@@ -1136,12 +1194,151 @@ async fn test_storage_migration_rejects_duplicate_active_pair() {
 
     let first = create_migration_task_via_api(&app, &token, source.id, target.id, false).await;
     assert_eq!(first["code"], 0);
-    let second = create_migration_task_via_api(&app, &token, source.id, target.id, false).await;
-    assert_ne!(second["code"], 0);
-    assert!(
-        second["msg"]
-            .as_str()
-            .expect("error message should exist")
-            .contains("active storage policy migration")
-    );
+    let (status, second) =
+        create_migration_task_via_api_with_status(&app, &token, source.id, target.id, false).await;
+    assert_conflicting_storage_migration_response(status, &second);
+}
+
+#[actix_web::test]
+async fn test_storage_migration_active_conflict_matrix() {
+    let state = common::setup().await;
+    let app = create_test_app!(state.clone());
+    let (token, _) = register_and_login!(app);
+
+    let source_out = create_local_policy(&state, "source-out").await;
+    let target_in = create_local_policy(&state, "target-in").await;
+    let other_for_out = create_local_policy(&state, "other-for-out").await;
+    let first =
+        create_migration_task_via_api(&app, &token, source_out.id, target_in.id, false).await;
+    assert_eq!(first["code"], 0);
+
+    let (status, source_with_outgoing) = create_migration_task_via_api_with_status(
+        &app,
+        &token,
+        source_out.id,
+        other_for_out.id,
+        false,
+    )
+    .await;
+    assert_conflicting_storage_migration_response(status, &source_with_outgoing);
+
+    let (status, source_with_incoming) = create_migration_task_via_api_with_status(
+        &app,
+        &token,
+        target_in.id,
+        other_for_out.id,
+        false,
+    )
+    .await;
+    assert_conflicting_storage_migration_response(status, &source_with_incoming);
+
+    let (status, target_with_outgoing) = create_migration_task_via_api_with_status(
+        &app,
+        &token,
+        other_for_out.id,
+        source_out.id,
+        false,
+    )
+    .await;
+    assert_conflicting_storage_migration_response(status, &target_with_outgoing);
+
+    let allowed_second_source = create_local_policy(&state, "allowed-second-source").await;
+    let target_with_incoming =
+        create_migration_task_via_api(&app, &token, allowed_second_source.id, target_in.id, false)
+            .await;
+    assert_eq!(target_with_incoming["code"], 0);
+
+    let (status, reverse) =
+        create_migration_task_via_api_with_status(&app, &token, target_in.id, source_out.id, false)
+            .await;
+    assert_conflicting_storage_migration_response(status, &reverse);
+}
+
+#[actix_web::test]
+async fn test_storage_migration_dry_run_uses_active_conflict_rules() {
+    let state = common::setup().await;
+    let app = create_test_app!(state.clone());
+    let (token, _) = register_and_login!(app);
+    let source = create_local_policy(&state, "source-dry-conflict").await;
+    let target = create_local_policy(&state, "target-dry-conflict").await;
+    let other = create_local_policy(&state, "other-dry-conflict").await;
+
+    let first = create_migration_task_via_api(&app, &token, source.id, target.id, false).await;
+    assert_eq!(first["code"], 0);
+
+    let (blocked_status, blocked_body) =
+        dry_run_migration_via_api(&app, &token, target.id, other.id).await;
+    assert_conflicting_storage_migration_response(blocked_status, &blocked_body);
+
+    let allowed_source = create_local_policy(&state, "allowed-dry-source").await;
+    let (allowed_status, allowed_body) =
+        dry_run_migration_via_api(&app, &token, allowed_source.id, target.id).await;
+    assert_eq!(allowed_status, actix_web::http::StatusCode::OK);
+    assert_eq!(allowed_body["code"], 0);
+}
+
+#[actix_web::test]
+async fn test_storage_migration_terminal_tasks_do_not_block_new_migrations() {
+    for status in [
+        BackgroundTaskStatus::Succeeded,
+        BackgroundTaskStatus::Failed,
+        BackgroundTaskStatus::Canceled,
+    ] {
+        let state = common::setup().await;
+        let app = create_test_app!(state.clone());
+        let (token, _) = register_and_login!(app);
+        let source =
+            create_local_policy(&state, &format!("terminal-source-{}", status.as_str())).await;
+        let target =
+            create_local_policy(&state, &format!("terminal-target-{}", status.as_str())).await;
+        let new_target =
+            create_local_policy(&state, &format!("terminal-new-target-{}", status.as_str())).await;
+
+        let first = create_migration_task_via_api(&app, &token, source.id, target.id, false).await;
+        assert_eq!(first["code"], 0);
+        let task_id = first["data"]["id"].as_i64().expect("task id should exist");
+        set_background_task_status(&state, task_id, status).await;
+
+        let second =
+            create_migration_task_via_api(&app, &token, source.id, new_target.id, false).await;
+        assert_eq!(second["code"], 0);
+    }
+}
+
+#[actix_web::test]
+async fn test_storage_migration_active_statuses_block_new_migrations() {
+    for status in [
+        BackgroundTaskStatus::Pending,
+        BackgroundTaskStatus::Processing,
+        BackgroundTaskStatus::Retry,
+    ] {
+        let state = common::setup().await;
+        let app = create_test_app!(state.clone());
+        let (token, _) = register_and_login!(app);
+        let source =
+            create_local_policy(&state, &format!("active-source-{}", status.as_str())).await;
+        let target =
+            create_local_policy(&state, &format!("active-target-{}", status.as_str())).await;
+        let new_target =
+            create_local_policy(&state, &format!("active-new-target-{}", status.as_str())).await;
+
+        let first = create_migration_task_via_api(&app, &token, source.id, target.id, false).await;
+        assert_eq!(first["code"], 0);
+        let task_id = first["data"]["id"].as_i64().expect("task id should exist");
+        set_background_task_status(&state, task_id, status).await;
+
+        let (create_status, create_body) = create_migration_task_via_api_with_status(
+            &app,
+            &token,
+            source.id,
+            new_target.id,
+            false,
+        )
+        .await;
+        assert_conflicting_storage_migration_response(create_status, &create_body);
+
+        let (dry_run_status, dry_run_body) =
+            dry_run_migration_via_api(&app, &token, target.id, new_target.id).await;
+        assert_conflicting_storage_migration_response(dry_run_status, &dry_run_body);
+    }
 }

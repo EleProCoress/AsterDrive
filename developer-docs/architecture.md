@@ -170,7 +170,7 @@ WebDAV 不走 `src/api/routes/**`，而是：
 | `src/api/routes/auth/mod.rs` | 认证、会话、偏好、头像、SSE |
 | `src/api/routes/files/` | 文件读写、上传、缩略图、版本、WOPI 启动 |
 | `src/api/routes/folders.rs` | 文件夹接口和团队空间聚合入口；团队 `files` 路由挂在这里 |
-| `src/api/routes/admin/` | 管理后台接口，包括策略、远端节点、用户、团队、分享审计、后台任务、配置、锁、审计 |
+| `src/api/routes/admin/` | 管理后台接口，包括策略、远端节点、用户、团队、分享审计、后台任务、存储迁移、文件 / Blob 可观测、配置、锁、审计 |
 | `src/api/routes/share_public.rs` | 公开分享页 API、`/d` 直链、`/pv` 预览直链 |
 | `src/api/routes/internal_storage.rs` | follower 内部对象存储协议 |
 | `src/services/` | 业务规则集中层 |
@@ -244,7 +244,7 @@ Prometheus 指标不在 `main.rs` 直接初始化，而是在 `prepare_common()`
 - `/api/v1/internal/storage/*`
 - `/health*`
 
-`spawn_follower_background_tasks(metrics)` 当前只启动通过 `MetricsRecorder` 注入的通用后台任务，不会启动 primary 的业务清理任务。
+`spawn_follower_background_tasks(metrics)` 当前只启动通过 `MetricsRecorder` 注入的通用后台任务，不会启动 primary 的业务清理任务，也不会启动 `background-task-dispatch`。
 
 ## 后台任务
 
@@ -269,6 +269,15 @@ primary 后台工作由 `src/runtime/tasks.rs` 注册，分成一个常驻 worke
   - `wopi-session-cleanup`
 
 周期任务按运行时配置里的间隔执行。它们只有在有实际结果或失败时才写 `SystemRuntime` 任务记录；空轮询使用 `RuntimeTaskRunOutcome::quiet()` 不灌历史表。`system-health-check` 在连续健康成功时会刷新最近一条成功记录，而不是每轮新增一条噪音记录。
+
+用户可见的 `background_task` 由 `background-task-dispatch` 派发。当前 dispatcher 按任务类型分四条 lane：
+
+- `Archive`：`archive_compress`、`archive_extract`、`archive_preview_generate`
+- `Thumbnail`：`thumbnail_generate`、`media_metadata_extract`
+- `StorageMigration`：`storage_policy_migration`
+- `Fallback`：`storage_policy_temp_cleanup`、`trash_purge_all`、`system_runtime`
+
+前三条 lane 分别有自己的运行时并发配置；Fallback 使用通用 `background_task_max_concurrency`。
 
 ## CLI 与离线运维入口
 
@@ -327,6 +336,7 @@ primary 后台工作由 `src/runtime/tasks.rs` 注册，分成一个常驻 worke
 - `background_task_max_concurrency`
 - `background_task_archive_max_concurrency`
 - `background_task_thumbnail_max_concurrency`
+- `background_task_storage_migration_max_concurrency`
 - `background_task_max_attempts`
 - `share_download_rollback_queue_capacity`
 - `share_stream_session_ttl_secs`

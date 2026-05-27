@@ -5,6 +5,111 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.2.2] - 2026-05-28
+
+### Release Highlights
+
+**AsterDrive `0.2.2` 聚焦存储策略迁移、管理员可观测性、错误码体系重构和前端性能优化。** 本版本新增完整的存储策略数据迁移工作流，支持断点续传和失败恢复；管理员后台新增文件与 Blob 可观测页面，可多维度筛选、排序和查看存储使用情况；引入 `ApiErrorCode` 替代 `ApiSubcode` 作为稳定错误标识，改善客户端错误处理体验；优化前端启动性能，延迟加载非关键配置和 SSE 连接；任务卡片重构为摘要+展开详情的两段式布局，改善大量任务场景下的可用性。
+
+- **存储策略数据迁移** — 新增完整迁移工作流（选择源/目标策略 → 预检查 → 创建任务 → 断点续传 → 完成），支持大规模数据迁移的断点续传和失败恢复
+- **管理员可观测页面** — 新增文件与 Blob 可观测页面，支持多维度筛选、排序、分页，迁移对话框增加"检查计划"按钮展示预检查结果
+- **错误码体系重构** — 引入 `ApiErrorCode` 替代 `ApiSubcode`，响应新增 `code` 字段，前端优先读取 `error.code`，向后兼容 `error.subcode`
+- **前端性能优化** — 非关键配置延迟到空闲时加载，SSE 连接增加初始延迟，上传会话恢复延迟执行，文件夹树切换优先复用缓存
+- **任务卡片重构** — 改为摘要+展开详情的两段式布局，关键信息一目了然，详情按需展开
+- **Metrics 镜像构建** — Docker 构建矩阵新增 `metrics` 变体，镜像标签统一加 `-metrics` 后缀
+- **刷新令牌错误处理优化** — 新增过期令牌重用检测，多标签页会话管理更加稳定
+- **文档域名迁移** — 所有文档链接从 `asterdrive.docs.esap.cc` 迁移至 `drive.astercosm.com`
+
+### Added
+
+- **存储策略数据迁移**
+  - 新增完整的存储迁移工作流：选择源/目标策略 → 预检查 → 创建任务 → 断点续传 → 完成
+  - 后端新增 `StoragePolicyMigration` 任务类型，独立并发通道（StorageMigration lane）
+  - 数据库新增 `storage_migration_checkpoints` 表，支持断点续传和失败恢复
+  - 迁移结果包含详细统计：迁移/跳过/失败对象数及字节数
+  - 新增 `POST /admin/storage-migrations`、`POST /admin/storage-migrations/dry-run`、`POST /admin/storage-migrations/resume` 接口
+  - 新增 RustFS S3 端到端迁移、断点续传、跨批次合并集成测试
+- **管理员可观测页面**
+  - 新增 `/admin/files` 和 `/admin/file-blobs` 页面，支持多维度筛选、排序、分页
+  - 后端新增 `admin_file_service` 模块，提供文件与 Blob 的反向引用查询
+  - 存储迁移对话框增加"检查计划"按钮，展示预检查结果（源数据统计、目标容量、去重预估）
+  - 任务详情对话框支持从检查点恢复失败的迁移任务
+  - 新增 `GET /admin/files`、`GET /admin/file-blobs` 接口
+- **错误码体系**
+  - 新增 `ApiErrorCode` 枚举（654 行），覆盖所有现有 `ApiSubcode` 值
+  - `ApiErrorInfo` 响应新增 `code` 字段，前端优先读取 `error.code`，向后兼容 `error.subcode`
+  - 新增 `RefreshTokenStale` 和 `RefreshTokenReuseDetected` 错误码
+  - 登录失败统一返回通用错误消息，避免泄露用户存在性
+- **任务卡片**
+  - 任务卡片改为两段式布局：摘要（summary）+ 展开详情
+  - 新增 `summaryParts` 函数生成结构化摘要（文本+图标芯片）
+  - 新增 `TaskSummaryChip` 组件展示文件名、策略等关键信息
+  - 新增 `taskIcon` 函数为每种任务类型映射对应图标
+  - 进度、步骤详情、时间戳等移入可折叠展开面板
+- **Metrics 镜像**
+  - Docker 构建矩阵新增 `metrics` 变体，启用 `server,cli,metrics` features
+  - 每个变体添加 `suffix` 字段，metrics 镜像标签统一加 `-metrics` 后缀
+  - 构建缓存 scope 和 registry ref 加入变体维度，避免缓存冲突
+  - `publish-manifest` 任务改为矩阵策略，分别为 default 和 metrics 发布多架构 manifest
+
+### Changed
+
+- 根 crate 版本从 `0.2.1` 升级到 `0.2.2`
+- 标记 `ApiSubcode` 为 0.3.0 废弃，保留过渡期兼容性
+- 前端错误处理逻辑优先检查 `error.code` 而非 `error.subcode`
+- 刷新令牌过期或被重用时返回独立错误码，前端自动同步会话状态
+- 跨标签页刷新协调增加心跳检测和过期接管逻辑
+- 存储迁移前检查目标路径是否已被引用，避免误删已存在的 blob 对象
+- 重构 `copy_blob_streaming` 和 `cleanup_unmoved_target_object`，统一通过 `target_object_is_referenced` 守卫清理操作
+- 非关键公共配置（预览应用、缩略图、媒体数据）延迟到空闲时加载
+- SSE 连接增加 1500ms 初始延迟，避免页面加载期间抢占网络资源
+- 上传会话恢复延迟 600ms 执行，降低初始渲染压力
+- 在 fileStore 中缓存 `lastFolderContents`，文件夹树切换时优先复用已有数据
+- MFA 状态请求添加缓存机制，支持 force 强制刷新及变更后自动失效
+- 跨标签刷新锁兼容无 updatedAt 字段的旧版锁记录
+- 路由守卫仅在未认证时显示加载态，避免已登录用户重新检查时闪屏
+- 文件夹树控制器移除 setTimeout，直接复用 store 缓存快照
+- 迁移对话框在 dry-run 加载中时禁用提交按钮
+- AdminTaskTable 行添加 aria-expanded/aria-controls 无障碍属性
+- 文件/blob 行添加键盘 Enter/Space 交互支持
+- 所有文档链接从 `asterdrive.docs.esap.cc` 迁移至 `drive.astercosm.com`
+
+### Fixed
+
+- 修复存储迁移前未检查目标路径是否已被引用，可能误删已存在的 blob 对象的问题
+- 修复刷新令牌过期或被重用时的错误处理不完善的问题
+- 修复多标签页场景下会话管理不稳定的问题
+- 修复 E2E 测试使用 heading/cell 角色查询不稳定的问题
+- 修复重命名对话框输入逻辑，改用全选后逐字输入
+- 修正归档任务创建时传入文件名 stem 而非完整文件名的问题
+- 修正刷新令牌错误码从 E012 改为 E019
+
+### Security
+
+- 登录失败统一返回通用错误消息，避免泄露用户存在性
+- 存储迁移前检查目标路径引用，避免误删已被引用的对象
+
+### Notes
+
+- 本版本为 `0.2.2` 功能与稳定性维护版本
+- 新增数据库迁移：
+  - `m20260528_000001_add_storage_migration_checkpoints`
+- **Breaking Change**：引入 `ApiErrorCode` 替代 `ApiSubcode`
+  - `ApiErrorInfo` 响应新增 `code` 字段
+  - 前端需要优先检查 `error.code` 而非 `error.subcode`
+  - `ApiSubcode` 标记为 0.3.0 废弃，保留过渡期兼容性
+  - 旧客户端仍可工作但会收到废弃警告
+- API 新增接口：
+  - `POST /admin/storage-migrations` - 创建存储迁移任务
+  - `POST /admin/storage-migrations/dry-run` - 预检查迁移计划
+  - `POST /admin/storage-migrations/resume` - 恢复失败的迁移任务
+  - `GET /admin/files` - 查询文件列表
+  - `GET /admin/file-blobs` - 查询 Blob 列表
+- Docker 镜像新增 `-metrics` 变体，用户可选择拉取以启用 metrics 功能
+- 强类型 API 客户端建议重新生成，以同步错误码、存储迁移和管理员可观测接口
+- 统计数据：145 files changed, 11,903 insertions(+), 890 deletions(-)
+- 本次范围共 14 个提交
+
 ## [v0.2.1] - 2026-05-26
 
 ### Release Highlights
@@ -3570,7 +3675,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 66 commits
 - Rust Edition 2024, MSRV 1.91.1
 
-[Unreleased]: https://github.com/AptS-1547/AsterDrive/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/AptS-1547/AsterDrive/compare/v0.2.2...HEAD
+[v0.2.2]: https://github.com/AptS-1547/AsterDrive/compare/v0.2.1...v0.2.2
 [v0.2.1]: https://github.com/AptS-1547/AsterDrive/compare/v0.2.0-hotfix.1...v0.2.1
 [v0.2.0-hotfix.1]: https://github.com/AptS-1547/AsterDrive/compare/v0.2.0...v0.2.0-hotfix.1
 [v0.2.0]: https://github.com/AptS-1547/AsterDrive/compare/v0.2.0-rc.1...v0.2.0
