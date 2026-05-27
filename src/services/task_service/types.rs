@@ -299,6 +299,39 @@ pub struct StoragePolicyMigrationTaskResult {
     pub migrated_bytes: i64,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum StoragePolicyMigrationCapacityCheck {
+    Unavailable,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum StoragePolicyMigrationDryRunWarning {
+    TargetCapacityUnavailable,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+pub struct StoragePolicyMigrationDryRun {
+    pub source_policy_id: i64,
+    pub target_policy_id: i64,
+    pub source_blob_count: i64,
+    pub source_total_bytes: i64,
+    pub content_sha256_blob_count: i64,
+    pub opaque_blob_count: i64,
+    pub target_matching_blob_count: i64,
+    pub estimated_copy_blob_count: i64,
+    pub target_supports_stream_upload: bool,
+    pub target_connection_ok: bool,
+    pub target_capacity_check: StoragePolicyMigrationCapacityCheck,
+    pub delete_source_after_success_supported: bool,
+    pub can_start: bool,
+    pub warnings: Vec<StoragePolicyMigrationDryRunWarning>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]

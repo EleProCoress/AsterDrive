@@ -9,6 +9,7 @@ const mockState = vi.hoisted(() => ({
 	cleanupCompleted: vi.fn(),
 	handleApiError: vi.fn(),
 	list: vi.fn(),
+	resumeStoragePolicyMigration: vi.fn(),
 	toastSuccess: vi.fn(),
 }));
 
@@ -52,6 +53,12 @@ vi.mock("react-i18next", () => ({
 			}
 			if (key === "admin:tasks_cleaned" || key === "tasks_cleaned") {
 				return `tasks_cleaned:${options?.count}`;
+			}
+			if (
+				key === "admin:storage_migration_resume_queued" ||
+				key === "storage_migration_resume_queued"
+			) {
+				return "resume_queued";
 			}
 			if (
 				key === "admin:task_cleanup_confirm_desc" ||
@@ -401,6 +408,8 @@ vi.mock("@/services/adminService", () => ({
 		cleanupCompleted: (...args: unknown[]) =>
 			mockState.cleanupCompleted(...args),
 		list: (...args: unknown[]) => mockState.list(...args),
+		resumeStoragePolicyMigration: (...args: unknown[]) =>
+			mockState.resumeStoragePolicyMigration(...args),
 	},
 }));
 
@@ -459,6 +468,7 @@ describe("AdminTasksPage", () => {
 		mockState.cleanupCompleted.mockReset();
 		mockState.handleApiError.mockReset();
 		mockState.list.mockReset();
+		mockState.resumeStoragePolicyMigration.mockReset();
 		mockState.toastSuccess.mockReset();
 
 		mockState.cleanupCompleted.mockResolvedValue({ removed: 2 });
@@ -466,6 +476,12 @@ describe("AdminTasksPage", () => {
 			items: [createTask()],
 			total: 1,
 		});
+		mockState.resumeStoragePolicyMigration.mockResolvedValue(
+			createTask({
+				kind: "storage_policy_migration",
+				status: "pending",
+			}),
+		);
 	});
 
 	it("shows a loading skeleton while the task request is pending", () => {
@@ -718,6 +734,88 @@ describe("AdminTasksPage", () => {
 		expect(screen.getByText("Failed objects")).toBeInTheDocument();
 		expect(screen.getByText("Bytes")).toBeInTheDocument();
 		expect(screen.getByText("4096")).toBeInTheDocument();
+	});
+
+	it("resumes a failed storage migration from its detail dialog", async () => {
+		mockState.list
+			.mockResolvedValueOnce({
+				items: [
+					createTask({
+						can_retry: true,
+						display_name: "Resume migration",
+						kind: "storage_policy_migration",
+						last_error: "copy failed",
+						payload: {
+							kind: "storage_policy_migration",
+							source_policy_id: 1,
+							target_policy_id: 2,
+						} as never,
+						status: "failed",
+						steps: [
+							{
+								key: "finish",
+								title: "Finish storage migration",
+								status: "failed",
+								progress_current: 0,
+								progress_total: 1,
+							},
+						],
+					}),
+				],
+				total: 1,
+			})
+			.mockResolvedValueOnce({
+				items: [
+					createTask({
+						display_name: "Resume migration",
+						kind: "storage_policy_migration",
+						status: "pending",
+					}),
+				],
+				total: 1,
+			});
+
+		renderPage("/admin/tasks?kind=storage_policy_migration");
+
+		fireEvent.click(await screen.findByText("Resume migration"));
+		fireEvent.click(
+			await screen.findByRole("button", {
+				name: /admin:storage_migration_resume/,
+			}),
+		);
+
+		await waitFor(() => {
+			expect(mockState.resumeStoragePolicyMigration).toHaveBeenCalledWith(31);
+		});
+		expect(mockState.toastSuccess).toHaveBeenCalledWith("resume_queued");
+		await waitFor(() => {
+			expect(mockState.list).toHaveBeenCalledTimes(2);
+		});
+	});
+
+	it("does not show resume for storage migrations that are not retryable", async () => {
+		mockState.list.mockResolvedValueOnce({
+			items: [
+				createTask({
+					can_retry: false,
+					display_name: "Terminal migration",
+					kind: "storage_policy_migration",
+					last_error: "not retryable",
+					status: "failed",
+				}),
+			],
+			total: 1,
+		});
+
+		renderPage("/admin/tasks?kind=storage_policy_migration");
+
+		fireEvent.click(await screen.findByText("Terminal migration"));
+
+		expect(
+			screen.queryByRole("button", {
+				name: /admin:storage_migration_resume/,
+			}),
+		).not.toBeInTheDocument();
 	});
 
 	it("opens task details in a dialog from mouse and keyboard without rendering the old inline expander", async () => {

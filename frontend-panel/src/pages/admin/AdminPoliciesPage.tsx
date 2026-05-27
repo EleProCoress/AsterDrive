@@ -52,6 +52,7 @@ import type {
 	DriverType,
 	RemoteNodeInfo,
 	StoragePolicy,
+	StoragePolicyMigrationDryRun,
 } from "@/types/api";
 import { ApiSubcode } from "@/types/api-helpers";
 
@@ -134,6 +135,9 @@ export default function AdminPoliciesPage() {
 	const [migrationDialogOpen, setMigrationDialogOpen] = useState(false);
 	const [migrationSourcePolicyId, setMigrationSourcePolicyId] = useState("");
 	const [migrationTargetPolicyId, setMigrationTargetPolicyId] = useState("");
+	const [migrationDryRun, setMigrationDryRun] =
+		useState<StoragePolicyMigrationDryRun | null>(null);
+	const [migrationDryRunLoading, setMigrationDryRunLoading] = useState(false);
 	const [migrationSubmitting, setMigrationSubmitting] = useState(false);
 	const [validatedConnectionKey, setValidatedConnectionKey] = useState<
 		string | null
@@ -301,7 +305,21 @@ export default function AdminPoliciesPage() {
 		);
 		setMigrationSourcePolicyId(firstPolicy ? String(firstPolicy.id) : "");
 		setMigrationTargetPolicyId(secondPolicy ? String(secondPolicy.id) : "");
+		setMigrationDryRun(null);
 		setMigrationDialogOpen(true);
+	};
+
+	const handleMigrationSourceChange = (policyId: string) => {
+		setMigrationSourcePolicyId(policyId);
+		setMigrationDryRun(null);
+		if (policyId === migrationTargetPolicyId) {
+			setMigrationTargetPolicyId("");
+		}
+	};
+
+	const handleMigrationTargetChange = (policyId: string) => {
+		setMigrationTargetPolicyId(policyId);
+		setMigrationDryRun(null);
 	};
 
 	const openEdit = (policy: StoragePolicy) => {
@@ -577,6 +595,13 @@ export default function AdminPoliciesPage() {
 		) {
 			return;
 		}
+		if (
+			migrationDryRun?.source_policy_id !== sourcePolicyId ||
+			migrationDryRun?.target_policy_id !== targetPolicyId ||
+			!migrationDryRun.can_start
+		) {
+			return;
+		}
 
 		setMigrationSubmitting(true);
 		try {
@@ -594,6 +619,36 @@ export default function AdminPoliciesPage() {
 			handleApiError(error);
 		} finally {
 			setMigrationSubmitting(false);
+		}
+	};
+
+	const handleDryRunMigration = async () => {
+		if (migrationDryRunLoading || migrationSubmitting) return;
+		const sourcePolicyId = Number(migrationSourcePolicyId);
+		const targetPolicyId = Number(migrationTargetPolicyId);
+		if (
+			!Number.isSafeInteger(sourcePolicyId) ||
+			!Number.isSafeInteger(targetPolicyId) ||
+			sourcePolicyId <= 0 ||
+			targetPolicyId <= 0 ||
+			sourcePolicyId === targetPolicyId
+		) {
+			return;
+		}
+
+		setMigrationDryRunLoading(true);
+		try {
+			const result = await adminPolicyService.dryRunMigration({
+				source_policy_id: sourcePolicyId,
+				target_policy_id: targetPolicyId,
+				delete_source_after_success: false,
+			});
+			setMigrationDryRun(result);
+		} catch (error) {
+			setMigrationDryRun(null);
+			handleApiError(error);
+		} finally {
+			setMigrationDryRunLoading(false);
 		}
 	};
 
@@ -692,19 +747,17 @@ export default function AdminPoliciesPage() {
 					onSyncNormalizedS3Form={syncNormalizedS3Form}
 				/>
 				<StoragePolicyMigrationDialog
+					dryRun={migrationDryRun}
+					dryRunLoading={migrationDryRunLoading}
 					open={migrationDialogOpen}
 					policies={policies}
 					sourcePolicyId={migrationSourcePolicyId}
 					targetPolicyId={migrationTargetPolicyId}
 					submitting={migrationSubmitting}
+					onDryRun={() => void handleDryRunMigration()}
 					onOpenChange={setMigrationDialogOpen}
-					onSourcePolicyChange={(policyId) => {
-						setMigrationSourcePolicyId(policyId);
-						if (policyId === migrationTargetPolicyId) {
-							setMigrationTargetPolicyId("");
-						}
-					}}
-					onTargetPolicyChange={setMigrationTargetPolicyId}
+					onSourcePolicyChange={handleMigrationSourceChange}
+					onTargetPolicyChange={handleMigrationTargetChange}
 					onSubmit={() => void handleCreateMigration()}
 				/>
 			</AdminPageShell>

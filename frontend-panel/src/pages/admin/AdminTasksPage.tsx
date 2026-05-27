@@ -227,6 +227,8 @@ export default function AdminTasksPage() {
 	const [detailDialogTaskId, setDetailDialogTaskId] = useState<number | null>(
 		null,
 	);
+	const [resumingStorageMigrationTaskId, setResumingStorageMigrationTaskId] =
+		useState<number | null>(null);
 	const [cleanupFinishedBefore, setCleanupFinishedBefore] = useState(
 		defaultCleanupFinishedBeforeValue,
 	);
@@ -516,6 +518,23 @@ export default function AdminTasksPage() {
 		}
 	};
 
+	const handleResumeStorageMigration = async (taskId: number) => {
+		if (resumingStorageMigrationTaskId !== null) {
+			return;
+		}
+
+		setResumingStorageMigrationTaskId(taskId);
+		try {
+			await adminTaskService.resumeStoragePolicyMigration(taskId);
+			toast.success(t("admin:storage_migration_resume_queued"));
+			await reload();
+		} catch (error) {
+			handleApiError(error);
+		} finally {
+			setResumingStorageMigrationTaskId(null);
+		}
+	};
+
 	return (
 		<AdminLayout>
 			<AdminPageShell>
@@ -596,6 +615,10 @@ export default function AdminTasksPage() {
 						onOpenDetailChange={(open) => {
 							if (!open) setDetailDialogTaskId(null);
 						}}
+						onResumeStorageMigration={(taskId) =>
+							void handleResumeStorageMigration(taskId)
+						}
+						resumingTaskId={resumingStorageMigrationTaskId}
 						sortBy={sortBy}
 						sortOrder={sortOrder}
 						onSortChange={handleSortChange}

@@ -25,8 +25,10 @@ use super::steps::{
     set_task_step_succeeded,
 };
 use super::types::{
-    StoragePolicyMigrationTaskPayload, StoragePolicyMigrationTaskResult, parse_task_payload,
-    serialize_task_payload, serialize_task_result,
+    StoragePolicyMigrationCapacityCheck, StoragePolicyMigrationDryRun,
+    StoragePolicyMigrationDryRunWarning, StoragePolicyMigrationTaskPayload,
+    StoragePolicyMigrationTaskResult, parse_task_payload, serialize_task_payload,
+    serialize_task_result,
 };
 use super::{
     TaskLeaseGuard, configured_task_max_attempts, mark_task_progress, mark_task_succeeded,
@@ -60,32 +62,7 @@ pub(crate) async fn create_storage_policy_migration_task(
     state: &PrimaryAppState,
     input: CreateStoragePolicyMigrationInput,
 ) -> Result<super::TaskInfo> {
-    if input.source_policy_id <= 0 || input.target_policy_id <= 0 {
-        return Err(AsterError::validation_error(
-            "source_policy_id and target_policy_id must be greater than 0",
-        ));
-    }
-    if input.source_policy_id == input.target_policy_id {
-        return Err(AsterError::validation_error(
-            "source_policy_id and target_policy_id must be different",
-        ));
-    }
-    if input.delete_source_after_success {
-        return Err(AsterError::validation_error(
-            "delete_source_after_success is not supported in the first storage migration version",
-        ));
-    }
-    if storage_migration_checkpoint_repo::has_active_for_pair(
-        state.writer_db(),
-        input.source_policy_id,
-        input.target_policy_id,
-    )
-    .await?
-    {
-        return Err(AsterError::validation_error(
-            "an active storage policy migration already exists for this source and target",
-        ));
-    }
+    validate_storage_policy_migration_input(state, input).await?;
 
     let source_policy = policy_repo::find_by_id(state.writer_db(), input.source_policy_id).await?;
     let target_policy = policy_repo::find_by_id(state.writer_db(), input.target_policy_id).await?;
@@ -165,6 +142,126 @@ pub(crate) async fn create_storage_policy_migration_task(
 
     state.wake_background_task_dispatcher();
     super::get_task_in_scope(state, task_scope(&task)?, task.id).await
+}
+
+pub(crate) async fn dry_run_storage_policy_migration(
+    state: &PrimaryAppState,
+    input: CreateStoragePolicyMigrationInput,
+) -> Result<StoragePolicyMigrationDryRun> {
+    validate_storage_policy_migration_input(state, input).await?;
+    let source_policy = policy_repo::find_by_id(state.writer_db(), input.source_policy_id).await?;
+    let target_policy = policy_repo::find_by_id(state.writer_db(), input.target_policy_id).await?;
+    let _plan_hash = migration_plan_hash(
+        input.source_policy_id,
+        input.target_policy_id,
+        input.delete_source_after_success,
+        &source_policy,
+        &target_policy,
+    );
+    let target_driver = state.driver_registry.get_driver(&target_policy)?;
+    let target_supports_stream_upload = target_driver.as_stream_upload().is_some();
+    if !target_supports_stream_upload {
+        return Err(AsterError::storage_driver_error(
+            "target storage policy does not support stream upload",
+        ));
+    }
+    probe_storage_migration_target(target_driver.as_ref()).await?;
+
+    let summary =
+        file_repo::summarize_blobs_by_policy(state.writer_db(), input.source_policy_id).await?;
+    let hash_kinds =
+        file_repo::summarize_blob_hash_kinds_by_policy(state.writer_db(), input.source_policy_id)
+            .await?;
+    let target_matching_blob_count = file_repo::count_matching_hashes_between_policies(
+        state.writer_db(),
+        input.source_policy_id,
+        input.target_policy_id,
+    )
+    .await?;
+
+    Ok(StoragePolicyMigrationDryRun {
+        source_policy_id: input.source_policy_id,
+        target_policy_id: input.target_policy_id,
+        source_blob_count: summary.count,
+        source_total_bytes: summary.total_size,
+        content_sha256_blob_count: hash_kinds.content_sha256_count,
+        opaque_blob_count: hash_kinds.opaque_count,
+        target_matching_blob_count,
+        estimated_copy_blob_count: summary.count.saturating_sub(target_matching_blob_count),
+        target_supports_stream_upload,
+        target_connection_ok: true,
+        target_capacity_check: StoragePolicyMigrationCapacityCheck::Unavailable,
+        delete_source_after_success_supported: false,
+        can_start: true,
+        warnings: vec![StoragePolicyMigrationDryRunWarning::TargetCapacityUnavailable],
+    })
+}
+
+async fn validate_storage_policy_migration_input(
+    state: &PrimaryAppState,
+    input: CreateStoragePolicyMigrationInput,
+) -> Result<()> {
+    if input.source_policy_id <= 0 || input.target_policy_id <= 0 {
+        return Err(AsterError::validation_error(
+            "source_policy_id and target_policy_id must be greater than 0",
+        ));
+    }
+    if input.source_policy_id == input.target_policy_id {
+        return Err(AsterError::validation_error(
+            "source_policy_id and target_policy_id must be different",
+        ));
+    }
+    if input.delete_source_after_success {
+        return Err(AsterError::validation_error(
+            "delete_source_after_success is not supported in the first storage migration version",
+        ));
+    }
+    if storage_migration_checkpoint_repo::has_active_for_pair(
+        state.writer_db(),
+        input.source_policy_id,
+        input.target_policy_id,
+    )
+    .await?
+    {
+        return Err(AsterError::validation_error(
+            "an active storage policy migration already exists for this source and target",
+        ));
+    }
+    Ok(())
+}
+
+pub(crate) async fn resume_storage_policy_migration_for_admin(
+    state: &PrimaryAppState,
+    task_id: i64,
+    audit_ctx: &crate::services::audit_service::AuditContext,
+) -> Result<super::TaskInfo> {
+    let task = background_task_repo::find_by_id(state.writer_db(), task_id).await?;
+    if task.kind != BackgroundTaskKind::StoragePolicyMigration {
+        return Err(AsterError::validation_error(
+            "only storage policy migration tasks can be resumed from this endpoint",
+        ));
+    }
+    let scope = task_scope(&task)?;
+    super::retry_task_in_scope_with_audit(state, scope, task_id, audit_ctx).await
+}
+
+async fn probe_storage_migration_target(driver: &dyn StorageDriver) -> Result<()> {
+    let test_path = format!("_aster_migration_preflight-{}", uuid::Uuid::new_v4());
+    driver.put(&test_path, b"ok").await.map_aster_err_ctx(
+        "storage migration target write test",
+        AsterError::storage_driver_error,
+    )?;
+    driver
+        .delete(&test_path)
+        .await
+        .inspect_err(|error| {
+            tracing::warn!(path = %test_path, "failed to clean up storage migration preflight object: {error}");
+        })
+        .map_aster_err_ctx(
+            "storage migration target cleanup test",
+            AsterError::storage_driver_error,
+        )?;
+    Ok(())
 }
 
 pub(super) async fn process_storage_policy_migration_task(

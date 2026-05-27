@@ -516,6 +516,29 @@ describe("adminService", () => {
 		});
 	});
 
+	it("checks and resumes storage policy migrations", () => {
+		adminPolicyService.dryRunMigration({
+			source_policy_id: 3,
+			target_policy_id: 9,
+			delete_source_after_success: false,
+		});
+		adminTaskService.resumeStoragePolicyMigration(42);
+
+		expect(mockState.post).toHaveBeenNthCalledWith(
+			1,
+			"/admin/storage-migrations/dry-run",
+			{
+				source_policy_id: 3,
+				target_policy_id: 9,
+				delete_source_after_success: false,
+			},
+		);
+		expect(mockState.post).toHaveBeenNthCalledWith(
+			2,
+			"/admin/storage-migrations/42/resume",
+		);
+	});
+
 	it("omits null policy_group_id values from update user payloads", () => {
 		adminUserService.update(5, {
 			role: "admin" as never,

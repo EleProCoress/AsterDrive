@@ -28,6 +28,18 @@ pub async fn find_by_file_id<C: ConnectionTrait>(
         .map_err(AsterError::from)
 }
 
+pub async fn find_by_blob_id<C: ConnectionTrait>(
+    db: &C,
+    blob_id: i64,
+) -> Result<Vec<file_version::Model>> {
+    FileVersion::find()
+        .filter(file_version::Column::BlobId.eq(blob_id))
+        .order_by_asc(file_version::Column::Id)
+        .all(db)
+        .await
+        .map_err(AsterError::from)
+}
+
 pub async fn find_by_id<C: ConnectionTrait>(
     db: &C,
     id: i64,

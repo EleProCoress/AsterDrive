@@ -50,6 +50,7 @@ pub use runtime::{RuntimeTaskRunOutcome, record_runtime_task_run};
 use steps::{initial_task_steps, parse_task_steps_json, serialize_task_steps};
 pub(crate) use storage_migration::{
     CreateStoragePolicyMigrationInput, create_storage_policy_migration_task,
+    dry_run_storage_policy_migration, resume_storage_policy_migration_for_admin,
 };
 pub(crate) use storage_policy_cleanup::create_storage_policy_temp_cleanup_task;
 pub(crate) use thumbnail::ensure_thumbnail_task;
@@ -60,6 +61,7 @@ pub use types::{
     CreateArchiveCompressTaskParams, CreateArchiveExtractTaskParams, CreateArchiveTaskParams,
     MediaMetadataExtractTaskPayload, MediaMetadataExtractTaskResult, RuntimeSystemHealthComponent,
     RuntimeSystemHealthResult, RuntimeSystemHealthStatus, RuntimeTaskPayload, RuntimeTaskResult,
+    StoragePolicyMigrationCapacityCheck, StoragePolicyMigrationDryRun,
     StoragePolicyMigrationTaskPayload, StoragePolicyMigrationTaskResult, TaskInfo, TaskPayload,
     TaskResult, TaskStepInfo, TaskStepStatus, ThumbnailGenerateTaskPayload,
     ThumbnailGenerateTaskResult, TrashPurgeAllTaskPayload, TrashPurgeAllTaskResult,
@@ -272,13 +274,18 @@ pub(crate) async fn retry_task_in_scope(
         .await?;
     let task = background_task_repo::find_by_id(state.writer_db(), task_id).await?;
     ensure_task_in_scope(&task, scope)?;
+    retry_task_record(state, &task).await?;
 
+    get_task_in_scope(state, scope, task_id).await
+}
+
+async fn retry_task_record(state: &PrimaryAppState, task: &background_task::Model) -> Result<()> {
     if task.status != BackgroundTaskStatus::Failed {
         return Err(AsterError::validation_error(
             "only failed tasks can be retried",
         ));
     }
-    if !task_can_retry(&task) {
+    if !task_can_retry(task) {
         return Err(AsterError::validation_error(
             "this task failure cannot be retried",
         ));
@@ -306,8 +313,7 @@ pub(crate) async fn retry_task_in_scope(
         )));
     }
     state.wake_background_task_dispatcher();
-
-    get_task_in_scope(state, scope, task_id).await
+    Ok(())
 }
 
 pub(crate) async fn retry_task_in_scope_with_audit(

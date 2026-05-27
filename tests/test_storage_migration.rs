@@ -187,6 +187,31 @@ async fn create_migration_task_via_api(
     test::read_body_json(resp).await
 }
 
+async fn dry_run_migration_via_api(
+    app: &impl actix_web::dev::Service<
+        actix_http::Request,
+        Response = actix_web::dev::ServiceResponse,
+        Error = actix_web::Error,
+    >,
+    token: &str,
+    source_policy_id: i64,
+    target_policy_id: i64,
+) -> (actix_web::http::StatusCode, Value) {
+    let req = test::TestRequest::post()
+        .uri("/api/v1/admin/storage-migrations/dry-run")
+        .insert_header(("Cookie", common::access_cookie_header(token)))
+        .insert_header(common::csrf_header_for(token))
+        .set_json(serde_json::json!({
+            "source_policy_id": source_policy_id,
+            "target_policy_id": target_policy_id,
+        }))
+        .to_request();
+    let resp = test::call_service(app, req).await;
+    let status = resp.status();
+    let body = test::read_body_json(resp).await;
+    (status, body)
+}
+
 #[actix_web::test]
 async fn test_storage_migration_api_creates_task_and_checkpoint() {
     let state = common::setup().await;
@@ -218,6 +243,82 @@ async fn test_storage_migration_api_creates_task_and_checkpoint() {
 }
 
 #[actix_web::test]
+async fn test_storage_migration_dry_run_reports_preflight_summary() {
+    let state = common::setup().await;
+    let app = create_test_app!(state.clone());
+    let (token, _) = register_and_login!(app);
+    let source = create_local_policy(&state, "source-dry-run").await;
+    let target = create_local_policy(&state, "target-dry-run").await;
+    let source_blob = create_blob_with_object(&state, &source, b"dedup-me", 1).await;
+    create_opaque_blob_with_object(&state, &source, "opaque-dry-run-key", b"opaque", 1).await;
+    create_blob_with_object(&state, &target, b"dedup-me", 1).await;
+
+    let (status, body) = dry_run_migration_via_api(&app, &token, source.id, target.id).await;
+
+    assert_eq!(status, actix_web::http::StatusCode::OK);
+    assert_eq!(body["code"], 0);
+    let data = &body["data"];
+    assert_eq!(data["source_policy_id"], source.id);
+    assert_eq!(data["target_policy_id"], target.id);
+    assert_eq!(data["source_blob_count"], 2);
+    assert_eq!(
+        data["source_total_bytes"].as_i64(),
+        Some(source_blob.size + 6)
+    );
+    assert_eq!(data["content_sha256_blob_count"], 1);
+    assert_eq!(data["opaque_blob_count"], 1);
+    assert_eq!(data["target_matching_blob_count"], 1);
+    assert_eq!(data["estimated_copy_blob_count"], 1);
+    assert_eq!(data["target_supports_stream_upload"], true);
+    assert_eq!(data["target_connection_ok"], true);
+    assert_eq!(data["target_capacity_check"], "unavailable");
+    assert_eq!(data["delete_source_after_success_supported"], false);
+    assert_eq!(data["can_start"], true);
+    assert!(
+        data["warnings"]
+            .as_array()
+            .expect("warnings should be an array")
+            .iter()
+            .any(|warning| warning
+                .as_str()
+                .expect("warning should be string")
+                .contains("capacity cannot be verified"))
+    );
+}
+
+#[actix_web::test]
+async fn test_storage_migration_dry_run_requires_admin() {
+    let state = common::setup().await;
+    let app = create_test_app!(state.clone());
+    let (admin_token, _) = register_and_login!(app);
+    admin_create_user!(
+        app,
+        admin_token,
+        "migrationdryuser",
+        "migration-dry-user@example.com",
+        "password123"
+    );
+    let (plain_token, _) = login_user!(app, "migrationdryuser", "password123");
+    let source = create_local_policy(&state, "source-dry-auth").await;
+    let target = create_local_policy(&state, "target-dry-auth").await;
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/admin/storage-migrations/dry-run")
+        .insert_header(("Cookie", common::access_cookie_header(&plain_token)))
+        .insert_header(common::csrf_header_for(&plain_token))
+        .set_json(serde_json::json!({
+            "source_policy_id": source.id,
+            "target_policy_id": target.id,
+        }))
+        .to_request();
+    let err = test::try_call_service(&app, req).await.unwrap_err();
+    assert_eq!(
+        err.error_response().status(),
+        actix_web::http::StatusCode::FORBIDDEN
+    );
+}
+
+#[actix_web::test]
 async fn test_storage_migration_api_rejects_source_deletion_flag() {
     let state = common::setup().await;
     let app = create_test_app!(state.clone());
@@ -234,6 +335,68 @@ async fn test_storage_migration_api_rejects_source_deletion_flag() {
             .expect("error message should exist")
             .contains("delete_source_after_success")
     );
+}
+
+#[actix_web::test]
+async fn test_storage_migration_resume_reuses_checkpoint_after_failed_task() {
+    let state = common::setup().await;
+    let app = create_test_app!(state.clone());
+    let (token, _) = register_and_login!(app);
+    let source = create_local_policy(&state, "source-resume").await;
+    let target = create_local_policy(&state, "target-resume").await;
+    let first = create_blob_with_object(&state, &source, b"first", 1).await;
+    let second = create_blob_with_object(&state, &source, b"second", 1).await;
+    create_file_for_blob(&state, first.id, "first.txt").await;
+    create_file_for_blob(&state, second.id, "second.txt").await;
+
+    let body = create_migration_task_via_api(&app, &token, source.id, target.id, false).await;
+    let task_id = body["data"]["id"].as_i64().expect("task id should exist");
+    let second_path = std::path::Path::new(&source.base_path).join(&second.storage_path);
+    tokio::fs::write(&second_path, b"bad!!!")
+        .await
+        .expect("second source object should be tampered before migration starts");
+
+    let stats = task_service::drain(&state)
+        .await
+        .expect("first migration attempt should drain");
+    assert_eq!(stats.failed, 1);
+    let checkpoint = storage_migration_checkpoint_repo::get_by_task_id(state.writer_db(), task_id)
+        .await
+        .expect("checkpoint should exist");
+    assert_eq!(checkpoint.last_processed_blob_id, first.id);
+    assert_eq!(checkpoint.migrated_blobs, 1);
+
+    tokio::fs::write(&second_path, b"second")
+        .await
+        .expect("second source object should be restored before resume");
+    let req = test::TestRequest::post()
+        .uri(&format!(
+            "/api/v1/admin/storage-migrations/{task_id}/resume"
+        ))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), actix_web::http::StatusCode::OK);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["status"], "pending");
+
+    let stats = task_service::drain(&state)
+        .await
+        .expect("resumed migration task should drain");
+    assert_eq!(stats.succeeded, 1);
+    let final_checkpoint =
+        storage_migration_checkpoint_repo::get_by_task_id(state.writer_db(), task_id)
+            .await
+            .expect("checkpoint should exist");
+    assert_eq!(final_checkpoint.stage, "complete");
+    assert_eq!(final_checkpoint.last_processed_blob_id, second.id);
+    assert_eq!(final_checkpoint.migrated_blobs, 2);
+
+    let migrated_second = file_repo::find_blob_by_id(state.writer_db(), second.id)
+        .await
+        .expect("second blob should exist");
+    assert_eq!(migrated_second.policy_id, target.id);
 }
 
 #[actix_web::test]

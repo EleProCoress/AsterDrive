@@ -15,12 +15,15 @@ import {
 	AdminTableRow as TableRow,
 } from "@/components/common/AdminTable";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
 	Dialog,
 	DialogContent,
+	DialogFooter,
 	DialogHeader,
 	DialogTitle,
 } from "@/components/ui/dialog";
+import { Icon } from "@/components/ui/icon";
 import { formatDateAbsolute, formatDateAbsoluteWithOffset } from "@/lib/format";
 import type { SortOrder } from "@/lib/pagination";
 import { cn } from "@/lib/utils";
@@ -46,6 +49,8 @@ interface AdminTaskTableProps {
 	sortOrder: SortOrder;
 	onOpenDetail: (taskId: number) => void;
 	onOpenDetailChange: (open: boolean) => void;
+	onResumeStorageMigration?: (taskId: number) => void;
+	resumingTaskId?: number | null;
 	onSortChange: (sortBy: AdminTaskSortBy, sortOrder: SortOrder) => void;
 }
 
@@ -73,6 +78,14 @@ function taskDetail(task: TaskInfo) {
 	return task.last_error ?? task.status_text ?? "-";
 }
 
+function canResumeStorageMigration(task: TaskInfo) {
+	return (
+		task.kind === "storage_policy_migration" &&
+		task.status === "failed" &&
+		task.can_retry
+	);
+}
+
 export function AdminTaskTable({
 	detailTaskId,
 	formatTaskKind,
@@ -81,7 +94,9 @@ export function AdminTaskTable({
 	items,
 	onOpenDetail,
 	onOpenDetailChange,
+	onResumeStorageMigration,
 	onSortChange,
+	resumingTaskId,
 	sortBy,
 	sortOrder,
 }: AdminTaskTableProps) {
@@ -277,6 +292,30 @@ export function AdminTaskTable({
 								<TaskDetailsContent task={detailTask} />
 							</div>
 						</div>
+						{canResumeStorageMigration(detailTask) &&
+						onResumeStorageMigration ? (
+							<DialogFooter className="shrink-0 border-t px-6 py-3 max-lg:px-4">
+								<Button
+									type="button"
+									onClick={() => onResumeStorageMigration(detailTask.id)}
+									disabled={resumingTaskId === detailTask.id}
+								>
+									<Icon
+										name={
+											resumingTaskId === detailTask.id
+												? "Spinner"
+												: "ArrowsClockwise"
+										}
+										className={`mr-1 size-4 ${
+											resumingTaskId === detailTask.id ? "animate-spin" : ""
+										}`}
+									/>
+									{resumingTaskId === detailTask.id
+										? t("admin:storage_migration_resuming")
+										: t("admin:storage_migration_resume")}
+								</Button>
+							</DialogFooter>
+						) : null}
 					</DialogContent>
 				) : null}
 			</Dialog>

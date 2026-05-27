@@ -8,6 +8,12 @@ import type {
 	AdminExternalAuthProviderKindInfo,
 	AdminExternalAuthProviderListQuery,
 	AdminExternalAuthProviderPage,
+	AdminFileBlobDetail,
+	AdminFileBlobListQuery,
+	AdminFileBlobPage,
+	AdminFileDetail,
+	AdminFileListQuery,
+	AdminFilePage,
 	AdminLockListQuery,
 	AdminOverview,
 	AdminOverviewQuery,
@@ -34,6 +40,7 @@ import type {
 	CreateStoragePolicyMigrationRequest,
 	CreateUserReq,
 	DeletePolicyQuery,
+	DryRunStoragePolicyMigrationRequest,
 	ExecuteConfigActionRequest,
 	ExecuteConfigActionResponse,
 	ExternalAuthProviderTestParamsInput,
@@ -54,6 +61,7 @@ import type {
 	StoragePolicy,
 	StoragePolicyGroup,
 	StoragePolicyGroupPage,
+	StoragePolicyMigrationDryRun,
 	StoragePolicyPage,
 	SystemConfig,
 	SystemConfigPage,
@@ -238,6 +246,12 @@ export const adminPolicyService = {
 
 	createMigration: (data: CreateStoragePolicyMigrationRequest) =>
 		api.post<TaskInfo>("/admin/storage-migrations", data),
+
+	dryRunMigration: (data: DryRunStoragePolicyMigrationRequest) =>
+		api.post<StoragePolicyMigrationDryRun>(
+			"/admin/storage-migrations/dry-run",
+			data,
+		),
 };
 
 export const adminRemoteNodeService = {
@@ -438,6 +452,46 @@ export const adminShareService = {
 	delete: (id: number) => api.delete<void>(`/admin/shares/${id}`),
 };
 
+export const adminFileService = {
+	listFiles: (params?: AdminFileListQuery) =>
+		api.get<AdminFilePage>(
+			withQuery("/admin/files", {
+				limit: params?.limit,
+				offset: params?.offset,
+				name: params?.name,
+				blob_id: params?.blob_id,
+				policy_id: params?.policy_id,
+				owner_user_id: params?.owner_user_id,
+				team_id: params?.team_id,
+				deleted: params?.deleted,
+				sort_by: params?.sort_by,
+				sort_order: params?.sort_order,
+			}),
+		),
+
+	getFile: (id: number) => api.get<AdminFileDetail>(`/admin/files/${id}`),
+
+	listBlobs: (params?: AdminFileBlobListQuery) =>
+		api.get<AdminFileBlobPage>(
+			withQuery("/admin/file-blobs", {
+				limit: params?.limit,
+				offset: params?.offset,
+				hash: params?.hash,
+				policy_id: params?.policy_id,
+				storage_path: params?.storage_path,
+				ref_count_min: params?.ref_count_min,
+				ref_count_max: params?.ref_count_max,
+				size_min: params?.size_min,
+				size_max: params?.size_max,
+				sort_by: params?.sort_by,
+				sort_order: params?.sort_order,
+			}),
+		),
+
+	getBlob: (id: number) =>
+		api.get<AdminFileBlobDetail>(`/admin/file-blobs/${id}`),
+};
+
 export const adminTaskService = {
 	list: (params?: AdminTaskListQuery) =>
 		api.get<TaskPage>(
@@ -453,6 +507,9 @@ export const adminTaskService = {
 
 	cleanupCompleted: (data: AdminTaskCleanupRequest) =>
 		api.post<RemovedCountResponse>("/admin/tasks/cleanup", data),
+
+	resumeStoragePolicyMigration: (taskId: number) =>
+		api.post<TaskInfo>(`/admin/storage-migrations/${taskId}/resume`),
 };
 
 export const adminLockService = {
