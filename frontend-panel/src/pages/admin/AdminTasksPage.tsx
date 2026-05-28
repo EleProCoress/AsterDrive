@@ -30,6 +30,7 @@ import {
 	parseSortSearchParam,
 	type SortOrder,
 } from "@/lib/pagination";
+import { formatTaskKind as formatSharedTaskKind } from "@/pages/tasks/taskPresentation";
 import { adminTaskService } from "@/services/adminService";
 import type { AdminTaskSortBy } from "@/types/adminSort";
 import type {
@@ -68,6 +69,7 @@ const TASK_KIND_FILTER_VALUES = [
 	"thumbnail_generate",
 	"trash_purge_all",
 	"storage_policy_migration",
+	"blob_maintenance",
 	"system_runtime",
 ] as const;
 const TASK_STATUS_FILTER_VALUES = [
@@ -368,24 +370,7 @@ export default function AdminTasksPage() {
 	};
 
 	const formatTaskKind = (kind: BackgroundTaskKind) => {
-		switch (kind) {
-			case "archive_extract":
-				return t("tasks:kind_archive_extract");
-			case "archive_compress":
-				return t("tasks:kind_archive_compress");
-			case "archive_preview_generate":
-				return t("tasks:kind_archive_preview_generate");
-			case "thumbnail_generate":
-				return t("tasks:kind_thumbnail_generate");
-			case "trash_purge_all":
-				return t("tasks:kind_trash_purge_all");
-			case "storage_policy_migration":
-				return t("tasks:kind_storage_policy_migration");
-			case "system_runtime":
-				return t("tasks:kind_system_runtime");
-			default:
-				return String(kind).replaceAll("_", " ");
-		}
+		return formatSharedTaskKind(t, kind);
 	};
 
 	const formatTaskSource = (task: TaskInfo) => {

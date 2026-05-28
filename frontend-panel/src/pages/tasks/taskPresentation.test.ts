@@ -1,14 +1,20 @@
 import { describe, expect, it } from "vitest";
 import type { TaskInfo } from "@/types/api";
 import {
+	formatTaskDisplayName,
 	formatTaskKind,
 	formatTaskStepTitle,
 	parseStoragePolicyMigrationResult,
 } from "./taskPresentation";
 
-function t(key: string) {
+function t(key: string, values?: Record<string, number | string>) {
 	const translations: Record<string, string> = {
 		"tasks:kind_storage_policy_migration": "Storage policy migration",
+		"tasks:blob_maintenance_scope_all": "all blobs",
+		"tasks:blob_maintenance_scope_selected": `${values?.count} blob(s)`,
+		"tasks:blob_maintenance_integrity_check_name": `Check integrity for ${values?.scope}`,
+		"tasks:blob_maintenance_ref_count_reconcile_name": `Reconcile references for ${values?.scope}`,
+		"tasks:blob_maintenance_orphan_cleanup_name": `Clean orphan blobs for ${values?.scope}`,
 		"tasks:step_storage_policy_migration_prepare_sources":
 			"Prepare source policy",
 		"tasks:step_storage_policy_migration_scan_blobs": "Scan source blobs",
@@ -63,6 +69,36 @@ describe("taskPresentation storage policy migration", () => {
 		expect(formatTaskKind(t, "storage_policy_migration")).toBe(
 			"Storage policy migration",
 		);
+	});
+
+	it("localizes blob maintenance display names from structured payloads", () => {
+		expect(
+			formatTaskDisplayName(
+				t,
+				createTask({
+					display_name: "Check integrity for all blobs",
+					kind: "blob_maintenance",
+					payload: {
+						action: "integrity_check",
+						kind: "blob_maintenance",
+					},
+				}),
+			),
+		).toBe("Check integrity for all blobs");
+		expect(
+			formatTaskDisplayName(
+				t,
+				createTask({
+					display_name: "Clean orphan blobs for 2 blob(s)",
+					kind: "blob_maintenance",
+					payload: {
+						action: "orphan_cleanup",
+						blob_ids: [3, 4],
+						kind: "blob_maintenance",
+					},
+				}),
+			),
+		).toBe("Clean orphan blobs for 2 blob(s)");
 	});
 
 	it("translates known storage migration steps and falls back to backend titles", () => {

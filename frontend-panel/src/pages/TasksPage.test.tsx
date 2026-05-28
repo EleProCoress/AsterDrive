@@ -736,6 +736,7 @@ describe("TasksPage", () => {
 						merged_blobs: 0,
 						migrated_blobs: 6,
 						migrated_bytes: 4096,
+						renamed_opaque_blobs: 2,
 						scanned_blobs: 8,
 						skipped_blobs: 1,
 						source_policy_id: 1,

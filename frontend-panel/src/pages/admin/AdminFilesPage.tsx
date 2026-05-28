@@ -2,6 +2,7 @@ import type { SetStateAction } from "react";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useSearchParams } from "react-router-dom";
+import { toast } from "sonner";
 import { AdminOffsetPagination } from "@/components/admin/AdminOffsetPagination";
 import {
 	ADMIN_INTERACTIVE_TABLE_ROW_CLASS,
@@ -16,6 +17,7 @@ import {
 	AdminTableRow as TableRow,
 } from "@/components/common/AdminTable";
 import { AdminTableList } from "@/components/common/AdminTableList";
+import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import { UserIdentity } from "@/components/common/UserIdentity";
 import { UserIdentityGroup } from "@/components/common/UserIdentityGroup";
 import { AdminLayout } from "@/components/layout/AdminLayout";
@@ -29,6 +31,12 @@ import {
 	DialogHeader,
 	DialogTitle,
 } from "@/components/ui/dialog";
+import {
+	DropdownMenu,
+	DropdownMenuContent,
+	DropdownMenuItem,
+	DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
 import {
@@ -60,6 +68,7 @@ import type {
 	AdminFileBlobInfo,
 	AdminFileDetail,
 	AdminFileInfo,
+	BlobMaintenanceAction,
 } from "@/types/api";
 
 type AdminFilesPageKind = "files" | "blobs";
@@ -134,6 +143,12 @@ function deletedToQuery(value: DeletedFilter) {
 	if (value === "live") return false;
 	if (value === "deleted") return true;
 	return undefined;
+}
+
+function deletedFilterLabelKey(value: DeletedFilter) {
+	if (value === "live") return "admin_deleted_live";
+	if (value === "deleted") return "admin_deleted_deleted";
+	return "admin_deleted_all";
 }
 
 function hashPreview(hash?: string | null) {
@@ -345,12 +360,20 @@ function BlobDetailDialog({
 	blob,
 	open,
 	onOpenChange,
+	onCreateMaintenanceTask,
+	maintenanceAction,
 }: {
 	blob: AdminFileBlobDetail | null;
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
+	onCreateMaintenanceTask: (
+		action: BlobMaintenanceAction,
+		blobIds: number[],
+	) => Promise<void>;
+	maintenanceAction: BlobMaintenanceAction | null;
 }) {
 	const { t } = useTranslation("admin");
+	const isBusy = maintenanceAction !== null;
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
 			<DialogContent className="max-h-[min(860px,calc(100vh-2rem))] overflow-y-auto sm:max-w-[760px]">
@@ -361,6 +384,41 @@ function BlobDetailDialog({
 				</DialogHeader>
 				{blob ? (
 					<div className="space-y-4">
+						<div className="flex flex-wrap gap-2">
+							<Button
+								variant="outline"
+								size="sm"
+								disabled={isBusy}
+								onClick={() =>
+									void onCreateMaintenanceTask("integrity_check", [blob.id])
+								}
+							>
+								<Icon name="Shield" className="size-4" />
+								{t("admin_blob_action_integrity_check")}
+							</Button>
+							<Button
+								variant="outline"
+								size="sm"
+								disabled={isBusy}
+								onClick={() =>
+									void onCreateMaintenanceTask("ref_count_reconcile", [blob.id])
+								}
+							>
+								<Icon name="ArrowsClockwise" className="size-4" />
+								{t("admin_blob_action_reconcile_refs")}
+							</Button>
+							<Button
+								variant={blob.health === "orphan" ? "destructive" : "outline"}
+								size="sm"
+								disabled={isBusy || blob.health !== "orphan"}
+								onClick={() =>
+									void onCreateMaintenanceTask("orphan_cleanup", [blob.id])
+								}
+							>
+								<Icon name="Trash" className="size-4" />
+								{t("admin_blob_action_cleanup_orphan")}
+							</Button>
+						</div>
 						<div className="rounded-lg border border-border/60 p-3">
 							<DetailRow label={t("id")} value={blob.id} />
 							<DetailRow label={t("admin_hash")} value={blob.hash} />
@@ -540,6 +598,10 @@ function AdminFilesPageView({ kind }: { kind: AdminFilesPageKind }) {
 	const [blobDetail, setBlobDetail] = useState<AdminFileBlobDetail | null>(
 		null,
 	);
+	const [maintenanceAction, setMaintenanceAction] =
+		useState<BlobMaintenanceAction | null>(null);
+	const [fullMaintenanceAction, setFullMaintenanceAction] =
+		useState<BlobMaintenanceAction | null>(null);
 	const lastWrittenSearchRef = useRef<string | null>(null);
 	const setOffset = (value: SetStateAction<number>) => {
 		setOffsetState((current) =>
@@ -705,11 +767,34 @@ function AdminFilesPageView({ kind }: { kind: AdminFilesPageKind }) {
 			handleApiError(error);
 		}
 	};
+	const createMaintenanceTask = async (
+		action: BlobMaintenanceAction,
+		blobIds?: number[],
+	) => {
+		if (maintenanceAction !== null) return;
+		setMaintenanceAction(action);
+		try {
+			const task = await adminFileService.createBlobMaintenanceTask({
+				action,
+				...(blobIds ? { blob_ids: blobIds } : {}),
+			});
+			toast.success(t("admin_blob_maintenance_task_created", { id: task.id }));
+			await reload();
+			if (blobDetail) {
+				await openBlobDetail(blobDetail.id);
+			}
+		} catch (error) {
+			handleApiError(error);
+		} finally {
+			setMaintenanceAction(null);
+		}
+	};
 
 	const pageSizeOptions = PAGE_SIZE_OPTIONS.map((size) => ({
 		label: t("page_size_option", { count: size }),
 		value: String(size),
 	}));
+	const selectedFullMaintenanceAction = fullMaintenanceAction;
 
 	return (
 		<AdminLayout>
@@ -720,10 +805,53 @@ function AdminFilesPageView({ kind }: { kind: AdminFilesPageKind }) {
 						isFiles ? t("admin_files_intro") : t("admin_file_blobs_intro")
 					}
 					actions={
-						<Button variant="outline" size="sm" onClick={() => void reload()}>
-							<Icon name="ArrowClockwise" className="size-4" />
-							{t("core:refresh")}
-						</Button>
+						<div className="flex flex-wrap items-center justify-end gap-2">
+							{!isFiles ? (
+								<DropdownMenu>
+									<DropdownMenuTrigger
+										render={
+											<Button
+												variant="outline"
+												size="sm"
+												disabled={maintenanceAction !== null}
+											>
+												<Icon name="Wrench" className="size-4" />
+												{t("admin_blob_full_maintenance")}
+											</Button>
+										}
+									/>
+									<DropdownMenuContent align="end" className="w-56">
+										<DropdownMenuItem
+											onClick={() =>
+												setFullMaintenanceAction("integrity_check")
+											}
+										>
+											<Icon name="Shield" className="size-4" />
+											{t("admin_blob_action_integrity_check")}
+										</DropdownMenuItem>
+										<DropdownMenuItem
+											onClick={() =>
+												setFullMaintenanceAction("ref_count_reconcile")
+											}
+										>
+											<Icon name="ArrowsClockwise" className="size-4" />
+											{t("admin_blob_action_reconcile_refs")}
+										</DropdownMenuItem>
+										<DropdownMenuItem
+											variant="destructive"
+											onClick={() => setFullMaintenanceAction("orphan_cleanup")}
+										>
+											<Icon name="Trash" className="size-4" />
+											{t("admin_blob_action_cleanup_orphan")}
+										</DropdownMenuItem>
+									</DropdownMenuContent>
+								</DropdownMenu>
+							) : null}
+							<Button variant="outline" size="sm" onClick={() => void reload()}>
+								<Icon name="ArrowClockwise" className="size-4" />
+								{t("core:refresh")}
+							</Button>
+						</div>
 					}
 					toolbar={
 						<>
@@ -792,17 +920,19 @@ function AdminFilesPageView({ kind }: { kind: AdminFilesPageKind }) {
 										}}
 									>
 										<SelectTrigger width="compact">
-											<SelectValue />
+											<SelectValue>
+												{t(deletedFilterLabelKey(deleted))}
+											</SelectValue>
 										</SelectTrigger>
 										<SelectContent>
 											<SelectItem value="__all__">
-												{t("admin_deleted_all")}
+												{t(deletedFilterLabelKey("__all__"))}
 											</SelectItem>
 											<SelectItem value="live">
-												{t("admin_deleted_live")}
+												{t(deletedFilterLabelKey("live"))}
 											</SelectItem>
 											<SelectItem value="deleted">
-												{t("admin_deleted_deleted")}
+												{t(deletedFilterLabelKey("deleted"))}
 											</SelectItem>
 										</SelectContent>
 									</Select>
@@ -1021,8 +1151,35 @@ function AdminFilesPageView({ kind }: { kind: AdminFilesPageKind }) {
 			<BlobDetailDialog
 				blob={blobDetail}
 				open={blobDetail !== null}
+				maintenanceAction={maintenanceAction}
 				onOpenChange={(open) => {
 					if (!open) setBlobDetail(null);
+				}}
+				onCreateMaintenanceTask={createMaintenanceTask}
+			/>
+			<ConfirmDialog
+				open={selectedFullMaintenanceAction !== null}
+				onOpenChange={(open) => {
+					if (!open) setFullMaintenanceAction(null);
+				}}
+				title={t("admin_blob_full_maintenance_confirm_title")}
+				description={
+					selectedFullMaintenanceAction
+						? t(
+								`admin_blob_full_maintenance_confirm_desc_${selectedFullMaintenanceAction}`,
+							)
+						: undefined
+				}
+				confirmLabel={t("admin_blob_full_maintenance_confirm")}
+				variant={
+					selectedFullMaintenanceAction === "orphan_cleanup"
+						? "destructive"
+						: "default"
+				}
+				onConfirm={() => {
+					if (!selectedFullMaintenanceAction) return;
+					void createMaintenanceTask(selectedFullMaintenanceAction);
+					setFullMaintenanceAction(null);
 				}}
 			/>
 		</AdminLayout>
@@ -1087,9 +1244,7 @@ function FileRow({
 			<TableCell>
 				<div className={ADMIN_TABLE_BADGE_CELL_CLASS}>
 					<Badge variant="outline">
-						{file.deleted_at
-							? t("admin_deleted_deleted")
-							: t("admin_deleted_live")}
+						{t(deletedFilterLabelKey(file.deleted_at ? "deleted" : "live"))}
 					</Badge>
 				</div>
 			</TableCell>

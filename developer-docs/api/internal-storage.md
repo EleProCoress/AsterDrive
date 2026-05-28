@@ -31,6 +31,7 @@
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | `GET` | `/capabilities` | 读取 follower 声明的协议能力 |
+| `GET` | `/capacity` | 读取 follower 当前接收落点的容量观测状态 |
 | `PUT` | `/binding` | 同步主节点维护的远端节点绑定信息 |
 | `GET` | `/ingress-profiles` | 列出当前绑定可用的受管 ingress profile |
 | `POST` | `/ingress-profiles` | 创建受管 ingress profile |
@@ -57,6 +58,7 @@
 - `supports_list`
 - `supports_range_read`
 - `supports_stream_upload`
+- `supports_capacity`
 
 当前协议版本是 `v2`，最小支持版本也是 `v2`。主节点在加载远端策略或刷新绑定时会做能力协商：
 
@@ -66,6 +68,34 @@
 - 如果远端策略启用浏览器预签名上传，`browser_cors` 必须声明允许 `content-type` 请求头，并暴露 `ETag`
 
 当前 follower 返回的 `browser_cors.allowed_headers` 至少包含 `content-type`、`range`；`browser_cors.exposed_headers` 会覆盖 GET/PUT 预签名所需的缓存、Range、长度、类型和 ETag 响应头。
+
+## `GET /capacity`
+
+返回 follower 当前 ingress driver 的 `StorageCapacityInfo`：
+
+```json
+{
+  "code": 0,
+  "msg": "",
+  "data": {
+    "capacity": {
+      "status": "supported",
+      "total_bytes": 1099511627776,
+      "available_bytes": 549755813888,
+      "used_bytes": 549755813888,
+      "source": "local_filesystem",
+      "observed_at": "2026-05-28T12:00:00Z"
+    }
+  }
+}
+```
+
+实现约定：
+
+- follower 直接调用当前 ingress driver 的 `capacity_info()`
+- local ingress 通常返回真实文件系统容量
+- S3 ingress 明确返回 `StorageErrorKind::Unsupported`，primary 侧会把它转换成用户可见的 `unsupported` 容量状态
+- 这个接口只用于管理端容量观测和迁移 preflight，不在上传 / 下载热路径里调用
 
 ## `PUT /binding`
 

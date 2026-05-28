@@ -607,6 +607,7 @@ describe("AdminPoliciesPage", () => {
 			content_sha256_blob_count: 2,
 			delete_source_after_success_supported: false,
 			estimated_copy_blob_count: 4,
+			opaque_key_conflict_count: 0,
 			opaque_blob_count: 3,
 			source_blob_count: 5,
 			source_policy_id: 1,

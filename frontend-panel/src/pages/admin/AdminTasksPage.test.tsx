@@ -676,6 +676,7 @@ describe("AdminTasksPage", () => {
 						failed_blobs: 0,
 						migrated_bytes: 4096,
 						merged_blobs: 0,
+						renamed_opaque_blobs: 2,
 						scanned_blobs: 13,
 						source_policy_id: 1,
 						target_policy_id: 2,
