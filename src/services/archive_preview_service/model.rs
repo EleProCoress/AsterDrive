@@ -122,6 +122,7 @@ pub(super) struct ArchiveRawEntry {
     pub(super) index: usize,
     pub(super) raw_name: String,
     pub(super) display_name: String,
+    #[serde(default, alias = "zip_utf8")]
     pub(super) raw_name_utf8: bool,
     pub(super) kind: ArchivePreviewEntryKind,
     pub(super) size: i64,

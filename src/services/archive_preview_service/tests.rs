@@ -258,6 +258,72 @@ fn serialized_cache_uses_current_raw_schema_and_signature() {
 }
 
 #[test]
+fn legacy_raw_entry_cache_accepts_zip_utf8_and_missing_raw_name_utf8() {
+    let legacy_with_zip_utf8 = r#"{
+        "schema_version": 2,
+        "source_blob_id": 9,
+        "source_hash": "hash",
+        "limit_signature": "raw-limits",
+        "manifest": {
+            "schema_version": 2,
+            "format": "zip",
+            "source_blob_id": 9,
+            "source_hash": "hash",
+            "generated_at": "2026-01-02T03:04:05Z",
+            "entry_count": 1,
+            "file_count": 1,
+            "directory_count": 0,
+            "total_uncompressed_size": 5,
+            "total_compressed_base": 5,
+            "entries": [{
+                "index": 0,
+                "raw_name": "cmVhZG1lLnR4dA==",
+                "display_name": "readme.txt",
+                "zip_utf8": false,
+                "kind": "file",
+                "size": 5,
+                "compressed_size": 5,
+                "modified_at": null
+            }]
+        }
+    }"#;
+    let cached: super::model::CachedArchiveRawManifest = serde_json::from_str(legacy_with_zip_utf8)
+        .expect("legacy cache with zip_utf8 should deserialize");
+    assert!(!cached.manifest.entries[0].raw_name_utf8);
+
+    let legacy_without_utf8 = r#"{
+        "schema_version": 2,
+        "source_blob_id": 9,
+        "source_hash": "hash",
+        "limit_signature": "raw-limits",
+        "manifest": {
+            "schema_version": 2,
+            "format": "zip",
+            "source_blob_id": 9,
+            "source_hash": "hash",
+            "generated_at": "2026-01-02T03:04:05Z",
+            "entry_count": 1,
+            "file_count": 1,
+            "directory_count": 0,
+            "total_uncompressed_size": 5,
+            "total_compressed_base": 5,
+            "entries": [{
+                "index": 0,
+                "raw_name": "cmVhZG1lLnR4dA==",
+                "display_name": "readme.txt",
+                "kind": "file",
+                "size": 5,
+                "compressed_size": 5,
+                "modified_at": null
+            }]
+        }
+    }"#;
+    let cached: super::model::CachedArchiveRawManifest = serde_json::from_str(legacy_without_utf8)
+        .expect("legacy cache without utf8 flag should deserialize");
+    assert!(!cached.manifest.entries[0].raw_name_utf8);
+}
+
+#[test]
 fn raw_signature_ignores_display_encoding() {
     let runtime_config = crate::config::RuntimeConfig::default();
     let auto = ArchivePreviewLimits::from_runtime_config(

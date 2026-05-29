@@ -137,8 +137,8 @@ async fn spawn_reverse_tunnel_primary_server(
     let state_for_server = state.clone();
     let server = HttpServer::new(move || {
         App::new()
-            .app_data(web::PayloadConfig::new(10 * 1024 * 1024))
-            .app_data(web::JsonConfig::default().limit(1024 * 1024))
+            .app_data(web::PayloadConfig::new(REMOTE_TUNNEL_JSON_LIMIT))
+            .app_data(web::JsonConfig::default().limit(REMOTE_TUNNEL_JSON_LIMIT))
             .app_data(web::Data::new(state_for_server.clone()))
             .service(
                 web::scope("/api/v1").service(aster_drive::api::routes::remote_tunnel::routes()),
