@@ -35,7 +35,7 @@ async fn admin_provider_kind_api_includes_generic_oauth2_contract() {
         .find(|kind| kind["kind"] == "generic_oauth2")
         .expect("generic OAuth2 kind should be listed");
     assert_eq!(oauth2["protocol"], "oauth2");
-    assert_eq!(oauth2["default_scopes"], "email profile");
+    assert_eq!(oauth2["default_scopes"], "openid email profile");
     assert_eq!(oauth2["issuer_url_required"], false);
     assert_eq!(oauth2["manual_endpoint_configuration_supported"], true);
     assert_eq!(oauth2["authorization_url_required"], true);
@@ -109,7 +109,7 @@ async fn admin_create_and_test_generic_oauth2_provider_requires_manual_endpoints
 }
 
 #[actix_web::test]
-async fn start_login_builds_oauth2_authorization_url_without_openid_or_nonce() {
+async fn start_login_builds_oauth2_authorization_url_with_default_scopes_without_nonce() {
     let (mock_provider, server) = start_mock_oauth2_provider().await;
     let state = common::setup().await;
     configure_oauth2_public_site_url(&state);
@@ -137,7 +137,6 @@ async fn start_login_builds_oauth2_authorization_url_without_openid_or_nonce() {
         authorize_request.scope.as_deref(),
         Some("read:user user:email")
     );
-    assert!(!authorize_request.scope.unwrap().contains("openid"));
     assert_eq!(authorize_request.state, state_value);
     assert_eq!(
         authorize_request.code_challenge_method.as_deref(),
@@ -148,6 +147,45 @@ async fn start_login_builds_oauth2_authorization_url_without_openid_or_nonce() {
             .code_challenge
             .as_deref()
             .is_some_and(|value| !value.is_empty())
+    );
+    assert_eq!(authorize_request.nonce, None);
+
+    server.stop(true).await;
+}
+
+#[actix_web::test]
+async fn create_provider_without_scopes_uses_logto_compatible_oauth2_default() {
+    let (mock_provider, server) = start_mock_oauth2_provider().await;
+    let state = common::setup().await;
+    configure_oauth2_public_site_url(&state);
+    let app = create_test_app!(state);
+    let (admin_token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/admin/external-auth/providers")
+        .insert_header(("Cookie", common::access_cookie_header(&admin_token)))
+        .insert_header(common::csrf_header_for(&admin_token))
+        .set_json(serde_json::json!({
+            "provider_kind": "generic_oauth2",
+            "display_name": "Default Scope OAuth2",
+            "authorization_url": format!("{}/authorize", mock_provider.base_url),
+            "token_url": format!("{}/token", mock_provider.base_url),
+            "userinfo_url": format!("{}/userinfo", mock_provider.base_url),
+            "client_id": TEST_CLIENT_ID,
+            "client_secret": TEST_CLIENT_SECRET
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["scopes"], "openid email profile");
+    let provider_key = created_provider_key(&body);
+
+    start_oauth2_login(&app, &mock_provider, &provider_key, "/").await;
+    let authorize_request = mock_provider.last_authorize_request();
+    assert_eq!(
+        authorize_request.scope.as_deref(),
+        Some("openid email profile")
     );
     assert_eq!(authorize_request.nonce, None);
 

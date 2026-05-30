@@ -150,7 +150,7 @@ function oauth2Kind(
 ): AdminExternalAuthProviderKindInfo {
 	return kind({
 		authorization_url_required: true,
-		default_scopes: "email profile",
+		default_scopes: "openid email profile",
 		description: "OAuth2 sign-in.",
 		display_name: "Generic OAuth2",
 		issuer_url_required: false,
@@ -225,17 +225,17 @@ describe("admin external auth shared helpers", () => {
 			userinfoUrl: "https://idp.example.com/userinfo",
 		};
 
-		expect(defaultScopesForKind(descriptor)).toBe("email profile");
+		expect(defaultScopesForKind(descriptor)).toBe("openid email profile");
 		expect(createPayload(form, descriptor)).toMatchObject({
 			provider_kind: "generic_oauth2",
-			scopes: "email profile",
+			scopes: "openid email profile",
 		});
 		expect(updatePayload(form, descriptor)).toMatchObject({
-			scopes: "email profile",
+			scopes: "openid email profile",
 		});
 		expect(testParamsPayload(form, descriptor)).toMatchObject({
 			provider_kind: "generic_oauth2",
-			scopes: "email profile",
+			scopes: "openid email profile",
 		});
 	});
 
@@ -277,7 +277,7 @@ describe("admin external auth shared helpers", () => {
 					client_secret_configured: true,
 					provider_kind: "generic_oauth2",
 					protocol: "oauth2",
-					scopes: "email profile",
+					scopes: "openid email profile",
 				}),
 				oauth2Kind(),
 			),

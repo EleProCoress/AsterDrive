@@ -18,7 +18,7 @@ use crate::services::auth_service;
 use crate::types::{ExternalAuthProtocol, ExternalAuthProviderKind};
 use crate::utils::{OUTBOUND_HTTP_USER_AGENT, id};
 
-const OAUTH2_DEFAULT_SCOPES: &str = "email profile";
+const OAUTH2_DEFAULT_SCOPES: &str = "openid email profile";
 const OAUTH2_NAMESPACE_MAX_LEN: usize = 512;
 const OAUTH2_SUBJECT_MAX_LEN: usize = 255;
 const OAUTH2_SNAPSHOT_MAX_LEN: usize = 255;
