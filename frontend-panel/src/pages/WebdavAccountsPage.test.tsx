@@ -237,6 +237,11 @@ vi.mock("@/hooks/useConfirmDialog", () => ({
 	}),
 }));
 
+vi.mock("@/stores/authStore", () => ({
+	useAuthStore: <T,>(selector: (state: { user: { id: number } }) => T) =>
+		selector({ user: { id: 7 } }),
+}));
+
 vi.mock("@/lib/format", () => ({
 	formatDateShort: (value: string) => `date:${value}`,
 }));
@@ -264,6 +269,7 @@ function createAccount(overrides: Record<string, unknown> = {}) {
 		id: 11,
 		is_active: true,
 		root_folder_path: null,
+		user_id: 7,
 		username: "dav-user",
 		...overrides,
 	};

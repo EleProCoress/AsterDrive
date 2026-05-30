@@ -44,8 +44,8 @@ test.describe
 
 			const createDialog = dialogByTitle(page, "Create WebDAV Account");
 			await expect(createDialog).toBeVisible();
-			await createDialog.locator("#username").fill(username);
-			await createDialog.locator("#password").fill(password);
+			await createDialog.getByLabel("Username", { exact: true }).fill(username);
+			await createDialog.getByLabel("Password", { exact: true }).fill(password);
 			await createDialog.getByRole("button", { name: "Create" }).click();
 
 			const credentialsDialog = dialogByTitle(page, "Latest Credentials");

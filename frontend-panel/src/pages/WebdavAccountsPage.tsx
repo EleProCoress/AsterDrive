@@ -22,10 +22,12 @@ import { absoluteAppUrl } from "@/lib/publicSiteUrl";
 import { normalizeWebdavPrefix, webdavEndpointPath } from "@/lib/webdav";
 import { fileService } from "@/services/fileService";
 import { webdavAccountService } from "@/services/webdavAccountService";
+import { useAuthStore } from "@/stores/authStore";
 import type { FolderListItem } from "@/types/api";
 
 export default function WebdavAccountsPage() {
 	const { t } = useTranslation(["core", "admin", "auth", "webdav", "errors"]);
+	const currentUserId = useAuthStore((state) => state.user?.id ?? null);
 	usePageTitle(t("core:webdav"));
 	const {
 		items: accounts,
@@ -279,7 +281,7 @@ export default function WebdavAccountsPage() {
 					<WebdavAccountTable
 						loading={loading}
 						accounts={sortedAccounts}
-						currentUserId={null}
+						currentUserId={currentUserId}
 						deletingAccountId={deletingAccountId}
 						togglingAccountId={togglingAccountId}
 						onDelete={requestConfirm}
