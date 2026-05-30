@@ -237,16 +237,15 @@ async fn finish_callback_exchanges_code_fetches_userinfo_and_issues_cookies() {
     );
     assert_eq!(
         mock_provider.token_auth_observations(),
-        vec![TokenAuthObservation::Basic]
+        vec![TokenAuthObservation::Post]
     );
 
     server.stop(true).await;
 }
 
 #[actix_web::test]
-async fn finish_callback_falls_back_to_client_secret_post_token_auth() {
+async fn finish_callback_uses_single_client_secret_post_token_request() {
     let (mock_provider, server) = start_mock_oauth2_provider().await;
-    mock_provider.require_client_secret_post();
     let state = common::setup().await;
     configure_oauth2_public_site_url(&state);
     let app = create_test_app!(state);
@@ -268,7 +267,7 @@ async fn finish_callback_falls_back_to_client_secret_post_token_auth() {
     assert!(common::extract_cookie(&resp, "aster_access").is_some());
     assert_eq!(
         mock_provider.token_auth_observations(),
-        vec![TokenAuthObservation::Basic, TokenAuthObservation::Post]
+        vec![TokenAuthObservation::Post]
     );
 
     server.stop(true).await;

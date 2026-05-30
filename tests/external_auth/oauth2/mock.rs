@@ -6,12 +6,6 @@ use std::sync::{Arc, Mutex};
 use super::{TEST_CLIENT_ID, TEST_CLIENT_SECRET};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum TokenAuthMode {
-    Basic,
-    Post,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TokenAuthObservation {
     Basic,
     Post,
@@ -22,7 +16,6 @@ pub enum TokenAuthObservation {
 pub struct MockOAuth2Provider {
     pub base_url: String,
     authorization_requests: Arc<Mutex<Vec<AuthorizeRequest>>>,
-    token_auth_mode: Arc<Mutex<TokenAuthMode>>,
     token_auth_observations: Arc<Mutex<Vec<TokenAuthObservation>>>,
     profile_subject: Arc<Mutex<Option<String>>>,
     profile_email: Arc<Mutex<Option<String>>>,
@@ -56,7 +49,6 @@ impl MockOAuth2Provider {
         Self {
             base_url: String::new(),
             authorization_requests: Arc::new(Mutex::new(Vec::new())),
-            token_auth_mode: Arc::new(Mutex::new(TokenAuthMode::Basic)),
             token_auth_observations: Arc::new(Mutex::new(Vec::new())),
             profile_subject: Arc::new(Mutex::new(Some("oauth2-subject-1".to_string()))),
             profile_email: Arc::new(Mutex::new(Some("oauth2-user@example.com".to_string()))),
@@ -76,13 +68,6 @@ impl MockOAuth2Provider {
             .last()
             .expect("authorization request should be recorded")
             .clone()
-    }
-
-    pub fn require_client_secret_post(&self) {
-        *self
-            .token_auth_mode
-            .lock()
-            .expect("token auth mode lock should not be poisoned") = TokenAuthMode::Post;
     }
 
     pub fn token_auth_observations(&self) -> Vec<TokenAuthObservation> {
@@ -207,33 +192,13 @@ async fn mock_token(
         .expect("token auth observations lock should not be poisoned")
         .push(auth_observation);
 
-    match *provider
-        .token_auth_mode
-        .lock()
-        .expect("token auth mode lock should not be poisoned")
-    {
-        TokenAuthMode::Basic => {
-            if auth_observation != TokenAuthObservation::Basic {
-                return HttpResponse::Unauthorized().json(serde_json::json!({
-                    "error": "invalid_client"
-                }));
-            }
-            assert_eq!(
-                basic_credentials(&req),
-                Some((TEST_CLIENT_ID.to_string(), TEST_CLIENT_SECRET.to_string()))
-            );
-            assert!(request.client_secret.is_none());
-        }
-        TokenAuthMode::Post => {
-            if auth_observation == TokenAuthObservation::Basic {
-                return HttpResponse::Unauthorized().json(serde_json::json!({
-                    "error": "invalid_client"
-                }));
-            }
-            assert_eq!(request.client_id.as_deref(), Some(TEST_CLIENT_ID));
-            assert_eq!(request.client_secret.as_deref(), Some(TEST_CLIENT_SECRET));
-        }
+    if auth_observation != TokenAuthObservation::Post {
+        return HttpResponse::Unauthorized().json(serde_json::json!({
+            "error": "invalid_client"
+        }));
     }
+    assert_eq!(request.client_id.as_deref(), Some(TEST_CLIENT_ID));
+    assert_eq!(request.client_secret.as_deref(), Some(TEST_CLIENT_SECRET));
 
     HttpResponse::Ok().json(serde_json::json!({
         "access_token": "mock-access-token",

@@ -2,6 +2,7 @@
 
 use async_trait::async_trait;
 use base64::Engine as _;
+use rand::RngExt;
 use reqwest::header;
 use serde::Deserialize;
 use serde_json::Value;
@@ -26,7 +27,6 @@ const TOKEN_ENDPOINT_TIMEOUT_SECS: u64 = 15;
 
 #[derive(Clone, Copy)]
 enum OAuth2TokenAuthMethod {
-    ClientSecretBasic,
     ClientSecretPost,
     PublicClient,
 }
@@ -241,7 +241,7 @@ fn validate_url(value: &str, field: &str, error_fn: fn(String) -> AsterError) ->
 fn build_pkce_verifier() -> String {
     let mut bytes = [0_u8; 32];
     let mut rng = rand::rng();
-    rand::RngExt::fill(&mut rng, &mut bytes);
+    rng.fill(&mut bytes);
     base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes)
 }
 
@@ -279,20 +279,11 @@ async fn exchange_code_for_token(
         client_secret,
     };
     let response = if client_secret.is_some() {
-        let response = send_token_request(
+        send_token_request(
             http_client,
-            token_request.with_auth_method(OAuth2TokenAuthMethod::ClientSecretBasic),
+            token_request.with_auth_method(OAuth2TokenAuthMethod::ClientSecretPost),
         )
-        .await?;
-        if response.status().is_success() {
-            response
-        } else {
-            send_token_request(
-                http_client,
-                token_request.with_auth_method(OAuth2TokenAuthMethod::ClientSecretPost),
-            )
-            .await?
-        }
+        .await?
     } else {
         send_token_request(http_client, token_request).await?
     };
@@ -332,7 +323,6 @@ async fn send_token_request(
         serializer.append_pair("redirect_uri", token_request.redirect_uri);
         serializer.append_pair("code_verifier", token_request.pkce_verifier);
         match token_request.auth_method {
-            OAuth2TokenAuthMethod::ClientSecretBasic => {}
             OAuth2TokenAuthMethod::ClientSecretPost => {
                 serializer.append_pair("client_id", &token_request.provider.client_id);
                 if let Some(secret) = token_request.client_secret {
@@ -346,18 +336,11 @@ async fn send_token_request(
         serializer.finish()
     };
 
-    let mut request = http_client
+    let request = http_client
         .post(token_request.token_url)
         .header(header::ACCEPT, "application/json")
         .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
         .body(form);
-    if matches!(
-        token_request.auth_method,
-        OAuth2TokenAuthMethod::ClientSecretBasic
-    ) && let Some(secret) = token_request.client_secret
-    {
-        request = request.basic_auth(&token_request.provider.client_id, Some(secret));
-    }
 
     request.send().await.map_aster_err_ctx(
         "OAuth2 token exchange failed",

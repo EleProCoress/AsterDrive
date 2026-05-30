@@ -68,7 +68,7 @@
 	"external_auth_provider_callback_url_hint": "Register this URL in the identity provider's redirect URI / callback URL allowlist. If multiple public site origins are configured, use the origin that external users actually visit.",
 	"external_auth_provider_copy_callback_url": "Copy redirect URI",
 	"external_auth_provider_scopes": "Authorization scopes",
-	"external_auth_provider_scopes_hint": "Leave blank to use this provider type's default scopes. OIDC providers keep openid automatically; Generic OAuth2 does not add it.",
+	"external_auth_provider_scopes_hint": "Leave blank to use this provider type's default scopes. OIDC keeps openid automatically; Generic OAuth2 defaults to openid email profile.",
 	"external_auth_provider_allowed_domains": "Allowed email domains",
 	"external_auth_provider_allowed_domains_all": "No restriction",
 	"external_auth_provider_allowed_domains_hint": "Separate domains with commas or new lines. Enter example.com to allow only that email domain; leave blank for no restriction.",
