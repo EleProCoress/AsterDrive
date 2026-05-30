@@ -84,6 +84,15 @@ impl AsterDavFs {
         &self,
         path: &DavPath,
     ) -> Result<Box<dyn AsyncRead + Unpin + Send>, FsError> {
+        self.open_read_stream_with_range(path, None, None).await
+    }
+
+    pub(crate) async fn open_read_stream_with_range(
+        &self,
+        path: &DavPath,
+        offset: Option<u64>,
+        length: Option<u64>,
+    ) -> Result<Box<dyn AsyncRead + Unpin + Send>, FsError> {
         let node = path_resolver::resolve_path_cached(
             &self.state,
             self.user_id,
@@ -111,10 +120,16 @@ impl AsterDavFs {
             .get_driver(&policy)
             .map_err(|_| FsError::GeneralFailure)?;
 
-        let stream = driver
-            .get_stream(&blob.storage_path)
-            .await
-            .map_err(|_| FsError::NotFound)?;
+        let stream = match offset {
+            Some(offset) => driver
+                .get_range(&blob.storage_path, offset, length)
+                .await
+                .map_err(|_| FsError::NotFound)?,
+            None => driver
+                .get_stream(&blob.storage_path)
+                .await
+                .map_err(|_| FsError::NotFound)?,
+        };
         audit_service::log(
             &self.state,
             &self.audit_ctx,

@@ -476,6 +476,17 @@ impl DavFile for AsterDavFile {
                     file.flush().await.map_err(|_| FsError::GeneralFailure)?;
 
                     let written_size = written_size_i64(*written)?;
+                    if let Some(expected_size) = declared_size
+                        && *expected_size != written_size
+                    {
+                        tracing::warn!(
+                            expected_size,
+                            written_size,
+                            filename,
+                            "WebDAV upload size mismatch"
+                        );
+                        return Err(FsError::BadRequest);
+                    }
                     let precomputed_hash = hasher
                         .take()
                         .map(|hasher| crate::utils::hash::sha256_digest_to_hex(&hasher.finalize()));
@@ -569,7 +580,7 @@ impl DavFile for AsterDavFile {
                             )
                             .await;
                         }
-                        return Err(FsError::GeneralFailure);
+                        return Err(FsError::BadRequest);
                     }
 
                     let prepared_upload = prepared_upload.take().ok_or(FsError::GeneralFailure)?;

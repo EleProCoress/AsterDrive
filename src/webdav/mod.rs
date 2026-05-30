@@ -10,6 +10,7 @@ pub mod fs;
 pub mod metadata;
 pub mod path_resolver;
 pub mod system_file;
+mod transfer;
 
 use std::collections::BTreeMap;
 use std::io::Cursor;
@@ -18,7 +19,6 @@ use std::time::Duration;
 use actix_web::http::{StatusCode, header};
 use actix_web::{HttpRequest, HttpResponse, web};
 use futures::{StreamExt, pin_mut};
-use tokio_util::io::ReaderStream;
 use xmltree::{Element, XMLNode};
 
 use crate::config::WebDavConfig;
@@ -26,12 +26,10 @@ use crate::runtime::PrimaryAppState;
 use crate::services::{audit_service, property_service};
 use crate::utils::numbers::u64_to_usize;
 use crate::webdav::dav::{
-    DavFileSystem, DavLock, DavLockSystem, DavMetaData, DavPath, DavProp, FsError, OpenOptions,
-    ReadDirMeta,
+    DavFileSystem, DavLock, DavLockSystem, DavMetaData, DavPath, DavProp, FsError, ReadDirMeta,
 };
 
 const XML_CONTENT_TYPE: &str = "application/xml; charset=utf-8";
-const CHUNK_SIZE: usize = 16 * 1024;
 
 pub(crate) fn encode_href(path: &str) -> String {
     use percent_encoding::{AsciiSet, CONTROLS, utf8_percent_encode};
@@ -146,12 +144,12 @@ pub async fn webdav_handler(
             }
             Err(resp) => resp,
         },
-        "GET" => handle_get_head(&req, &dav_fs, &webdav.prefix, false).await,
-        "HEAD" => handle_get_head(&req, &dav_fs, &webdav.prefix, true).await,
+        "GET" => transfer::handle_get_head(&req, &dav_fs, &webdav.prefix, false).await,
+        "HEAD" => transfer::handle_get_head(&req, &dav_fs, &webdav.prefix, true).await,
         "PUT" => {
             let system_file_policy =
                 system_file::SystemFileBlockPolicy::from_runtime_config(&state.runtime_config);
-            handle_put(
+            transfer::handle_put(
                 &req,
                 &dav_fs,
                 lock_system.as_ref(),
@@ -254,118 +252,6 @@ fn handle_options() -> HttpResponse {
         .insert_header(("DAV", "1, 2, version-control"))
         .insert_header(("MS-Author-Via", "DAV"))
         .finish()
-}
-
-async fn handle_get_head(
-    req: &HttpRequest,
-    dav_fs: &fs::AsterDavFs,
-    prefix: &str,
-    head_only: bool,
-) -> HttpResponse {
-    let (path, relative) = match request_path(req, prefix) {
-        Ok(v) => v,
-        Err(resp) => return resp,
-    };
-
-    let meta = match dav_fs.metadata(&path).await {
-        Ok(meta) => meta,
-        Err(err) => return fs_error_response(err),
-    };
-    if meta.is_dir() {
-        return HttpResponse::MethodNotAllowed().finish();
-    }
-
-    let content_length = meta.len().to_string();
-    let content_type = mime_guess::from_path(relative.trim_end_matches('/'))
-        .first_or_octet_stream()
-        .essence_str()
-        .to_string();
-
-    let mut response = HttpResponse::Ok();
-    response.insert_header((header::CONTENT_LENGTH, content_length));
-    response.insert_header((header::CONTENT_TYPE, content_type));
-    if let Some(etag) = meta.etag() {
-        response.insert_header((header::ETAG, format!("\"{etag}\"")));
-    }
-
-    if head_only {
-        return response.finish();
-    }
-
-    // GET 必须直接走存储流，不要回退到 DavFileSystem::open(read) 的缓冲兜底，
-    // 否则会重新引入额外复制/临时文件。
-    let stream = match dav_fs.open_read_stream(&path).await {
-        Ok(stream) => stream,
-        Err(err) => return fs_error_response(err),
-    };
-    response.streaming(ReaderStream::with_capacity(stream, CHUNK_SIZE))
-}
-
-async fn handle_put(
-    req: &HttpRequest,
-    dav_fs: &fs::AsterDavFs,
-    lock_system: &dyn DavLockSystem,
-    prefix: &str,
-    system_file_policy: &system_file::SystemFileBlockPolicy,
-    payload: &mut web::Payload,
-) -> HttpResponse {
-    let (path, relative) = match request_path(req, prefix) {
-        Ok(v) => v,
-        Err(resp) => return resp,
-    };
-    if let Err(resp) = ensure_system_file_name_allowed(system_file_policy, &relative) {
-        return resp;
-    }
-    let existed = dav_fs.metadata(&path).await.is_ok();
-
-    if let Err(resp) = ensure_unlocked(lock_system, &path, false, req.headers()).await {
-        return resp;
-    }
-
-    let create_new = header_equals(req.headers(), header::IF_NONE_MATCH, "*");
-    let create = !header_equals(req.headers(), header::IF_MATCH, "*");
-    let mut options = OpenOptions::write();
-    options.create = create;
-    options.create_new = create_new;
-    options.truncate = true;
-    // 已知 Content-Length 才能命中本地 staging / S3 put_reader 快路径。
-    options.size = req
-        .headers()
-        .get(header::CONTENT_LENGTH)
-        .and_then(|value| value.to_str().ok())
-        .and_then(|value| value.parse::<u64>().ok());
-
-    let mut file = match dav_fs.open(&path, options).await {
-        Ok(file) => file,
-        Err(FsError::Exists) => return HttpResponse::PreconditionFailed().finish(),
-        Err(FsError::NotFound) => return HttpResponse::Conflict().finish(),
-        Err(err) => return fs_error_response(err),
-    };
-
-    while let Some(chunk) = payload.next().await {
-        let chunk = match chunk {
-            Ok(chunk) => chunk,
-            Err(_) => return HttpResponse::BadRequest().body("Failed to read request body"),
-        };
-        if let Err(err) = file.write_bytes(chunk).await {
-            return fs_error_response(err);
-        }
-    }
-
-    if let Err(err) = file.flush().await {
-        return fs_error_response(err);
-    }
-
-    if existed {
-        HttpResponse::NoContent().finish()
-    } else {
-        HttpResponse::Created()
-            .insert_header((
-                header::CONTENT_LOCATION,
-                href_for_relative(prefix, &relative),
-            ))
-            .finish()
-    }
 }
 
 async fn handle_mkcol(
@@ -784,7 +670,7 @@ async fn ensure_parent_exists(dav_fs: &fs::AsterDavFs, relative: &str) -> Result
     }
 }
 
-fn ensure_system_file_name_allowed(
+pub(crate) fn ensure_system_file_name_allowed(
     system_file_policy: &system_file::SystemFileBlockPolicy,
     relative: &str,
 ) -> Result<(), HttpResponse> {
@@ -796,7 +682,7 @@ fn ensure_system_file_name_allowed(
     Err(HttpResponse::Forbidden().body("WebDAV system file name is blocked"))
 }
 
-async fn ensure_unlocked(
+pub(crate) async fn ensure_unlocked(
     lock_system: &dyn DavLockSystem,
     path: &DavPath,
     deep: bool,
@@ -809,7 +695,10 @@ async fn ensure_unlocked(
     }
 }
 
-fn request_path(req: &HttpRequest, prefix: &str) -> Result<(DavPath, String), HttpResponse> {
+pub(crate) fn request_path(
+    req: &HttpRequest,
+    prefix: &str,
+) -> Result<(DavPath, String), HttpResponse> {
     decode_relative_path(req.path().strip_prefix(prefix).unwrap_or(req.path()))
 }
 
@@ -902,13 +791,6 @@ fn overwrite_enabled(headers: &header::HeaderMap) -> bool {
         .get("Overwrite")
         .and_then(|value| value.to_str().ok())
         .is_none_or(|value| !value.eq_ignore_ascii_case("F"))
-}
-
-fn header_equals(headers: &header::HeaderMap, name: header::HeaderName, expected: &str) -> bool {
-    headers
-        .get(name)
-        .and_then(|value| value.to_str().ok())
-        .is_some_and(|value| value.trim() == expected)
 }
 
 fn submitted_lock_tokens(headers: &header::HeaderMap) -> Vec<String> {
@@ -1495,7 +1377,7 @@ fn default_prefix(namespace: Option<&str>) -> &str {
     }
 }
 
-fn fs_error_response(err: FsError) -> HttpResponse {
+pub(crate) fn fs_error_response(err: FsError) -> HttpResponse {
     HttpResponse::build(fs_error_status(&err)).finish()
 }
 
@@ -1506,6 +1388,7 @@ fn fs_error_status(err: &FsError) -> StatusCode {
         FsError::Exists => StatusCode::CONFLICT,
         FsError::InsufficientStorage => StatusCode::INSUFFICIENT_STORAGE,
         FsError::TooLarge => StatusCode::PAYLOAD_TOO_LARGE,
+        FsError::BadRequest => StatusCode::BAD_REQUEST,
         FsError::GeneralFailure => StatusCode::INTERNAL_SERVER_ERROR,
     }
 }
