@@ -8,6 +8,7 @@ import {
 	TeamManageDangerSection,
 	TeamManageMembersSection,
 	TeamManageOverviewSection,
+	TeamManageWebdavSection,
 } from "@/components/settings/team-manage-detail/TeamManageSections";
 import { TeamManageShell } from "@/components/settings/team-manage-detail/TeamManageShell";
 import {
@@ -21,7 +22,9 @@ import { useTeamManageTabs } from "@/components/settings/team-manage-detail/useT
 import { handleApiError } from "@/hooks/useApiError";
 import { useConfirmDialog } from "@/hooks/useConfirmDialog";
 import { getUserDisplayName } from "@/lib/user";
+import { normalizeWebdavPrefix } from "@/lib/webdav";
 import { teamService } from "@/services/teamService";
+import { webdavAccountService } from "@/services/webdavAccountService";
 import type { TeamInfo, TeamMemberRole, UserStatus } from "@/types/api";
 
 export type { TeamManageTab } from "@/components/settings/team-manage-detail/types";
@@ -72,6 +75,7 @@ export function TeamManageDialog({
 	const [mutating, setMutating] = useState(false);
 	const [teamDescription, setTeamDescription] = useState("");
 	const [teamName, setTeamName] = useState("");
+	const [webdavPrefix, setWebdavPrefix] = useState("/webdav");
 	const roleLabel = (role: TeamMemberRole) =>
 		t(`settings:settings_team_role_${role}`);
 	const memberKeyword = memberQuery.trim();
@@ -167,6 +171,26 @@ export function TeamManageDialog({
 		setTeamName(displayTeam?.name ?? "");
 		setTeamDescription(displayTeam?.description ?? "");
 	}, [displayTeam?.description, displayTeam?.name]);
+
+	useEffect(() => {
+		if (!open) {
+			return;
+		}
+
+		let cancelled = false;
+		void webdavAccountService
+			.settings()
+			.then((settings) => {
+				if (!cancelled) {
+					setWebdavPrefix(normalizeWebdavPrefix(settings.prefix));
+				}
+			})
+			.catch(handleApiError);
+
+		return () => {
+			cancelled = true;
+		};
+	}, [open]);
 
 	const hasMemberFilters =
 		memberKeyword.length > 0 ||
@@ -446,6 +470,15 @@ export function TeamManageDialog({
 		/>
 	);
 
+	const webdavSection = (
+		<TeamManageWebdavSection
+			canManageTeam={canManageTeam}
+			currentUserId={currentUserId}
+			teamId={teamId}
+			webdavPrefix={webdavPrefix}
+		/>
+	);
+
 	const auditSection = canManageTeam ? (
 		<TeamManageAuditSection
 			auditCurrentPage={auditCurrentPage}
@@ -505,6 +538,7 @@ export function TeamManageDialog({
 				usagePercentage={usagePercentage}
 				used={used}
 				viewerRole={viewerRole}
+				webdavSection={webdavSection}
 			/>
 
 			<ConfirmDialog

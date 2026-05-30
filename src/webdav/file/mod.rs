@@ -57,7 +57,7 @@ impl std::fmt::Debug for AsterDavFile {
 enum FileMode {
     Write {
         state: PrimaryAppState,
-        user_id: i64,
+        scope: WorkspaceStorageScope,
         folder_id: Option<i64>,
         filename: String,
         existing_file_id: Option<i64>,
@@ -72,7 +72,7 @@ enum FileMode {
     },
     WriteDirect {
         state: PrimaryAppState,
-        user_id: i64,
+        scope: WorkspaceStorageScope,
         folder_id: Option<i64>,
         filename: String,
         existing_file_id: Option<i64>,
@@ -100,7 +100,7 @@ impl AsterDavFile {
     ) -> Result<Self, FsError> {
         Self::for_write_with_audit(
             state,
-            user_id,
+            WorkspaceStorageScope::Personal { user_id },
             folder_id,
             filename,
             existing_file_id,
@@ -114,9 +114,9 @@ impl AsterDavFile {
         .await
     }
 
-    pub async fn for_write_with_audit(
+    pub(crate) async fn for_write_with_audit(
         state: PrimaryAppState,
-        user_id: i64,
+        scope: WorkspaceStorageScope,
         folder_id: Option<i64>,
         filename: String,
         existing_file_id: Option<i64>,
@@ -127,7 +127,7 @@ impl AsterDavFile {
         let (file, temp_path, resolved_policy, hasher) = if let Some(size_hint) = declared_size {
             let policy = workspace_storage_service::resolve_policy_for_size(
                 &state,
-                WorkspaceStorageScope::Personal { user_id },
+                scope,
                 folder_id,
                 size_hint,
             )
@@ -164,7 +164,7 @@ impl AsterDavFile {
                 }
                 workspace_storage_service::check_quota(
                     state.writer_db(),
-                    WorkspaceStorageScope::Personal { user_id },
+                    scope,
                     size_hint,
                 )
                 .await
@@ -199,7 +199,7 @@ impl AsterDavFile {
                 return Ok(Self {
                     mode: FileMode::WriteDirect {
                         state,
-                        user_id,
+                        scope,
                         folder_id,
                         filename,
                         existing_file_id,
@@ -226,7 +226,7 @@ impl AsterDavFile {
         Ok(Self {
             mode: FileMode::Write {
                 state,
-                user_id,
+                scope,
                 folder_id,
                 filename,
                 existing_file_id,
@@ -460,7 +460,7 @@ impl DavFile for AsterDavFile {
             match &mut self.mode {
                 FileMode::Write {
                     state,
-                    user_id,
+                    scope,
                     folder_id,
                     filename,
                     existing_file_id,
@@ -502,7 +502,7 @@ impl DavFile for AsterDavFile {
                     let stored = workspace_storage_service::store_from_temp_with_hints(
                         state,
                         workspace_storage_service::StoreFromTempParams {
-                            scope: WorkspaceStorageScope::Personal { user_id: *user_id },
+                            scope: *scope,
                             folder_id: *folder_id,
                             filename,
                             temp_path,
@@ -533,7 +533,7 @@ impl DavFile for AsterDavFile {
                 }
                 FileMode::WriteDirect {
                     state,
-                    user_id,
+                    scope,
                     folder_id,
                     filename,
                     existing_file_id,
@@ -592,7 +592,7 @@ impl DavFile for AsterDavFile {
                     let stored = workspace_storage_service::store_preuploaded_nondedup(
                         state,
                         workspace_storage_service::StorePreuploadedNondedupParams {
-                            scope: WorkspaceStorageScope::Personal { user_id: *user_id },
+                            scope: *scope,
                             folder_id: *folder_id,
                             filename,
                             size: *declared_size,

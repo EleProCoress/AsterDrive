@@ -7,12 +7,12 @@ use actix_web::test;
 use actix_web::{App, HttpServer, web};
 use aster_drive::config::{RateLimitConfig, WebDavConfig};
 use aster_drive::db::repository::{file_repo, property_repo};
-use aster_drive::entities::{user, webdav_account};
+use aster_drive::entities::{team, team_member, user, webdav_account};
 use aster_drive::runtime::PrimaryAppState;
-use aster_drive::types::{EntityType, UserRole, UserStatus};
+use aster_drive::types::{EntityType, TeamMemberRole, UserRole, UserStatus};
 use base64::Engine;
 use chrono::Utc;
-use sea_orm::{ActiveModelTrait, Set};
+use sea_orm::{ActiveModelTrait, IntoActiveModel, Set};
 use tokio::task::JoinHandle;
 
 fn basic_auth_header(username: &str, password: &str) -> String {
@@ -115,6 +115,112 @@ async fn seed_real_webdav_account(state: &PrimaryAppState) -> (String, String) {
     .expect("real WebDAV account should be inserted");
 
     (username, password)
+}
+
+async fn seed_real_team_webdav_accounts(
+    state: &PrimaryAppState,
+) -> (String, String, String, String, i64) {
+    let now = Utc::now();
+    let default_policy_group =
+        aster_drive::db::repository::policy_group_repo::find_default_group(state.writer_db())
+            .await
+            .expect("default policy group lookup should succeed")
+            .expect("default policy group should exist");
+    let user = user::ActiveModel {
+        username: Set("real-team-webdav-user".to_string()),
+        email: Set("real-team-webdav-user@example.com".to_string()),
+        password_hash: Set("unused".to_string()),
+        role: Set(UserRole::User),
+        status: Set(UserStatus::Active),
+        session_version: Set(0),
+        email_verified_at: Set(Some(now)),
+        pending_email: Set(None),
+        storage_used: Set(0),
+        storage_quota: Set(0),
+        policy_group_id: Set(Some(default_policy_group.id)),
+        created_at: Set(now),
+        updated_at: Set(now),
+        config: Set(None),
+        ..Default::default()
+    }
+    .insert(state.writer_db())
+    .await
+    .expect("real team WebDAV test user should be inserted");
+    state
+        .policy_snapshot
+        .set_user_policy_group(user.id, default_policy_group.id);
+
+    let team = team::ActiveModel {
+        name: Set("Real Team WebDAV".to_string()),
+        description: Set("WebDAV team workspace".to_string()),
+        created_by: Set(user.id),
+        storage_used: Set(0),
+        storage_quota: Set(0),
+        policy_group_id: Set(Some(default_policy_group.id)),
+        created_at: Set(now),
+        updated_at: Set(now),
+        archived_at: Set(None),
+        ..Default::default()
+    }
+    .insert(state.writer_db())
+    .await
+    .expect("real team WebDAV team should be inserted");
+
+    team_member::ActiveModel {
+        team_id: Set(team.id),
+        user_id: Set(user.id),
+        role: Set(TeamMemberRole::Owner),
+        created_at: Set(now),
+        updated_at: Set(now),
+        ..Default::default()
+    }
+    .insert(state.writer_db())
+    .await
+    .expect("real team WebDAV owner membership should be inserted");
+
+    let personal_username = "real-team-webdav-personal".to_string();
+    let personal_password = "real-team-webdav-personal-pass".to_string();
+    webdav_account::ActiveModel {
+        user_id: Set(user.id),
+        team_id: Set(None),
+        username: Set(personal_username.clone()),
+        password_hash: Set(aster_drive::utils::hash::hash_password(&personal_password)
+            .expect("personal WebDAV password should hash")),
+        root_folder_id: Set(None),
+        is_active: Set(true),
+        created_at: Set(now),
+        updated_at: Set(now),
+        ..Default::default()
+    }
+    .insert(state.writer_db())
+    .await
+    .expect("personal WebDAV account should be inserted");
+
+    let team_username = "real-team-webdav-account".to_string();
+    let team_password = "real-team-webdav-pass".to_string();
+    webdav_account::ActiveModel {
+        user_id: Set(user.id),
+        team_id: Set(Some(team.id)),
+        username: Set(team_username.clone()),
+        password_hash: Set(aster_drive::utils::hash::hash_password(&team_password)
+            .expect("team WebDAV password should hash")),
+        root_folder_id: Set(None),
+        is_active: Set(true),
+        created_at: Set(now),
+        updated_at: Set(now),
+        ..Default::default()
+    }
+    .insert(state.writer_db())
+    .await
+    .expect("team WebDAV account should be inserted");
+
+    (
+        team_username,
+        team_password,
+        personal_username,
+        personal_password,
+        team.id,
+    )
 }
 
 macro_rules! create_webdav_basic_auth {
@@ -743,6 +849,111 @@ async fn test_webdav_real_http_put_with_own_lock_overwrites_placeholder() {
             || unlock.status() == reqwest::StatusCode::OK,
         "UNLOCK should succeed after locked overwrite, got {}",
         unlock.status()
+    );
+
+    server.stop().await;
+}
+
+#[actix_web::test]
+async fn test_webdav_real_http_team_account_uses_team_workspace() {
+    let state = common::setup().await;
+    let (team_username, team_password, personal_username, personal_password, _team_id) =
+        seed_real_team_webdav_accounts(&state).await;
+    let server = start_real_webdav_server(state).await;
+    let client = reqwest::Client::new();
+    let url = format!("{}/webdav/team-scope.bin", server.base_url);
+    let data: Vec<u8> = (0..=247).cycle().take(64 * 1024 + 13).collect();
+
+    let put = client
+        .put(&url)
+        .basic_auth(&team_username, Some(&team_password))
+        .header(reqwest::header::CONTENT_TYPE, "application/octet-stream")
+        .header(reqwest::header::CONTENT_LENGTH, data.len().to_string())
+        .body(data.clone())
+        .send()
+        .await
+        .expect("team WebDAV PUT should receive a response");
+    let put_status = put.status();
+    let put_body = put
+        .text()
+        .await
+        .expect("team WebDAV PUT response body should be readable");
+    assert!(
+        put_status == reqwest::StatusCode::CREATED || put_status == reqwest::StatusCode::NO_CONTENT,
+        "team WebDAV PUT should create the file, got {put_status}: {put_body}"
+    );
+
+    let team_get = client
+        .get(&url)
+        .basic_auth(&team_username, Some(&team_password))
+        .send()
+        .await
+        .expect("team WebDAV GET should receive a response");
+    assert_eq!(team_get.status(), reqwest::StatusCode::OK);
+    let bytes = team_get
+        .bytes()
+        .await
+        .expect("team WebDAV GET body should read");
+    assert_eq!(bytes.as_ref(), data.as_slice());
+
+    let personal_get = client
+        .get(&url)
+        .basic_auth(&personal_username, Some(&personal_password))
+        .send()
+        .await
+        .expect("personal WebDAV GET should receive a response");
+    assert_eq!(
+        personal_get.status(),
+        reqwest::StatusCode::NOT_FOUND,
+        "personal account must not see files written through a team WebDAV account"
+    );
+
+    server.stop().await;
+}
+
+#[actix_web::test]
+async fn test_webdav_real_http_team_account_is_rejected_after_team_archive() {
+    let state = common::setup().await;
+    let (team_username, team_password, _, _, team_id) =
+        seed_real_team_webdav_accounts(&state).await;
+    let server = start_real_webdav_server(state.clone()).await;
+    let client = reqwest::Client::new();
+    let url = format!("{}/webdav/team-archive-check.bin", server.base_url);
+
+    let before_archive = client
+        .put(&url)
+        .basic_auth(&team_username, Some(&team_password))
+        .header(reqwest::header::CONTENT_LENGTH, "5")
+        .body("ready".to_string())
+        .send()
+        .await
+        .expect("team WebDAV PUT before archive should receive a response");
+    assert!(
+        before_archive.status() == reqwest::StatusCode::CREATED
+            || before_archive.status() == reqwest::StatusCode::NO_CONTENT,
+        "team WebDAV account should work before archive, got {}",
+        before_archive.status()
+    );
+
+    let team = aster_drive::db::repository::team_repo::find_by_id(state.writer_db(), team_id)
+        .await
+        .expect("team should exist");
+    let mut active_team = team.into_active_model();
+    active_team.archived_at = Set(Some(Utc::now()));
+    active_team
+        .update(state.writer_db())
+        .await
+        .expect("team should archive");
+    let after_archive = client
+        .get(&url)
+        .basic_auth(&team_username, Some(&team_password))
+        .send()
+        .await
+        .expect("team WebDAV GET after archive should receive a response");
+    assert_eq!(
+        after_archive.status(),
+        reqwest::StatusCode::UNAUTHORIZED,
+        "archived team WebDAV account must be rejected at auth boundary"
     );
 
     server.stop().await;

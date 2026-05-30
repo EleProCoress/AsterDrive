@@ -103,15 +103,12 @@ function buildSidebarNavLinks(
 			icon: "Clock",
 			label: t("tasks:title"),
 		},
-	];
-
-	if (!isTeamWorkspace(workspace)) {
-		links.push({
-			to: workspaceWebdavPath(),
+		{
+			to: workspaceWebdavPath(workspace),
 			icon: "HardDrive",
 			label: t("webdav"),
-		});
-	}
+		},
+	];
 
 	return links;
 }

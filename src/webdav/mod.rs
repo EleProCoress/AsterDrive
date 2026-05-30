@@ -72,17 +72,17 @@ pub async fn webdav_handler(
     };
 
     let audit_info = audit_service::AuditRequestInfo::from_request(&req);
-    let audit_ctx = audit_info.to_context(auth_result.user_id);
+    let audit_ctx = audit_info.to_context(auth_result.scope.actor_user_id());
 
     let dav_fs = fs::AsterDavFs::new_with_audit(
         state.get_ref().clone(),
-        auth_result.user_id,
+        auth_result.scope,
         auth_result.root_folder_id,
         audit_ctx.clone(),
     );
     let lock_system = db_lock_system::DbLockSystem::new_with_audit(
         state.get_ref().clone(),
-        auth_result.user_id,
+        auth_result.scope,
         auth_result.root_folder_id,
         audit_ctx,
     );

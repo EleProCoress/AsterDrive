@@ -380,10 +380,9 @@ describe("useShareViewPageController", () => {
 			} as never);
 		});
 
-		expect(mockState.verifyPassword).toHaveBeenCalledWith(
-			"share-token",
-			"letmein",
-		);
+		expect(mockState.verifyPassword).toHaveBeenCalledWith("share-token", {
+			password: "letmein",
+		});
 		expect(mockState.toastSuccess).toHaveBeenCalledWith(
 			"t:share:password_verified",
 		);

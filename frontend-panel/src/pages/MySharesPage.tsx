@@ -79,9 +79,9 @@ export default function MySharesPage() {
 				await shareService.delete(targets[0].id);
 				toast.success(t("share:my_shares_delete_success"));
 			} else {
-				const result = await shareService.batchDelete(
-					targets.map((target) => target.id),
-				);
+				const result = await shareService.batchDelete({
+					share_ids: targets.map((target) => target.id),
+				});
 				showBatchDeleteToast(result);
 			}
 

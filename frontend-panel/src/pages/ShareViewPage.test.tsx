@@ -708,10 +708,9 @@ describe("ShareViewPage", () => {
 		fireEvent.click(screen.getByRole("button", { name: "verify" }));
 
 		await waitFor(() => {
-			expect(mockState.verifyPassword).toHaveBeenCalledWith(
-				"share-token",
-				"letmein",
-			);
+			expect(mockState.verifyPassword).toHaveBeenCalledWith("share-token", {
+				password: "letmein",
+			});
 		});
 		expect(mockState.toastSuccess).toHaveBeenCalledWith("password-verified");
 		expect(mockState.listContent).toHaveBeenCalledWith("share-token", {
@@ -790,10 +789,9 @@ describe("ShareViewPage", () => {
 		fireEvent.click(screen.getByRole("button", { name: "verify" }));
 
 		await waitFor(() => {
-			expect(mockState.verifyPassword).toHaveBeenCalledWith(
-				"share-token",
-				"first-password",
-			);
+			expect(mockState.verifyPassword).toHaveBeenCalledWith("share-token", {
+				password: "first-password",
+			});
 		});
 		expect(
 			await screen.findByRole("button", { name: "folder:Docs" }),
