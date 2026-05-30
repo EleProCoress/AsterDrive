@@ -5,7 +5,7 @@ use std::pin::Pin;
 use futures::stream;
 use tokio::io::AsyncRead;
 
-use crate::db::repository::{file_repo, folder_repo, property_repo, user_repo};
+use crate::db::repository::{file_repo, folder_repo, property_repo, team_repo, user_repo};
 use crate::runtime::PrimaryAppState;
 use crate::services::{
     audit_service::{self, AuditContext},
@@ -170,6 +170,9 @@ impl DavFileSystem for AsterDavFs {
 
                 if options.create_new && existing_file_id.is_some() {
                     return Err(FsError::Exists);
+                }
+                if !options.create && existing_file_id.is_none() {
+                    return Err(FsError::NotFound);
                 }
 
                 let dav_file = AsterDavFile::for_write_with_audit(
@@ -517,15 +520,26 @@ impl DavFileSystem for AsterDavFs {
 
     fn get_quota(&self) -> FsFuture<'_, (u64, Option<u64>)> {
         Box::pin(async move {
-            let user = user_repo::find_by_id(self.state.writer_db(), self.scope.actor_user_id())
-                .await
-                .map_err(|_| FsError::GeneralFailure)?;
+            let (storage_used, storage_quota) = match self.scope {
+                WorkspaceStorageScope::Personal { user_id } => {
+                    let user = user_repo::find_by_id(self.state.writer_db(), user_id)
+                        .await
+                        .map_err(|_| FsError::GeneralFailure)?;
+                    (user.storage_used, user.storage_quota)
+                }
+                WorkspaceStorageScope::Team { team_id, .. } => {
+                    let team = team_repo::find_by_id(self.state.writer_db(), team_id)
+                        .await
+                        .map_err(|_| FsError::GeneralFailure)?;
+                    (team.storage_used, team.storage_quota)
+                }
+            };
 
-            let used = i64_to_u64(user.storage_used, "webdav storage_used")
+            let used = i64_to_u64(storage_used, "webdav storage_used")
                 .map_err(|_| FsError::GeneralFailure)?;
-            let total = if user.storage_quota > 0 {
+            let total = if storage_quota > 0 {
                 Some(
-                    i64_to_u64(user.storage_quota, "webdav storage_quota")
+                    i64_to_u64(storage_quota, "webdav storage_quota")
                         .map_err(|_| FsError::GeneralFailure)?,
                 )
             } else {

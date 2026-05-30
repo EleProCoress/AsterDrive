@@ -195,9 +195,18 @@ fn destination_relative_path(req: &HttpRequest, prefix: &str) -> Result<String, 
     } else {
         raw.to_string()
     };
-    let relative = path.strip_prefix(prefix).ok_or_else(|| {
-        HttpResponse::BadRequest().body("Destination must stay under WebDAV prefix")
-    })?;
+    let relative = path
+        .strip_prefix(prefix)
+        .filter(|_| {
+            path == prefix
+                || path
+                    .as_bytes()
+                    .get(prefix.len())
+                    .is_some_and(|byte| *byte == b'/')
+        })
+        .ok_or_else(|| {
+            HttpResponse::BadRequest().body("Destination must stay under WebDAV prefix")
+        })?;
     decode_relative_path(relative).map(|(_, relative)| relative)
 }
 

@@ -225,6 +225,7 @@ export function buildTeamManageSections({
 	) : null;
 	const webdavSection = (
 		<TeamManageWebdavSection
+			key={teamId}
 			canManageTeam={canManageTeam}
 			currentUserId={currentUserId}
 			teamId={teamId}

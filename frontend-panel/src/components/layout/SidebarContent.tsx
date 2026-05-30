@@ -36,7 +36,7 @@ export function SidebarContent({
 				ref={scrollViewportRef}
 				data-testid="user-sidebar-scroll"
 				className="min-h-0 flex-1"
-				onScroll={onScrollViewport}
+				viewportProps={{ onScroll: onScrollViewport }}
 			>
 				<div className="flex min-h-full flex-col">
 					<FolderTree onMoveToFolder={onMoveToFolder} />

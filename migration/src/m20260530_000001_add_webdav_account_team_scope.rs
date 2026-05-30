@@ -15,10 +15,27 @@ impl MigrationTrait for Migration {
                     .add_column(ColumnDef::new(WebdavAccounts::TeamId).big_integer().null())
                     .to_owned(),
             )
+            .await?;
+        manager
+            .create_index(
+                Index::create()
+                    .name("idx_webdav_accounts_team_id")
+                    .table(WebdavAccounts::Table)
+                    .col(WebdavAccounts::TeamId)
+                    .to_owned(),
+            )
             .await
     }
 
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        manager
+            .drop_index(
+                Index::drop()
+                    .name("idx_webdav_accounts_team_id")
+                    .table(WebdavAccounts::Table)
+                    .to_owned(),
+            )
+            .await?;
         manager
             .alter_table(
                 Table::alter()

@@ -129,20 +129,20 @@ vi.mock("@/components/ui/scroll-area", () => ({
 	ScrollArea: ({
 		children,
 		className,
-		onScroll,
 		ref,
+		viewportProps,
 		"data-testid": testId,
 	}: {
 		children: React.ReactNode;
 		className?: string;
-		onScroll?: React.UIEventHandler<HTMLDivElement>;
 		ref?: React.Ref<HTMLDivElement>;
+		viewportProps?: React.ComponentProps<"div">;
 		"data-testid"?: string;
 	}) => (
 		<div
 			data-testid={testId ?? "scroll-area"}
 			className={className}
-			onScroll={onScroll}
+			onScroll={viewportProps?.onScroll}
 			ref={(node) => {
 				if (typeof ref === "function") {
 					ref(node);

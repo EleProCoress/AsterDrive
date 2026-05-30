@@ -99,7 +99,11 @@ pub(crate) async fn handle_put(
     if let Err(resp) = ensure_system_file_name_allowed(system_file_policy, &relative) {
         return resp;
     }
-    let existed = dav_fs.metadata(&path).await.is_ok();
+    let existed = match dav_fs.metadata(&path).await {
+        Ok(_) => true,
+        Err(FsError::NotFound) => false,
+        Err(err) => return fs_error_response(err),
+    };
 
     if let Err(resp) = ensure_unlocked(lock_system, &path, false, req.headers()).await {
         return resp;

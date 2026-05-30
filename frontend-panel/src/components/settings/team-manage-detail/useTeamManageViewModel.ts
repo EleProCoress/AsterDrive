@@ -105,9 +105,12 @@ export function useTeamManageViewModel({
 		Math.ceil(memberTotal / TEAM_MANAGE_MEMBER_PAGE_SIZE),
 	);
 	const safeMemberOffset =
-		memberOffset < memberTotal || memberTotal === 0
-			? memberOffset
-			: Math.max(0, (memberTotalPages - 1) * TEAM_MANAGE_MEMBER_PAGE_SIZE);
+		memberTotal === 0
+			? 0
+			: Math.min(
+					memberOffset,
+					Math.max(0, (memberTotalPages - 1) * TEAM_MANAGE_MEMBER_PAGE_SIZE),
+				);
 	const memberCurrentPage =
 		Math.floor(safeMemberOffset / TEAM_MANAGE_MEMBER_PAGE_SIZE) + 1;
 	const auditTotalPages = Math.max(

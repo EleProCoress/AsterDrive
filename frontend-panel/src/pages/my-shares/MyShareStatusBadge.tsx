@@ -25,5 +25,7 @@ export function MyShareStatusBadge({
 			return <Badge variant="outline">{exhaustedLabel}</Badge>;
 		case "deleted":
 			return <Badge variant="destructive">{deletedLabel}</Badge>;
+		default:
+			return null;
 	}
 }

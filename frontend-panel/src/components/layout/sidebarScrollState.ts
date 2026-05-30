@@ -1,5 +1,9 @@
-export let userSidebarScrollTop = 0;
+export const userSidebarScroll = { value: 0 };
+
+export function getUserSidebarScrollTop() {
+	return userSidebarScroll.value;
+}
 
 export function setUserSidebarScrollTop(scrollTop: number) {
-	userSidebarScrollTop = scrollTop;
+	userSidebarScroll.value = scrollTop;
 }

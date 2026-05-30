@@ -24,7 +24,7 @@ export function WebdavCopyField({
 				onClick={onCopy}
 			>
 				<Icon name="Copy" className="size-3.5" />
-				{copyLabel ? copyLabel : null}
+				{copyLabel}
 			</Button>
 		</div>
 	);

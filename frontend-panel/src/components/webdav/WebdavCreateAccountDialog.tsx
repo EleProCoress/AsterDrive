@@ -91,7 +91,6 @@ export function WebdavCreateAccountDialog({
 							onChange={(event) => onPasswordChange(event.target.value)}
 							placeholder={autoGenerateLabel}
 						/>
-						<p className="text-xs text-muted-foreground">{autoGenerateLabel}</p>
 					</div>
 					<div className="space-y-1.5">
 						<Label htmlFor="webdav-root-folder">{rootFolderLabel}</Label>

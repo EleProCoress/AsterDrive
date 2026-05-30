@@ -364,7 +364,7 @@ impl DavFile for AsterDavFile {
                         .checked_add(chunk_len)
                         .ok_or(FsError::GeneralFailure)?;
                     if next_written > declared_size_u64(*declared_size)? {
-                        return Err(FsError::GeneralFailure);
+                        return Err(FsError::BadRequest);
                     }
                     writer
                         .as_mut()
@@ -416,7 +416,7 @@ impl DavFile for AsterDavFile {
                             .checked_add(chunk_len)
                             .ok_or(FsError::GeneralFailure)?;
                         if next_written > declared_size_u64(*declared_size)? {
-                            return Err(FsError::GeneralFailure);
+                            return Err(FsError::BadRequest);
                         }
                         writer
                             .as_mut()

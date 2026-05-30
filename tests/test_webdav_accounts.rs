@@ -13,6 +13,10 @@ use sea_orm::{
 };
 use serde_json::Value;
 
+fn webdav_test_password(label: &str) -> String {
+    format!("TEST_PASSWORD_{label}")
+}
+
 async fn seed_team_for_webdav_account_test(
     state: &aster_drive::runtime::PrimaryAppState,
     user_id: i64,
@@ -125,7 +129,7 @@ async fn test_webdav_account_crud() {
         .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "username": "webdav_user",
-            "password": "webdav_pass123"
+            "password": webdav_test_password("PERSONAL_CRUD")
         }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -224,7 +228,7 @@ async fn test_team_webdav_account_crud_is_separate_from_personal_accounts() {
         .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
                 "username": "team_webdav_user",
-                "password": "team_webdav_pass123"
+                "password": webdav_test_password("TEAM_CRUD")
         }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -341,7 +345,7 @@ async fn test_team_webdav_account_visibility_and_management_boundaries() {
         .insert_header(common::csrf_header_for(&owner_token))
         .set_json(serde_json::json!({
             "username": "owner_team_webdav",
-            "password": "owner_team_webdav_pass"
+            "password": webdav_test_password("OWNER")
         }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -355,7 +359,7 @@ async fn test_team_webdav_account_visibility_and_management_boundaries() {
         .insert_header(common::csrf_header_for(&member_token))
         .set_json(serde_json::json!({
             "username": "member_team_webdav",
-            "password": "member_team_webdav_pass"
+            "password": webdav_test_password("MEMBER")
         }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -366,7 +370,7 @@ async fn test_team_webdav_account_visibility_and_management_boundaries() {
     );
     let body: Value = test::read_body_json(resp).await;
     let member_account_id = body["data"]["id"].as_i64().unwrap();
-    assert_eq!(body["data"]["user_id"], Value::Null);
+    assert!(body["data"].get("user_id").is_none());
 
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/teams/{team_id}/webdav-accounts"))
@@ -544,7 +548,7 @@ async fn test_team_webdav_account_rejects_personal_root_folder() {
         .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "username": "team_root_guard",
-            "password": "team_root_guard_pass",
+            "password": webdav_test_password("TEAM_ROOT_GUARD"),
             "root_folder_id": personal_root_id
         }))
         .to_request();
@@ -653,7 +657,7 @@ async fn test_webdav_account_list_resolves_nested_paths() {
             .insert_header(common::csrf_header_for(&token))
             .set_json(serde_json::json!({
                 "username": username,
-                "password": "pass123456",
+                "password": webdav_test_password("ROOT_PATH"),
                 "root_folder_id": folder_id,
             }))
             .to_request();
@@ -700,7 +704,7 @@ async fn test_webdav_account_rejects_duplicate_username_and_foreign_root_folder(
         .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "username": "dup_user",
-            "password": "pass123456"
+            "password": webdav_test_password("DUPLICATE")
         }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -712,7 +716,7 @@ async fn test_webdav_account_rejects_duplicate_username_and_foreign_root_folder(
         .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "username": "dup_user",
-            "password": "pass123456"
+            "password": webdav_test_password("DUPLICATE")
         }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -759,7 +763,7 @@ async fn test_webdav_account_rejects_duplicate_username_and_foreign_root_folder(
         .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "username": "foreign-root",
-            "password": "pass123456",
+            "password": webdav_test_password("FOREIGN_ROOT"),
             "root_folder_id": foreign_folder_id,
         }))
         .to_request();
@@ -834,7 +838,7 @@ async fn test_webdav_account_test_connection() {
         .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "username": "test_conn",
-            "password": "pass1234"
+            "password": webdav_test_password("TEST_CONNECTION")
         }))
         .to_request();
     test::call_service(&app, req).await;
@@ -846,7 +850,7 @@ async fn test_webdav_account_test_connection() {
         .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "username": "test_conn",
-            "password": "pass1234"
+            "password": webdav_test_password("TEST_CONNECTION")
         }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -878,7 +882,7 @@ async fn test_webdav_account_rejects_blank_username() {
         .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "username": "   ",
-            "password": "pass123456"
+            "password": webdav_test_password("BLANK_USERNAME")
         }))
         .to_request();
     let resp = test::call_service(&app, req).await;

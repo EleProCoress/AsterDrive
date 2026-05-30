@@ -37,8 +37,8 @@ import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { SidebarContent } from "./SidebarContent";
 import { SidebarResizeHandle } from "./SidebarResizeHandle";
 import {
+	getUserSidebarScrollTop,
 	setUserSidebarScrollTop,
-	userSidebarScrollTop,
 } from "./sidebarScrollState";
 import type {
 	SidebarNavLink,
@@ -201,7 +201,7 @@ export function Sidebar({
 			return;
 		}
 
-		viewport.scrollTop = userSidebarScrollTop;
+		viewport.scrollTop = getUserSidebarScrollTop();
 
 		return () => {
 			setUserSidebarScrollTop(viewport.scrollTop);

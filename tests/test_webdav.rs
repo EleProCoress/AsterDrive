@@ -22,6 +22,14 @@ fn basic_auth_header(username: &str, password: &str) -> String {
     )
 }
 
+fn webdav_test_username(label: &str) -> String {
+    format!("webdav-{label}-{}", uuid::Uuid::new_v4().simple())
+}
+
+fn webdav_test_password(label: &str) -> String {
+    format!("TEST_PASSWORD_{label}_{}", uuid::Uuid::new_v4().simple())
+}
+
 struct RunningWebdavServer {
     base_url: String,
     handle: actix_web::dev::ServerHandle,
@@ -97,8 +105,8 @@ async fn seed_real_webdav_account(state: &PrimaryAppState) -> (String, String) {
         .policy_snapshot
         .set_user_policy_group(user.id, default_policy_group.id);
 
-    let username = "real-webdav-account".to_string();
-    let password = "real-webdav-pass-123".to_string();
+    let username = webdav_test_username("real-account");
+    let password = webdav_test_password("REAL_ACCOUNT");
     webdav_account::ActiveModel {
         user_id: Set(user.id),
         username: Set(username.clone()),
@@ -178,8 +186,8 @@ async fn seed_real_team_webdav_accounts(
     .await
     .expect("real team WebDAV owner membership should be inserted");
 
-    let personal_username = "real-team-webdav-personal".to_string();
-    let personal_password = "real-team-webdav-personal-pass".to_string();
+    let personal_username = webdav_test_username("real-team-personal");
+    let personal_password = webdav_test_password("REAL_TEAM_PERSONAL");
     webdav_account::ActiveModel {
         user_id: Set(user.id),
         team_id: Set(None),
@@ -196,8 +204,8 @@ async fn seed_real_team_webdav_accounts(
     .await
     .expect("personal WebDAV account should be inserted");
 
-    let team_username = "real-team-webdav-account".to_string();
-    let team_password = "real-team-webdav-pass".to_string();
+    let team_username = webdav_test_username("real-team-account");
+    let team_password = webdav_test_password("REAL_TEAM_ACCOUNT");
     webdav_account::ActiveModel {
         user_id: Set(user.id),
         team_id: Set(Some(team.id)),
@@ -225,20 +233,20 @@ async fn seed_real_team_webdav_accounts(
 
 macro_rules! create_webdav_basic_auth {
     ($app:expr, $token:expr) => {{
-        let username = "testuser-webdav";
-        let password = "webdav-pass-123";
+        let username = webdav_test_username("basic");
+        let password = webdav_test_password("BASIC");
         let req = test::TestRequest::post()
             .uri("/api/v1/webdav-accounts")
             .insert_header(("Cookie", common::access_cookie_header(&$token)))
             .insert_header(common::csrf_header_for(&$token))
             .set_json(serde_json::json!({
-                "username": username,
-                "password": password
+                "username": &username,
+                "password": &password
             }))
             .to_request();
         let resp = test::call_service(&$app, req).await;
         assert_eq!(resp.status(), 201, "create WebDAV account should return 201");
-        basic_auth_header(username, password)
+        basic_auth_header(&username, &password)
     }};
 }
 
@@ -1475,6 +1483,54 @@ async fn test_webdav_copy_move() {
 }
 
 #[actix_web::test]
+async fn test_webdav_copy_move_rejects_similar_destination_prefix() {
+    let app = setup_with_webdav!();
+
+    let (token, _) = register_and_login!(app);
+    let auth = create_webdav_basic_auth!(app, token);
+
+    for (method, source, destination) in [
+        (
+            "COPY",
+            "/webdav/copy-prefix-source.txt",
+            "/webdav-team/copied.txt",
+        ),
+        (
+            "MOVE",
+            "/webdav/move-prefix-source.txt",
+            "/webdav-team/moved.txt",
+        ),
+    ] {
+        let req = test::TestRequest::put()
+            .uri(source)
+            .insert_header(("Authorization", auth.clone()))
+            .set_payload("prefix boundary")
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert!(resp.status() == 201 || resp.status() == 204);
+
+        let req = test::TestRequest::with_uri(source)
+            .method(actix_web::http::Method::from_bytes(method.as_bytes()).unwrap())
+            .insert_header(("Authorization", auth.clone()))
+            .insert_header(("Destination", destination))
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(
+            resp.status(),
+            400,
+            "{method} should reject destination outside the WebDAV prefix"
+        );
+
+        let req = test::TestRequest::get()
+            .uri(source)
+            .insert_header(("Authorization", auth.clone()))
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), 200);
+    }
+}
+
+#[actix_web::test]
 async fn test_webdav_copy_folder_recursively() {
     let app = setup_with_webdav!();
     let (token, _) = register_and_login!(app);
@@ -2244,20 +2300,22 @@ async fn test_webdav_basic_auth_root_scope() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 201);
 
+    let basic_scope_username = webdav_test_username("basic-scope");
+    let basic_scope_password = webdav_test_password("BASIC_SCOPE");
     let req = test::TestRequest::post()
         .uri("/api/v1/webdav-accounts")
         .insert_header(("Cookie", common::access_cookie_header(&token)))
         .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
-            "username": "basic-scope-user",
-            "password": "basic-scope-pass",
+            "username": &basic_scope_username,
+            "password": &basic_scope_password,
             "root_folder_id": root_id,
         }))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 201);
 
-    let basic = basic_auth_header("basic-scope-user", "basic-scope-pass");
+    let basic = basic_auth_header(&basic_scope_username, &basic_scope_password);
 
     let req = test::TestRequest::with_uri("/webdav/")
         .method(actix_web::http::Method::from_bytes(b"PROPFIND").unwrap())
