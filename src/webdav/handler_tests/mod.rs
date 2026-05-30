@@ -20,11 +20,9 @@ use actix_web::{FromRequest, web};
 use async_trait::async_trait;
 use chrono::Utc;
 use migration::Migrator;
-use quick_xml::Reader;
-use quick_xml::events::Event;
 use sea_orm::{ActiveModelTrait, Set};
 use std::collections::HashMap;
-use std::io;
+use std::io::{self, Cursor};
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::{
@@ -34,6 +32,7 @@ use std::sync::{
 use std::task::{Context, Poll};
 use std::time::Duration;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt, ReadBuf};
+use xmltree::{Element, XMLNode};
 
 async fn build_webdav_test_state(
     driver_type: DriverType,
@@ -519,33 +518,10 @@ async fn propfind_href_is_percent_encoded_and_xml_parseable() {
         .await
         .expect("PROPFIND response body should be readable");
 
-    let mut reader = Reader::from_reader(body.as_ref());
-    let mut buf = Vec::new();
-    let mut in_href = false;
     let mut hrefs = Vec::new();
-
-    loop {
-        match reader.read_event_into(&mut buf) {
-            Ok(Event::Start(event))
-                if event.name().as_ref() == b"D:href" || event.name().as_ref() == b"href" =>
-            {
-                in_href = true;
-            }
-            Ok(Event::Text(text)) if in_href => {
-                hrefs.push(text.decode().expect("href text should decode").into_owned());
-                in_href = false;
-            }
-            Ok(Event::End(event))
-                if event.name().as_ref() == b"D:href" || event.name().as_ref() == b"href" =>
-            {
-                in_href = false;
-            }
-            Ok(Event::Eof) => break,
-            Ok(_) => {}
-            Err(error) => panic!("PROPFIND XML should parse cleanly: {error}"),
-        }
-        buf.clear();
-    }
+    let root =
+        Element::parse(Cursor::new(body.as_ref())).expect("PROPFIND XML should parse cleanly");
+    collect_href_text(&root, &mut hrefs);
 
     assert_eq!(hrefs.len(), 1);
     let decoded = percent_encoding::percent_decode_str(&hrefs[0])
@@ -555,6 +531,20 @@ async fn propfind_href_is_percent_encoded_and_xml_parseable() {
 
     drop(state);
     let _ = std::fs::remove_dir_all(temp_root);
+}
+
+fn collect_href_text(element: &Element, hrefs: &mut Vec<String>) {
+    if element.name == "href" || element.name == "D:href" {
+        if let Some(text) = element.get_text() {
+            hrefs.push(text.into_owned());
+        }
+    }
+
+    for child in &element.children {
+        if let XMLNode::Element(child) = child {
+            collect_href_text(child, hrefs);
+        }
+    }
 }
 
 #[actix_web::test]
