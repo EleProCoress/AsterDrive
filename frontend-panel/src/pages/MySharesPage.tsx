@@ -31,6 +31,14 @@ import type { BatchResult, MyShareInfo, ShareStatus } from "@/types/api";
 
 const PAGE_SIZE = 50;
 
+function openShareLink(share: MyShareInfo) {
+	window.open(
+		shareService.pagePath(share.token),
+		"_blank",
+		"noopener,noreferrer",
+	);
+}
+
 export default function MySharesPage() {
 	const { t } = useTranslation(["core", "share", "errors"]);
 	usePageTitle(t("share:my_shares_title"));
@@ -147,14 +155,6 @@ export default function MySharesPage() {
 		} catch {
 			toast.error(t("errors:unexpected_error"));
 		}
-	};
-
-	const openShareLink = (share: MyShareInfo) => {
-		window.open(
-			shareService.pagePath(share.token),
-			"_blank",
-			"noopener,noreferrer",
-		);
 	};
 
 	const showBatchDeleteToast = (result: BatchResult) => {

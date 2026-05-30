@@ -60,22 +60,102 @@ export function TeamManageDialog({
 	const { t } = useTranslation(["core", "settings"]);
 	const navigate = useNavigate();
 	const isPageLayout = layout === "page";
-	const [archiveConfirmValue, setArchiveConfirmValue] = useState("");
-	const [auditOffset, setAuditOffset] = useState(0);
-	const [memberIdentifier, setMemberIdentifier] = useState("");
-	const [memberOffset, setMemberOffset] = useState(0);
-	const [memberQuery, setMemberQuery] = useState("");
-	const [memberRole, setMemberRole] = useState<TeamMemberRole>("member");
-	const [memberRoleFilter, setMemberRoleFilter] = useState<
-		"__all__" | TeamMemberRole
-	>("__all__");
-	const [memberStatusFilter, setMemberStatusFilter] = useState<
-		"__all__" | UserStatus
-	>("__all__");
+	const activeTeamId = open ? teamId : null;
+	const [archiveConfirmDraft, setArchiveConfirmDraft] = useState<{
+		teamId: number | null;
+		value: string;
+	}>({ teamId: null, value: "" });
+	const [auditPageState, setAuditPageState] = useState({
+		offset: 0,
+		teamId: null as number | null,
+	});
+	const [memberState, setMemberState] = useState<{
+		identifier: string;
+		offset: number;
+		query: string;
+		role: TeamMemberRole;
+		roleFilter: "__all__" | TeamMemberRole;
+		statusFilter: "__all__" | UserStatus;
+		teamId: number | null;
+	}>({
+		identifier: "",
+		offset: 0,
+		query: "",
+		role: "member",
+		roleFilter: "__all__",
+		statusFilter: "__all__",
+		teamId: null,
+	});
 	const [mutating, setMutating] = useState(false);
-	const [teamDescription, setTeamDescription] = useState("");
-	const [teamName, setTeamName] = useState("");
+	const [teamDraft, setTeamDraft] = useState<{
+		baseDescription: string;
+		baseName: string;
+		description: string;
+		name: string;
+		teamId: number | null;
+	} | null>(null);
 	const [webdavPrefix, setWebdavPrefix] = useState("/webdav");
+	const memberIdentifier =
+		memberState.teamId === activeTeamId ? memberState.identifier : "";
+	const memberOffset =
+		memberState.teamId === activeTeamId ? memberState.offset : 0;
+	const memberQuery =
+		memberState.teamId === activeTeamId ? memberState.query : "";
+	const memberRole =
+		memberState.teamId === activeTeamId ? memberState.role : "member";
+	const memberRoleFilter =
+		memberState.teamId === activeTeamId ? memberState.roleFilter : "__all__";
+	const memberStatusFilter =
+		memberState.teamId === activeTeamId ? memberState.statusFilter : "__all__";
+	const auditOffset =
+		auditPageState.teamId === activeTeamId ? auditPageState.offset : 0;
+	const archiveConfirmValue =
+		archiveConfirmDraft.teamId === activeTeamId
+			? archiveConfirmDraft.value
+			: "";
+	const setArchiveConfirmValue = (value: string) => {
+		setArchiveConfirmDraft({ teamId: activeTeamId, value });
+	};
+	const setAuditOffset = (offset: number) => {
+		setAuditPageState({ offset, teamId: activeTeamId });
+	};
+	const updateMemberState = (
+		patch: Partial<Omit<typeof memberState, "teamId">>,
+	) => {
+		setMemberState((current) => ({
+			...(current.teamId === activeTeamId
+				? current
+				: {
+						identifier: "",
+						offset: 0,
+						query: "",
+						role: "member" as TeamMemberRole,
+						roleFilter: "__all__" as const,
+						statusFilter: "__all__" as const,
+						teamId: activeTeamId,
+					}),
+			...patch,
+			teamId: activeTeamId,
+		}));
+	};
+	const setMemberIdentifier = (identifier: string) => {
+		updateMemberState({ identifier });
+	};
+	const setMemberOffset = (offset: number) => {
+		updateMemberState({ offset });
+	};
+	const setMemberQuery = (query: string) => {
+		updateMemberState({ offset: 0, query });
+	};
+	const setMemberRole = (role: TeamMemberRole) => {
+		updateMemberState({ role });
+	};
+	const setMemberRoleFilter = (roleFilter: "__all__" | TeamMemberRole) => {
+		updateMemberState({ offset: 0, roleFilter });
+	};
+	const setMemberStatusFilter = (statusFilter: "__all__" | UserStatus) => {
+		updateMemberState({ offset: 0, statusFilter });
+	};
 	const roleLabel = (role: TeamMemberRole) =>
 		t(`settings:settings_team_role_${role}`);
 	const memberKeyword = memberQuery.trim();
@@ -125,7 +205,7 @@ export function TeamManageDialog({
 			pageTab,
 			teamId,
 		});
-	const { currentTab, handleTabChange, panelAnimationClass, resetDialogTab } =
+	const { currentTab, handleTabChange, panelAnimationClass } =
 		useTeamManageTabs({
 			canArchiveTeam,
 			canManageTeam,
@@ -166,11 +246,34 @@ export function TeamManageDialog({
 		value: "__all__" | TeamMemberRole;
 	}>;
 
-	useEffect(() => {
-		setArchiveConfirmValue("");
-		setTeamName(displayTeam?.name ?? "");
-		setTeamDescription(displayTeam?.description ?? "");
-	}, [displayTeam?.description, displayTeam?.name]);
+	const teamBaseName = displayTeam?.name ?? "";
+	const teamBaseDescription = displayTeam?.description ?? "";
+	const currentTeamDraft =
+		teamDraft?.teamId === activeTeamId &&
+		teamDraft.baseName === teamBaseName &&
+		teamDraft.baseDescription === teamBaseDescription
+			? teamDraft
+			: null;
+	const teamName = currentTeamDraft?.name ?? teamBaseName;
+	const teamDescription = currentTeamDraft?.description ?? teamBaseDescription;
+	const setTeamName = (name: string) => {
+		setTeamDraft({
+			baseDescription: teamBaseDescription,
+			baseName: teamBaseName,
+			description: teamDescription,
+			name,
+			teamId: activeTeamId,
+		});
+	};
+	const setTeamDescription = (description: string) => {
+		setTeamDraft({
+			baseDescription: teamBaseDescription,
+			baseName: teamBaseName,
+			description,
+			name: teamName,
+			teamId: activeTeamId,
+		});
+	};
 
 	useEffect(() => {
 		if (!open) {
@@ -200,11 +303,15 @@ export function TeamManageDialog({
 		1,
 		Math.ceil(memberTotal / TEAM_MANAGE_MEMBER_PAGE_SIZE),
 	);
+	const safeMemberOffset =
+		memberOffset < memberTotal || memberTotal === 0
+			? memberOffset
+			: Math.max(0, (memberTotalPages - 1) * TEAM_MANAGE_MEMBER_PAGE_SIZE);
 	const memberCurrentPage =
-		Math.floor(memberOffset / TEAM_MANAGE_MEMBER_PAGE_SIZE) + 1;
-	const prevMemberPageDisabled = memberOffset === 0;
+		Math.floor(safeMemberOffset / TEAM_MANAGE_MEMBER_PAGE_SIZE) + 1;
+	const prevMemberPageDisabled = safeMemberOffset === 0;
 	const nextMemberPageDisabled =
-		memberOffset + TEAM_MANAGE_MEMBER_PAGE_SIZE >= memberTotal;
+		safeMemberOffset + TEAM_MANAGE_MEMBER_PAGE_SIZE >= memberTotal;
 	const auditTotalPages = Math.max(
 		1,
 		Math.ceil(auditTotal / TEAM_MANAGE_AUDIT_PAGE_SIZE),
@@ -214,16 +321,6 @@ export function TeamManageDialog({
 	const prevAuditPageDisabled = auditOffset === 0;
 	const nextAuditPageDisabled =
 		auditOffset + TEAM_MANAGE_AUDIT_PAGE_SIZE >= auditTotal;
-
-	useEffect(() => {
-		if (memberOffset < memberTotal || memberTotal === 0) {
-			return;
-		}
-
-		setMemberOffset(
-			Math.max(0, (memberTotalPages - 1) * TEAM_MANAGE_MEMBER_PAGE_SIZE),
-		);
-	}, [memberOffset, memberTotal, memberTotalPages]);
 
 	const handleUpdateTeam = async (event: FormEvent<HTMLFormElement>) => {
 		event.preventDefault();
@@ -302,7 +399,7 @@ export function TeamManageDialog({
 			await teamService.updateMember(teamId, memberUserId, { role });
 			await Promise.all([
 				loadTeamDetail(teamId),
-				loadMembers(teamId, memberOffset),
+				loadMembers(teamId, safeMemberOffset),
 				loadAuditEntries(teamId),
 			]);
 			toast.success(t("settings:settings_team_member_role_updated"));
@@ -330,7 +427,7 @@ export function TeamManageDialog({
 			} else {
 				await Promise.all([
 					loadTeamDetail(teamId),
-					loadMembers(teamId, memberOffset),
+					loadMembers(teamId, safeMemberOffset),
 					loadAuditEntries(teamId),
 				]);
 				toast.success(t("settings:settings_team_member_removed"));
@@ -370,29 +467,6 @@ export function TeamManageDialog({
 		requestConfirm: requestArchiveConfirm,
 		dialogProps: archiveDialogProps,
 	} = useConfirmDialog<true>(handleArchiveTeam);
-
-	useEffect(() => {
-		if (!open || teamId == null) {
-			setArchiveConfirmValue("");
-			archiveDialogProps.onOpenChange(false);
-			setAuditOffset(0);
-			setMemberIdentifier("");
-			setMemberOffset(0);
-			setMemberQuery("");
-			setMemberRole("member");
-			setMemberRoleFilter("__all__");
-			setMemberStatusFilter("__all__");
-			setMutating(false);
-			setTeamDescription("");
-			setTeamName("");
-			resetDialogTab();
-			return;
-		}
-
-		setAuditOffset(0);
-		setMemberOffset(0);
-		resetDialogTab();
-	}, [archiveDialogProps.onOpenChange, open, resetDialogTab, teamId]);
 
 	const removeMember =
 		members.find((member) => member.user_id === removeMemberId) ?? null;
@@ -439,7 +513,7 @@ export function TeamManageDialog({
 			memberCurrentPage={memberCurrentPage}
 			memberIdentifier={memberIdentifier}
 			memberLoading={memberLoading}
-			memberOffset={memberOffset}
+			memberOffset={safeMemberOffset}
 			memberPageSize={TEAM_MANAGE_MEMBER_PAGE_SIZE}
 			memberQuery={memberQuery}
 			memberRole={memberRole}

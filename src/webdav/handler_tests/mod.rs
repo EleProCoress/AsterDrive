@@ -534,10 +534,10 @@ async fn propfind_href_is_percent_encoded_and_xml_parseable() {
 }
 
 fn collect_href_text(element: &Element, hrefs: &mut Vec<String>) {
-    if element.name == "href" || element.name == "D:href" {
-        if let Some(text) = element.get_text() {
-            hrefs.push(text.into_owned());
-        }
+    if (element.name == "href" || element.name == "D:href")
+        && let Some(text) = element.get_text()
+    {
+        hrefs.push(text.into_owned());
     }
 
     for child in &element.children {

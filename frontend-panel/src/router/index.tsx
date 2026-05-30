@@ -164,24 +164,7 @@ export const router = createBrowserRouter([
 					{ path: "/folder/:folderId", element: <FileBrowserPage /> },
 					{ path: "/shares", element: <MySharesPage /> },
 					{ path: "/tasks", element: <TasksPage /> },
-					{ path: "/settings/webdav", element: <WebdavAccountsPage /> },
 					{ path: "/trash", element: <TrashPage /> },
-					{
-						path: "/settings",
-						element: <Navigate to="/settings/profile" replace />,
-					},
-					{
-						path: "/settings/:section",
-						element: <SettingsPage />,
-					},
-					{
-						path: "/settings/teams/:teamId",
-						element: <TeamManagePage />,
-					},
-					{
-						path: "/settings/teams/:teamId/:section",
-						element: <TeamManagePage />,
-					},
 				],
 			},
 			{
@@ -194,6 +177,23 @@ export const router = createBrowserRouter([
 					{ path: "tasks", element: <TasksPage /> },
 					{ path: "trash", element: <TrashPage /> },
 				],
+			},
+			{ path: "/settings/webdav", element: <WebdavAccountsPage /> },
+			{
+				path: "/settings",
+				element: <Navigate to="/settings/profile" replace />,
+			},
+			{
+				path: "/settings/:section",
+				element: <SettingsPage />,
+			},
+			{
+				path: "/settings/teams/:teamId",
+				element: <TeamManagePage />,
+			},
+			{
+				path: "/settings/teams/:teamId/:section",
+				element: <TeamManagePage />,
 			},
 		],
 	},
