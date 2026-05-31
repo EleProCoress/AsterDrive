@@ -4,7 +4,7 @@ use crate::api::middleware::internal_storage_cors::PresignedInternalStorageCors;
 use crate::api::response::ApiResponse;
 use crate::errors::{AsterError, Result};
 use crate::runtime::FollowerAppState;
-use crate::services::{managed_ingress_profile_service, master_binding_service};
+use crate::services::{audit_service, managed_ingress_profile_service, master_binding_service};
 use crate::storage::driver::{BlobMetadata, StorageDriver};
 use crate::storage::object_key;
 use crate::storage::remote_protocol::{
@@ -207,6 +207,28 @@ fn parse_range_bound(value: &str, name: &str) -> Result<u64> {
         .map_err(|_| AsterError::validation_error(format!("{name} must be a non-negative integer")))
 }
 
+fn follower_audit_context(req: &HttpRequest) -> audit_service::AuditContext {
+    audit_service::AuditRequestInfo::from_request(req).to_context(0)
+}
+
+fn object_audit_details<'a>(
+    binding_id: i64,
+    object_key: &'a str,
+    storage_path: &'a str,
+    size: Option<i64>,
+    bytes_written: Option<u64>,
+    partial: Option<bool>,
+) -> Option<serde_json::Value> {
+    audit_service::details(audit_service::FollowerObjectAuditDetails {
+        binding_id,
+        object_key,
+        storage_path,
+        size,
+        bytes_written,
+        partial,
+    })
+}
+
 async fn get_capabilities(
     state: web::Data<FollowerAppState>,
     req: HttpRequest,
@@ -240,6 +262,22 @@ async fn sync_binding(
         },
     )
     .await?;
+    audit_service::log_with_details(
+        state.get_ref(),
+        &follower_audit_context(&req),
+        audit_service::AuditAction::FollowerBindingSync,
+        audit_service::AuditEntityType::RemoteNode,
+        Some(binding.id),
+        Some(&body.name),
+        || {
+            audit_service::details(audit_service::FollowerBindingAuditDetails {
+                binding_id: binding.id,
+                name: &body.name,
+                is_enabled: body.is_enabled,
+            })
+        },
+    )
+    .await;
     Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
 }
 
@@ -284,8 +322,8 @@ async fn put_object(
     } else {
         master_binding_service::authorize_presigned_put_request(state.get_ref(), &req).await?
     };
-    let storage_path =
-        master_binding_service::provider_storage_path(&ctx.binding, &path.into_inner())?;
+    let object_key = path.into_inner();
+    let storage_path = master_binding_service::provider_storage_path(&ctx.binding, &object_key)?;
     let content_length = req
         .headers()
         .get(actix_web::http::header::CONTENT_LENGTH)
@@ -303,6 +341,7 @@ async fn put_object(
         AsterError::storage_driver_error("ingress target does not support stream upload")
     })?;
     let (writer, reader) = tokio::io::duplex(RELAY_UPLOAD_BUFFER_SIZE);
+    let upload_storage_path = storage_path.clone();
     let (upload_result, relay_result) = tokio::task::LocalSet::new()
         .run_until(async move {
             let relay_task = tokio::task::spawn_local(async move {
@@ -324,7 +363,7 @@ async fn put_object(
             });
 
             let upload_result = stream_driver
-                .put_reader(&storage_path, Box::new(reader), content_length)
+                .put_reader(&upload_storage_path, Box::new(reader), content_length)
                 .await;
             let relay_result = relay_task.await.map_err(|error| {
                 AsterError::storage_driver_error(format!("relay upload task failed: {error}"))
@@ -335,6 +374,25 @@ async fn put_object(
 
     upload_result?;
     let etag = relay_result?;
+    audit_service::log_with_details(
+        state.get_ref(),
+        &follower_audit_context(&req),
+        audit_service::AuditAction::FollowerObjectWrite,
+        audit_service::AuditEntityType::File,
+        None,
+        Some(&object_key),
+        || {
+            object_audit_details(
+                ctx.binding.id,
+                &object_key,
+                &storage_path,
+                Some(content_length),
+                None,
+                None,
+            )
+        },
+    )
+    .await;
     Ok(HttpResponse::Ok()
         .insert_header((actix_web::http::header::ETAG, etag))
         .json(ApiResponse::<()>::ok_empty()))
@@ -368,8 +426,9 @@ async fn compose_objects(
     let stream_driver = driver.as_stream_upload().ok_or_else(|| {
         AsterError::storage_driver_error("ingress target does not support stream upload")
     })?;
+    let target_key = body.target_key.clone();
     let target_storage_path =
-        master_binding_service::provider_storage_path(&ctx.binding, &body.target_key)?;
+        master_binding_service::provider_storage_path(&ctx.binding, &target_key)?;
     let part_storage_paths: Vec<String> = body
         .part_keys
         .iter()
@@ -452,6 +511,26 @@ async fn compose_objects(
         }
     }
 
+    audit_service::log_with_details(
+        state.get_ref(),
+        &follower_audit_context(&req),
+        audit_service::AuditAction::FollowerObjectCompose,
+        audit_service::AuditEntityType::File,
+        None,
+        Some(&target_key),
+        || {
+            object_audit_details(
+                ctx.binding.id,
+                &target_key,
+                &target_storage_path,
+                Some(body.expected_size),
+                Some(bytes_written),
+                None,
+            )
+        },
+    )
+    .await;
+
     Ok(
         HttpResponse::Ok().json(ApiResponse::ok(RemoteStorageComposeResponse {
             bytes_written,
@@ -477,8 +556,8 @@ async fn get_object(
     } else {
         master_binding_service::authorize_internal_request(state.get_ref(), &req).await?
     };
-    let storage_path =
-        master_binding_service::provider_storage_path(&ctx.binding, &path.into_inner())?;
+    let object_key = path.into_inner();
+    let storage_path = master_binding_service::provider_storage_path(&ctx.binding, &object_key)?;
     let metadata = metadata_or_not_found(ctx.ingress_driver.as_ref(), &storage_path).await?;
     let partial_range = requested_partial_content_range(&req, metadata.size, &query)?;
     let stream = match partial_range.as_ref() {
@@ -513,7 +592,7 @@ async fn get_object(
             .to_string(),
     ));
     response.insert_header((actix_web::http::header::ACCEPT_RANGES, "bytes"));
-    if let Some(range) = partial_range {
+    if let Some(range) = partial_range.as_ref() {
         response.insert_header((
             actix_web::http::header::CONTENT_RANGE,
             format!("bytes {}-{}/{}", range.start, range.end, metadata.size),
@@ -529,6 +608,25 @@ async fn get_object(
     if let Some(cache_control) = query.response_cache_control.as_deref() {
         response.insert_header((actix_web::http::header::CACHE_CONTROL, cache_control));
     }
+    audit_service::log_with_details(
+        state.get_ref(),
+        &follower_audit_context(&req),
+        audit_service::AuditAction::FollowerObjectRead,
+        audit_service::AuditEntityType::File,
+        None,
+        Some(&object_key),
+        || {
+            object_audit_details(
+                ctx.binding.id,
+                &object_key,
+                &storage_path,
+                i64::try_from(metadata.size).ok(),
+                None,
+                Some(partial_range.is_some()),
+            )
+        },
+    )
+    .await;
     Ok(response.streaming(body))
 }
 
@@ -575,9 +673,19 @@ async fn delete_object(
     path: web::Path<String>,
 ) -> Result<HttpResponse> {
     let ctx = master_binding_service::authorize_internal_request(state.get_ref(), &req).await?;
-    let storage_path =
-        master_binding_service::provider_storage_path(&ctx.binding, &path.into_inner())?;
+    let object_key = path.into_inner();
+    let storage_path = master_binding_service::provider_storage_path(&ctx.binding, &object_key)?;
     ctx.ingress_driver.delete(&storage_path).await?;
+    audit_service::log_with_details(
+        state.get_ref(),
+        &follower_audit_context(&req),
+        audit_service::AuditAction::FollowerObjectDelete,
+        audit_service::AuditEntityType::File,
+        None,
+        Some(&object_key),
+        || object_audit_details(ctx.binding.id, &object_key, &storage_path, None, None, None),
+    )
+    .await;
     Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
 }
 
@@ -601,6 +709,23 @@ async fn create_ingress_profile(
     let profile =
         managed_ingress_profile_service::create(state.get_ref(), &binding, body.into_inner())
             .await?;
+    audit_service::log_with_details(
+        state.get_ref(),
+        &follower_audit_context(&req),
+        audit_service::AuditAction::FollowerIngressProfileCreate,
+        audit_service::AuditEntityType::RemoteIngressProfile,
+        None,
+        Some(&profile.profile_key),
+        || {
+            audit_service::details(audit_service::FollowerIngressProfileAuditDetails {
+                binding_id: binding.id,
+                profile_key: &profile.profile_key,
+                driver_type: profile.driver_type.as_str(),
+                is_default: profile.is_default,
+            })
+        },
+    )
+    .await;
     Ok(HttpResponse::Created().json(ApiResponse::ok(profile)))
 }
 
@@ -612,13 +737,31 @@ async fn update_ingress_profile(
 ) -> Result<HttpResponse> {
     let binding =
         master_binding_service::authorize_binding_sync_request(state.get_ref(), &req).await?;
+    let profile_key = path.into_inner();
     let profile = managed_ingress_profile_service::update(
         state.get_ref(),
         &binding,
-        &path.into_inner(),
+        &profile_key,
         body.into_inner(),
     )
     .await?;
+    audit_service::log_with_details(
+        state.get_ref(),
+        &follower_audit_context(&req),
+        audit_service::AuditAction::FollowerIngressProfileUpdate,
+        audit_service::AuditEntityType::RemoteIngressProfile,
+        None,
+        Some(&profile.profile_key),
+        || {
+            audit_service::details(audit_service::FollowerIngressProfileAuditDetails {
+                binding_id: binding.id,
+                profile_key: &profile.profile_key,
+                driver_type: profile.driver_type.as_str(),
+                is_default: profile.is_default,
+            })
+        },
+    )
+    .await;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(profile)))
 }
 
@@ -629,6 +772,22 @@ async fn delete_ingress_profile(
 ) -> Result<HttpResponse> {
     let binding =
         master_binding_service::authorize_binding_sync_request(state.get_ref(), &req).await?;
-    managed_ingress_profile_service::delete(state.get_ref(), &binding, &path.into_inner()).await?;
+    let profile_key = path.into_inner();
+    managed_ingress_profile_service::delete(state.get_ref(), &binding, &profile_key).await?;
+    audit_service::log_with_details(
+        state.get_ref(),
+        &follower_audit_context(&req),
+        audit_service::AuditAction::FollowerIngressProfileDelete,
+        audit_service::AuditEntityType::RemoteIngressProfile,
+        None,
+        Some(&profile_key),
+        || {
+            audit_service::details(serde_json::json!({
+                "binding_id": binding.id,
+                "profile_key": profile_key,
+            }))
+        },
+    )
+    .await;
     Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
 }
