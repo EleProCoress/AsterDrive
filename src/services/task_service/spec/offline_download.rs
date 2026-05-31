@@ -67,7 +67,7 @@ define_task_spec!(
     OfflineDownload,
     OfflineDownload,
     steps = OFFLINE_DOWNLOAD_STEPS,
-    lane = TaskLane::Fallback,
+    lane = TaskLane::OfflineDownload,
     process = offline_download_task::process_offline_download_task,
     retry = offline_download_task::OfflineDownloadRetryPolicy,
     payload_wrap = offline_download_payload_info

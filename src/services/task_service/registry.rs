@@ -108,13 +108,13 @@ pub(in crate::services::task_service) fn task_lane_kinds(
             BackgroundTaskKind::ThumbnailGenerate,
             BackgroundTaskKind::MediaMetadataExtract,
         ],
+        TaskLane::OfflineDownload => &[BackgroundTaskKind::OfflineDownload],
         TaskLane::StorageMigration => &[BackgroundTaskKind::StoragePolicyMigration],
         TaskLane::Fallback => &[
             BackgroundTaskKind::SystemRuntime,
             BackgroundTaskKind::StoragePolicyTempCleanup,
             BackgroundTaskKind::TrashPurgeAll,
             BackgroundTaskKind::BlobMaintenance,
-            BackgroundTaskKind::OfflineDownload,
         ],
     }
 }
@@ -171,6 +171,7 @@ mod tests {
         for lane in [
             TaskLane::Archive,
             TaskLane::Thumbnail,
+            TaskLane::OfflineDownload,
             TaskLane::StorageMigration,
             TaskLane::Fallback,
         ] {

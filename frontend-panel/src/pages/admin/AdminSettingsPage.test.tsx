@@ -155,6 +155,9 @@ const translationMap: Record<string, string> = {
 	settings_subcategory_file_processing_archive_preview: "Archive Preview",
 	settings_subcategory_file_processing_archive_preview_desc:
 		"Archive preview limits.",
+	settings_subcategory_file_processing_offline_download: "Link Import",
+	settings_subcategory_file_processing_offline_download_desc:
+		"Link import limits.",
 	settings_save_hint:
 		"更改会先暂存为草稿，确认无误后再统一保存，⌘/Ctrl + S 保存。",
 	settings_template_variable_reset_url_desc:
@@ -2483,7 +2486,7 @@ describe("AdminSettingsPage", () => {
 		);
 	});
 
-	it("defaults archive file processing subcategory sections to collapsed", async () => {
+	it("defaults heavy file processing subcategory sections to collapsed", async () => {
 		mockState.listConfigs.mockResolvedValueOnce({
 			items: [
 				createConfig({
@@ -2496,6 +2499,12 @@ describe("AdminSettingsPage", () => {
 					category: "file_processing.archive_preview",
 					key: "archive_preview_max_entries",
 					value: "2000",
+					value_type: "number",
+				}),
+				createConfig({
+					category: "file_processing.offline_download",
+					key: "offline_download_max_concurrency",
+					value: "1",
 					value_type: "number",
 				}),
 			],
@@ -2511,14 +2520,21 @@ describe("AdminSettingsPage", () => {
 				key: "archive_preview_max_entries",
 				value_type: "number",
 			}),
+			createSchemaItem({
+				category: "file_processing.offline_download",
+				key: "offline_download_max_concurrency",
+				value_type: "number",
+			}),
 		]);
 
 		render(<AdminSettingsPage section="file_processing" />);
 
 		const extractTitle = await screen.findByText("Archive Extraction");
 		const previewTitle = await screen.findByText("Archive Preview");
+		const offlineDownloadTitle = await screen.findByText("Link Import");
 		expect(screen.queryByText("archive_extract_max_entries")).toBeNull();
 		expect(screen.queryByText("archive_preview_max_entries")).toBeNull();
+		expect(screen.queryByText("offline_download_max_concurrency")).toBeNull();
 
 		const extractSection = extractTitle.closest("section") as HTMLElement;
 		fireEvent.click(
@@ -2531,7 +2547,9 @@ describe("AdminSettingsPage", () => {
 			await screen.findByText("archive_extract_max_entries"),
 		).toBeInTheDocument();
 		expect(screen.queryByText("archive_preview_max_entries")).toBeNull();
+		expect(screen.queryByText("offline_download_max_concurrency")).toBeNull();
 		expect(previewTitle).toBeInTheDocument();
+		expect(offlineDownloadTitle).toBeInTheDocument();
 	});
 
 	it("builds WOPI discovery apps into the local app registry draft", async () => {

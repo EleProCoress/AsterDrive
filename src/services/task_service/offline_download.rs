@@ -116,6 +116,7 @@ pub(super) async fn process_offline_download_task(
     let task_temp_dir = prepare_task_temp_dir(state, lease_guard.lease()).await?;
     let temp_path = Path::new(&task_temp_dir).join(OFFLINE_DOWNLOAD_TEMP_FILE_NAME);
     let max_bytes = operations::offline_download_max_file_size_bytes(&state.runtime_config);
+    let max_bytes_per_sec = operations::offline_download_max_bytes_per_sec(&state.runtime_config);
     let timeout = StdDuration::from_secs(
         operations::offline_download_request_timeout_secs(&state.runtime_config).max(1),
     );
@@ -151,6 +152,7 @@ pub(super) async fn process_offline_download_task(
                 url: source_url,
                 temp_path: temp_path.clone(),
                 expected_sha256: payload.expected_sha256.clone(),
+                max_bytes_per_sec,
             },
             &mut steps,
         )
@@ -277,6 +279,7 @@ struct OfflineDownloadStartRequest {
     url: Url,
     temp_path: PathBuf,
     expected_sha256: Option<String>,
+    max_bytes_per_sec: Option<u64>,
 }
 
 #[derive(Debug)]
@@ -377,6 +380,8 @@ impl OfflineDownloadEngine for BuiltinHttpOfflineDownloadEngine {
         let mut last_progress = Instant::now()
             .checked_sub(PROGRESS_UPDATE_INTERVAL)
             .unwrap_or_else(Instant::now);
+        let speed_limit = request.max_bytes_per_sec;
+        let download_started_at = Instant::now();
 
         while let Some(chunk) = stream.next().await {
             lease_guard.ensure_active()?;
@@ -392,6 +397,9 @@ impl OfflineDownloadEngine for BuiltinHttpOfflineDownloadEngine {
                 AsterError::storage_driver_error,
             )?;
             hasher.update(&chunk);
+            if let Some(limit) = speed_limit {
+                throttle_offline_download(download_started_at, written, limit).await?;
+            }
 
             if last_progress.elapsed() >= PROGRESS_UPDATE_INTERVAL {
                 let status_text = format!("Downloaded {written} bytes");
@@ -579,6 +587,30 @@ fn validate_public_download_ip(ip: IpAddr) -> Result<()> {
             "offline download host resolves to a blocked address",
         ));
     }
+    Ok(())
+}
+
+async fn throttle_offline_download(
+    started_at: Instant,
+    written: i64,
+    max_bytes_per_sec: u64,
+) -> Result<()> {
+    if max_bytes_per_sec == 0 || written <= 0 {
+        return Ok(());
+    }
+
+    let written = crate::utils::numbers::i64_to_u64(written, "offline download written bytes")?;
+    let expected_nanos =
+        u128::from(written).saturating_mul(1_000_000_000) / u128::from(max_bytes_per_sec);
+    let elapsed_nanos = started_at.elapsed().as_nanos();
+    if expected_nanos <= elapsed_nanos {
+        return Ok(());
+    }
+
+    let sleep_nanos = expected_nanos - elapsed_nanos;
+    let sleep_nanos =
+        crate::utils::numbers::u128_to_u64(sleep_nanos, "offline download throttle sleep")?;
+    tokio::time::sleep(StdDuration::from_nanos(sleep_nanos)).await;
     Ok(())
 }
 

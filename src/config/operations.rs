@@ -24,7 +24,8 @@ pub use crate::config::definitions::{
     BACKGROUND_TASK_THUMBNAIL_MAX_CONCURRENCY_KEY, BLOB_RECONCILE_INTERVAL_SECS_KEY,
     MAIL_OUTBOX_DISPATCH_INTERVAL_SECS_KEY, MAINTENANCE_CLEANUP_INTERVAL_SECS_KEY,
     MEDIA_METADATA_ENABLED_KEY, MEDIA_METADATA_MAX_SOURCE_BYTES_KEY,
-    OFFLINE_DOWNLOAD_MAX_FILE_SIZE_BYTES_KEY, OFFLINE_DOWNLOAD_REQUEST_TIMEOUT_SECS_KEY,
+    OFFLINE_DOWNLOAD_MAX_CONCURRENCY_KEY, OFFLINE_DOWNLOAD_MAX_FILE_SIZE_BYTES_KEY,
+    OFFLINE_DOWNLOAD_MAX_MB_PER_SEC_KEY, OFFLINE_DOWNLOAD_REQUEST_TIMEOUT_SECS_KEY,
     REMOTE_NODE_HEALTH_TEST_INTERVAL_SECS_KEY, SHARE_DOWNLOAD_ROLLBACK_QUEUE_CAPACITY_KEY,
     SHARE_STREAM_SESSION_TTL_SECS_KEY, TASK_LIST_MAX_LIMIT_KEY, TEAM_MEMBER_LIST_MAX_LIMIT_KEY,
     THUMBNAIL_MAX_SOURCE_BYTES_KEY,
@@ -52,6 +53,8 @@ pub const DEFAULT_THUMBNAIL_MAX_SOURCE_BYTES: u64 = 64 * 1024 * 1024;
 pub const DEFAULT_MEDIA_METADATA_ENABLED: bool = true;
 pub const DEFAULT_MEDIA_METADATA_MAX_SOURCE_BYTES: u64 = 256 * 1024 * 1024;
 pub const DEFAULT_OFFLINE_DOWNLOAD_MAX_FILE_SIZE_BYTES: u64 = 1024 * 1024 * 1024;
+pub const DEFAULT_OFFLINE_DOWNLOAD_MAX_MB_PER_SEC: u64 = 0;
+pub const DEFAULT_OFFLINE_DOWNLOAD_MAX_CONCURRENCY: usize = 1;
 pub const DEFAULT_OFFLINE_DOWNLOAD_REQUEST_TIMEOUT_SECS: u64 = 600;
 pub const DEFAULT_ARCHIVE_EXTRACT_MAX_SOURCE_BYTES: u64 = 512 * 1024 * 1024;
 pub const DEFAULT_ARCHIVE_EXTRACT_MAX_STAGING_BYTES: u64 = 2 * 1024 * 1024 * 1024;
@@ -91,6 +94,13 @@ pub fn normalize_attempts_config_value(key: &str, value: &str) -> Result<String>
 
 pub fn normalize_bytes_config_value(key: &str, value: &str) -> Result<String> {
     normalize_positive_u64_config_value(key, value)
+}
+
+pub fn normalize_non_negative_u64_config_value(key: &str, value: &str) -> Result<String> {
+    let parsed = parse_non_negative_u64(value).ok_or_else(|| {
+        AsterError::validation_error(format!("{key} must be a non-negative integer"))
+    })?;
+    Ok(parsed.to_string())
 }
 
 pub fn normalize_bool_config_value(key: &str, value: &str) -> Result<String> {
@@ -183,6 +193,14 @@ pub fn background_task_storage_migration_max_concurrency(runtime_config: &Runtim
         runtime_config,
         BACKGROUND_TASK_STORAGE_MIGRATION_MAX_CONCURRENCY_KEY,
         DEFAULT_BACKGROUND_TASK_STORAGE_MIGRATION_MAX_CONCURRENCY,
+    )
+}
+
+pub fn offline_download_max_concurrency(runtime_config: &RuntimeConfig) -> usize {
+    read_concurrency(
+        runtime_config,
+        OFFLINE_DOWNLOAD_MAX_CONCURRENCY_KEY,
+        DEFAULT_OFFLINE_DOWNLOAD_MAX_CONCURRENCY,
     )
 }
 
@@ -335,6 +353,25 @@ pub fn offline_download_max_file_size_bytes(runtime_config: &RuntimeConfig) -> i
         DEFAULT_OFFLINE_DOWNLOAD_MAX_FILE_SIZE_BYTES,
         "offline download max file size config exceeds i64; using default",
     )
+}
+
+pub fn offline_download_max_bytes_per_sec(runtime_config: &RuntimeConfig) -> Option<u64> {
+    let max_mb_per_sec = read_non_negative_u64(
+        runtime_config,
+        OFFLINE_DOWNLOAD_MAX_MB_PER_SEC_KEY,
+        DEFAULT_OFFLINE_DOWNLOAD_MAX_MB_PER_SEC,
+    );
+    if max_mb_per_sec == 0 {
+        return None;
+    }
+
+    max_mb_per_sec.checked_mul(1024 * 1024).or_else(|| {
+        tracing::warn!(
+            key = OFFLINE_DOWNLOAD_MAX_MB_PER_SEC_KEY,
+            "offline download speed config exceeds u64 bytes/s; disabling speed limit"
+        );
+        None
+    })
 }
 
 pub fn offline_download_request_timeout_secs(runtime_config: &RuntimeConfig) -> u64 {
@@ -544,6 +581,10 @@ fn normalize_positive_i32_config_value(key: &str, value: &str) -> Result<String>
     Ok(parsed.to_string())
 }
 
+fn parse_non_negative_u64(value: &str) -> Option<u64> {
+    value.trim().parse::<u64>().ok()
+}
+
 fn parse_positive_u64(value: &str) -> Option<u64> {
     let parsed = value.trim().parse::<u64>().ok()?;
     (parsed > 0).then_some(parsed)
@@ -557,6 +598,19 @@ fn parse_positive_i32(value: &str) -> Option<i32> {
 fn read_positive_u64(runtime_config: &RuntimeConfig, key: &str, default: u64) -> u64 {
     match runtime_config.get(key) {
         Some(raw) => match parse_positive_u64(&raw) {
+            Some(value) => value,
+            None => {
+                tracing::warn!(key, value = %raw, "invalid runtime operations config; using default");
+                default
+            }
+        },
+        None => default,
+    }
+}
+
+fn read_non_negative_u64(runtime_config: &RuntimeConfig, key: &str, default: u64) -> u64 {
+    match runtime_config.get(key) {
+        Some(raw) => match parse_non_negative_u64(&raw) {
             Some(value) => value,
             None => {
                 tracing::warn!(key, value = %raw, "invalid runtime operations config; using default");
@@ -640,10 +694,12 @@ mod tests {
         DEFAULT_BACKGROUND_TASK_MAX_ATTEMPTS, DEFAULT_BACKGROUND_TASK_MAX_CONCURRENCY,
         DEFAULT_BACKGROUND_TASK_STORAGE_MIGRATION_MAX_CONCURRENCY,
         DEFAULT_BACKGROUND_TASK_THUMBNAIL_MAX_CONCURRENCY, DEFAULT_BLOB_RECONCILE_INTERVAL_SECS,
+        DEFAULT_OFFLINE_DOWNLOAD_MAX_CONCURRENCY, DEFAULT_OFFLINE_DOWNLOAD_MAX_MB_PER_SEC,
         DEFAULT_REMOTE_NODE_HEALTH_TEST_INTERVAL_SECS,
         DEFAULT_SHARE_DOWNLOAD_ROLLBACK_QUEUE_CAPACITY, DEFAULT_SHARE_STREAM_SESSION_TTL_SECS,
         DEFAULT_TASK_LIST_MAX_LIMIT, DEFAULT_TEAM_MEMBER_LIST_MAX_LIMIT,
         MAX_SHARE_STREAM_SESSION_TTL_SECS, MIN_SHARE_STREAM_SESSION_TTL_SECS,
+        OFFLINE_DOWNLOAD_MAX_CONCURRENCY_KEY, OFFLINE_DOWNLOAD_MAX_MB_PER_SEC_KEY,
         REMOTE_NODE_HEALTH_TEST_INTERVAL_SECS_KEY, SHARE_DOWNLOAD_ROLLBACK_QUEUE_CAPACITY_KEY,
         SHARE_STREAM_SESSION_TTL_SECS_KEY, TASK_LIST_MAX_LIMIT_KEY, TEAM_MEMBER_LIST_MAX_LIMIT_KEY,
         archive_extract_max_staging_bytes, avatar_max_upload_size_bytes,
@@ -653,9 +709,11 @@ mod tests {
         background_task_thumbnail_max_concurrency, blob_reconcile_interval_secs,
         normalize_attempts_config_value, normalize_bool_config_value, normalize_bytes_config_value,
         normalize_concurrency_config_value, normalize_interval_config_value,
-        normalize_list_max_limit_config_value, normalize_share_stream_session_ttl_config_value,
-        remote_node_health_test_interval_secs, share_download_rollback_queue_capacity,
-        share_stream_session_ttl_secs, task_list_max_limit, team_member_list_max_limit,
+        normalize_list_max_limit_config_value, normalize_non_negative_u64_config_value,
+        normalize_share_stream_session_ttl_config_value, offline_download_max_bytes_per_sec,
+        offline_download_max_concurrency, remote_node_health_test_interval_secs,
+        share_download_rollback_queue_capacity, share_stream_session_ttl_secs, task_list_max_limit,
+        team_member_list_max_limit,
     };
     use crate::config::RuntimeConfig;
     use crate::config::definitions::{ALL_CONFIGS, CONFIG_CATEGORY_RUNTIME_MAINTENANCE};
@@ -776,6 +834,10 @@ mod tests {
             background_task_thumbnail_max_concurrency(&runtime_config),
             DEFAULT_BACKGROUND_TASK_THUMBNAIL_MAX_CONCURRENCY
         );
+        assert_eq!(
+            offline_download_max_concurrency(&runtime_config),
+            DEFAULT_OFFLINE_DOWNLOAD_MAX_CONCURRENCY
+        );
 
         runtime_config.apply(config_model(BACKGROUND_TASK_MAX_CONCURRENCY_KEY, "3"));
         runtime_config.apply(config_model(
@@ -786,6 +848,7 @@ mod tests {
             BACKGROUND_TASK_THUMBNAIL_MAX_CONCURRENCY_KEY,
             "4",
         ));
+        runtime_config.apply(config_model(OFFLINE_DOWNLOAD_MAX_CONCURRENCY_KEY, "5"));
         assert_eq!(background_task_max_concurrency(&runtime_config), 3usize);
         assert_eq!(
             background_task_archive_max_concurrency(&runtime_config),
@@ -795,6 +858,7 @@ mod tests {
             background_task_thumbnail_max_concurrency(&runtime_config),
             4usize
         );
+        assert_eq!(offline_download_max_concurrency(&runtime_config), 5usize);
 
         runtime_config.apply(config_model(BACKGROUND_TASK_MAX_CONCURRENCY_KEY, "0"));
         runtime_config.apply(config_model(
@@ -805,6 +869,7 @@ mod tests {
             BACKGROUND_TASK_THUMBNAIL_MAX_CONCURRENCY_KEY,
             "0",
         ));
+        runtime_config.apply(config_model(OFFLINE_DOWNLOAD_MAX_CONCURRENCY_KEY, "0"));
         assert_eq!(
             background_task_max_concurrency(&runtime_config),
             DEFAULT_BACKGROUND_TASK_MAX_CONCURRENCY
@@ -816,6 +881,10 @@ mod tests {
         assert_eq!(
             background_task_thumbnail_max_concurrency(&runtime_config),
             DEFAULT_BACKGROUND_TASK_THUMBNAIL_MAX_CONCURRENCY
+        );
+        assert_eq!(
+            offline_download_max_concurrency(&runtime_config),
+            DEFAULT_OFFLINE_DOWNLOAD_MAX_CONCURRENCY
         );
 
         runtime_config.apply(config_model(BACKGROUND_TASK_MAX_CONCURRENCY_KEY, "abc"));
@@ -827,6 +896,7 @@ mod tests {
             BACKGROUND_TASK_THUMBNAIL_MAX_CONCURRENCY_KEY,
             "abc",
         ));
+        runtime_config.apply(config_model(OFFLINE_DOWNLOAD_MAX_CONCURRENCY_KEY, "abc"));
         assert_eq!(
             background_task_max_concurrency(&runtime_config),
             DEFAULT_BACKGROUND_TASK_MAX_CONCURRENCY
@@ -838,6 +908,42 @@ mod tests {
         assert_eq!(
             background_task_thumbnail_max_concurrency(&runtime_config),
             DEFAULT_BACKGROUND_TASK_THUMBNAIL_MAX_CONCURRENCY
+        );
+        assert_eq!(
+            offline_download_max_concurrency(&runtime_config),
+            DEFAULT_OFFLINE_DOWNLOAD_MAX_CONCURRENCY
+        );
+    }
+
+    #[test]
+    fn offline_download_speed_reader_converts_mb_per_sec_to_bytes_per_sec() {
+        let runtime_config = RuntimeConfig::new();
+        assert_eq!(
+            offline_download_max_bytes_per_sec(&runtime_config),
+            if DEFAULT_OFFLINE_DOWNLOAD_MAX_MB_PER_SEC == 0 {
+                None
+            } else {
+                DEFAULT_OFFLINE_DOWNLOAD_MAX_MB_PER_SEC.checked_mul(1024 * 1024)
+            }
+        );
+
+        runtime_config.apply(config_model(OFFLINE_DOWNLOAD_MAX_MB_PER_SEC_KEY, "0"));
+        assert_eq!(offline_download_max_bytes_per_sec(&runtime_config), None);
+
+        runtime_config.apply(config_model(OFFLINE_DOWNLOAD_MAX_MB_PER_SEC_KEY, "12"));
+        assert_eq!(
+            offline_download_max_bytes_per_sec(&runtime_config),
+            Some(12 * 1024 * 1024)
+        );
+
+        runtime_config.apply(config_model(OFFLINE_DOWNLOAD_MAX_MB_PER_SEC_KEY, "invalid"));
+        assert_eq!(
+            offline_download_max_bytes_per_sec(&runtime_config),
+            if DEFAULT_OFFLINE_DOWNLOAD_MAX_MB_PER_SEC == 0 {
+                None
+            } else {
+                DEFAULT_OFFLINE_DOWNLOAD_MAX_MB_PER_SEC.checked_mul(1024 * 1024)
+            }
         );
     }
 
@@ -865,6 +971,28 @@ mod tests {
         assert_eq!(
             background_task_storage_migration_max_concurrency(&runtime_config),
             DEFAULT_BACKGROUND_TASK_STORAGE_MIGRATION_MAX_CONCURRENCY
+        );
+    }
+
+    #[test]
+    fn non_negative_u64_normalizer_accepts_zero() {
+        assert_eq!(
+            normalize_non_negative_u64_config_value(OFFLINE_DOWNLOAD_MAX_MB_PER_SEC_KEY, "0")
+                .unwrap(),
+            "0"
+        );
+        assert_eq!(
+            normalize_non_negative_u64_config_value(OFFLINE_DOWNLOAD_MAX_MB_PER_SEC_KEY, "25")
+                .unwrap(),
+            "25"
+        );
+        assert!(
+            normalize_non_negative_u64_config_value(OFFLINE_DOWNLOAD_MAX_MB_PER_SEC_KEY, "-1")
+                .is_err()
+        );
+        assert!(
+            normalize_non_negative_u64_config_value(OFFLINE_DOWNLOAD_MAX_MB_PER_SEC_KEY, "1.5")
+                .is_err()
         );
     }
 

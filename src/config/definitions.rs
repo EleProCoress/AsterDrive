@@ -144,6 +144,8 @@ pub const ARCHIVE_BUILD_MAX_ENTRIES_KEY: &str = "archive_build_max_entries";
 pub const ARCHIVE_BUILD_MAX_TOTAL_SOURCE_BYTES_KEY: &str = "archive_build_max_total_source_bytes";
 pub const ARCHIVE_BUILD_MAX_TEMP_BYTES_KEY: &str = "archive_build_max_temp_bytes";
 pub const OFFLINE_DOWNLOAD_MAX_FILE_SIZE_BYTES_KEY: &str = "offline_download_max_file_size_bytes";
+pub const OFFLINE_DOWNLOAD_MAX_MB_PER_SEC_KEY: &str = "offline_download_max_mb_per_sec";
+pub const OFFLINE_DOWNLOAD_MAX_CONCURRENCY_KEY: &str = "offline_download_max_concurrency";
 pub const OFFLINE_DOWNLOAD_REQUEST_TIMEOUT_SECS_KEY: &str = "offline_download_request_timeout_secs";
 
 // ── Mail keys ────────────────────────────────────────────────────────────────
@@ -720,6 +722,32 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_FILE_PROCESSING_OFFLINE_DOWNLOAD,
         description: "Maximum file size allowed for offline HTTP/HTTPS downloads in bytes",
+    },
+    ConfigDef {
+        key: OFFLINE_DOWNLOAD_MAX_MB_PER_SEC_KEY,
+        label_i18n_key: "settings_item_offline_download_max_mb_per_sec_label",
+        description_i18n_key: "settings_item_offline_download_max_mb_per_sec_desc",
+        value_type: SystemConfigValueType::Number,
+        default_fn: || {
+            crate::config::operations::DEFAULT_OFFLINE_DOWNLOAD_MAX_MB_PER_SEC.to_string()
+        },
+        requires_restart: false,
+        is_sensitive: false,
+        category: CONFIG_CATEGORY_FILE_PROCESSING_OFFLINE_DOWNLOAD,
+        description: "Maximum offline HTTP/HTTPS download speed in MB/s (0 = unlimited)",
+    },
+    ConfigDef {
+        key: OFFLINE_DOWNLOAD_MAX_CONCURRENCY_KEY,
+        label_i18n_key: "settings_item_offline_download_max_concurrency_label",
+        description_i18n_key: "settings_item_offline_download_max_concurrency_desc",
+        value_type: SystemConfigValueType::Number,
+        default_fn: || {
+            crate::config::operations::DEFAULT_OFFLINE_DOWNLOAD_MAX_CONCURRENCY.to_string()
+        },
+        requires_restart: false,
+        is_sensitive: false,
+        category: CONFIG_CATEGORY_FILE_PROCESSING_OFFLINE_DOWNLOAD,
+        description: "Maximum number of offline download tasks executed concurrently",
     },
     ConfigDef {
         key: OFFLINE_DOWNLOAD_REQUEST_TIMEOUT_SECS_KEY,
