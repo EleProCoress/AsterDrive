@@ -27,6 +27,8 @@ pub const CONFIG_CATEGORY_STORAGE: &str = "storage";
 pub const CONFIG_CATEGORY_FILE_PROCESSING_ARCHIVE_EXTRACT: &str = "file_processing.archive_extract";
 pub const CONFIG_CATEGORY_FILE_PROCESSING_ARCHIVE_PREVIEW: &str = "file_processing.archive_preview";
 pub const CONFIG_CATEGORY_FILE_PROCESSING_ARCHIVE_BUILD: &str = "file_processing.archive_build";
+pub const CONFIG_CATEGORY_FILE_PROCESSING_OFFLINE_DOWNLOAD: &str =
+    "file_processing.offline_download";
 pub const CONFIG_CATEGORY_FILE_PROCESSING_MEDIA: &str = "file_processing.media";
 pub const CONFIG_CATEGORY_WEBDAV: &str = "webdav";
 pub const CONFIG_CATEGORY_AUDIT: &str = "audit";
@@ -49,6 +51,7 @@ pub const SYSTEM_CONFIG_ALLOWED_CATEGORIES: &[&str] = &[
     CONFIG_CATEGORY_FILE_PROCESSING_ARCHIVE_EXTRACT,
     CONFIG_CATEGORY_FILE_PROCESSING_ARCHIVE_PREVIEW,
     CONFIG_CATEGORY_FILE_PROCESSING_ARCHIVE_BUILD,
+    CONFIG_CATEGORY_FILE_PROCESSING_OFFLINE_DOWNLOAD,
     CONFIG_CATEGORY_FILE_PROCESSING_MEDIA,
     CONFIG_CATEGORY_WEBDAV,
     CONFIG_CATEGORY_AUDIT,
@@ -140,6 +143,8 @@ pub const ARCHIVE_PREVIEW_MAX_DURATION_SECS_KEY: &str = "archive_preview_max_dur
 pub const ARCHIVE_BUILD_MAX_ENTRIES_KEY: &str = "archive_build_max_entries";
 pub const ARCHIVE_BUILD_MAX_TOTAL_SOURCE_BYTES_KEY: &str = "archive_build_max_total_source_bytes";
 pub const ARCHIVE_BUILD_MAX_TEMP_BYTES_KEY: &str = "archive_build_max_temp_bytes";
+pub const OFFLINE_DOWNLOAD_MAX_FILE_SIZE_BYTES_KEY: &str = "offline_download_max_file_size_bytes";
+pub const OFFLINE_DOWNLOAD_REQUEST_TIMEOUT_SECS_KEY: &str = "offline_download_request_timeout_secs";
 
 // ── Mail keys ────────────────────────────────────────────────────────────────
 pub const MAIL_SMTP_HOST_KEY: &str = "mail_smtp_host";
@@ -702,6 +707,32 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_STORAGE,
         description: "Default storage quota for new users and teams in bytes (0 = unlimited)",
+    },
+    ConfigDef {
+        key: OFFLINE_DOWNLOAD_MAX_FILE_SIZE_BYTES_KEY,
+        label_i18n_key: "settings_item_offline_download_max_file_size_bytes_label",
+        description_i18n_key: "settings_item_offline_download_max_file_size_bytes_desc",
+        value_type: SystemConfigValueType::Number,
+        default_fn: || {
+            crate::config::operations::DEFAULT_OFFLINE_DOWNLOAD_MAX_FILE_SIZE_BYTES.to_string()
+        },
+        requires_restart: false,
+        is_sensitive: false,
+        category: CONFIG_CATEGORY_FILE_PROCESSING_OFFLINE_DOWNLOAD,
+        description: "Maximum file size allowed for offline HTTP/HTTPS downloads in bytes",
+    },
+    ConfigDef {
+        key: OFFLINE_DOWNLOAD_REQUEST_TIMEOUT_SECS_KEY,
+        label_i18n_key: "settings_item_offline_download_request_timeout_secs_label",
+        description_i18n_key: "settings_item_offline_download_request_timeout_secs_desc",
+        value_type: SystemConfigValueType::Number,
+        default_fn: || {
+            crate::config::operations::DEFAULT_OFFLINE_DOWNLOAD_REQUEST_TIMEOUT_SECS.to_string()
+        },
+        requires_restart: false,
+        is_sensitive: false,
+        category: CONFIG_CATEGORY_FILE_PROCESSING_OFFLINE_DOWNLOAD,
+        description: "Timeout in seconds for offline download HTTP requests",
     },
     ConfigDef {
         key: ARCHIVE_EXTRACT_MAX_SOURCE_BYTES_KEY,

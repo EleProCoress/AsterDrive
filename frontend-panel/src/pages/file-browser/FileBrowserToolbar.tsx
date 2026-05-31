@@ -71,6 +71,7 @@ interface FileBrowserToolbarProps {
 		targetFolderId: number | null,
 	) => Promise<void>;
 	onNavigateToFolder: (folderId: number | null, folderName: string) => void;
+	onOfflineDownload: () => void;
 	onRefresh: () => void | Promise<void>;
 	onSetSortBy: (value: SortBy) => void;
 	onSetSortOrder: (value: SortOrder) => void;
@@ -202,6 +203,7 @@ export function FileBrowserToolbar({
 	onBreadcrumbDragOver,
 	onBreadcrumbDrop,
 	onNavigateToFolder,
+	onOfflineDownload,
 	onRefresh,
 	onSetSortBy,
 	onSetSortOrder,
@@ -371,6 +373,27 @@ export function FileBrowserToolbar({
 	);
 	const defaultRight = (
 		<>
+			<Button
+				type="button"
+				size="sm"
+				variant="outline"
+				className="hidden sm:inline-flex"
+				onClick={onOfflineDownload}
+			>
+				<Icon name="LinkSimple" className="size-3.5" />
+				<span>{t("tasks:offline_download_action")}</span>
+			</Button>
+			<Button
+				type="button"
+				size="icon-sm"
+				variant="ghost"
+				className="sm:hidden"
+				onClick={onOfflineDownload}
+				aria-label={t("tasks:offline_download_action")}
+				title={t("tasks:offline_download_action")}
+			>
+				<Icon name="LinkSimple" className="size-4" />
+			</Button>
 			<SortMenu
 				sortBy={sortBy}
 				sortOrder={sortOrder}

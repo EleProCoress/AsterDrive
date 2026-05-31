@@ -71,6 +71,9 @@ pub enum TaskPresentationCode {
     StatusTextMediaMetadataFailed,
     StatusTextMediaMetadataReady,
     StatusTextMediaMetadataUnsupported,
+    StatusTextOfflineDownloadImported,
+    StatusTextOfflineDownloadDownloaded,
+    StatusTextOfflineDownloadVerified,
     StatusTextStorageMigrationCompleted,
     StatusTextSystemHealthy,
     StatusTextTemporaryUploadCleanupFinished,
@@ -84,6 +87,9 @@ pub enum TaskPresentationCode {
     TaskNameArchivePreviewGenerateFileId,
     TaskNameMediaMetadataExtractBlob,
     TaskNameMediaMetadataExtractSource,
+    TaskNameOfflineDownloadSource,
+    TaskNameOfflineDownloadTargetFolder,
+    TaskNameOfflineDownloadUrl,
     TaskNameStoragePolicyMigration,
     TaskNameStoragePolicyTempCleanup,
     TaskNameStoragePolicyTempCleanupPolicyId,
@@ -492,6 +498,53 @@ pub struct BlobMaintenanceTaskResult {
     pub skipped_blobs: i64,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+pub struct CreateOfflineDownloadTaskParams {
+    pub url: String,
+    pub filename: Option<String>,
+    pub target_folder_id: Option<i64>,
+    pub expected_sha256: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+pub struct OfflineDownloadTaskPayloadInfo {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub filename: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_folder_id: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expected_sha256: Option<String>,
+    pub source_display_url: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+pub struct OfflineDownloadTaskPayload {
+    pub url: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub filename: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_folder_id: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expected_sha256: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_display_url: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+pub struct OfflineDownloadTaskResult {
+    pub file_id: i64,
+    pub file_name: String,
+    pub folder_id: Option<i64>,
+    pub file_path: String,
+    pub source_display_url: String,
+    pub content_length: i64,
+    pub sha256: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 #[serde(rename_all = "snake_case")]
@@ -543,6 +596,7 @@ pub enum TaskPayload {
     StoragePolicyTempCleanup(StoragePolicyTempCleanupTaskPayloadInfo),
     StoragePolicyMigration(StoragePolicyMigrationTaskPayload),
     BlobMaintenance(BlobMaintenanceTaskPayload),
+    OfflineDownload(OfflineDownloadTaskPayloadInfo),
     SystemRuntime(RuntimeTaskPayload),
 }
 
@@ -559,6 +613,7 @@ pub enum TaskResult {
     StoragePolicyTempCleanup(StoragePolicyTempCleanupTaskResult),
     StoragePolicyMigration(StoragePolicyMigrationTaskResult),
     BlobMaintenance(BlobMaintenanceTaskResult),
+    OfflineDownload(OfflineDownloadTaskResult),
     SystemRuntime(RuntimeTaskResult),
 }
 
