@@ -5,6 +5,90 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.2.5] - 2026-06-01
+
+### Release Highlights
+
+**AsterDrive `0.2.5` 聚焦离线下载、审计日志结构化展示和管理后台设置体验优化。** 本版本新增 HTTP/HTTPS 链接离线下载后台任务，支持速率限制、并发控制和安全校验；审计日志引入结构化展示层，支持可配置的动作范围过滤和分组展示；管理后台设置页重构分类元数据，运行时配置默认折叠以提升浏览效率。
+
+- **离线下载** — 新增 HTTP/HTTPS 链接导入后台任务，支持个人空间和团队空间，内置速率限制、并发控制、URL 安全校验和文件大小限制
+- **审计日志结构化展示** — 新增 `AuditPresentation` 结构化展示类型，支持按动作分组、可配置的动作范围过滤，审计响应新增 `presentation` 字段
+- **管理后台设置页重构** — 分类元数据提取为独立模块和查找表，设置页导航和加载逻辑拆分，运行时配置区块默认折叠（后台任务除外）
+- **认证错误码增强** — 新增注册被禁用时的独立结构化错误码
+- **文档与项目规范更新** — README 添加产品截图，项目提交语言统一为英文
+
+### Added
+
+- **离线下载（HTTP/HTTPS 链接导入）**
+  - 新增 `POST /api/v1/tasks/offline-download` 和 `POST /api/v1/teams/{team_id}/tasks/offline-download` 接口
+  - 新增 `OfflineDownload` 后台任务类型，支持流式下载、断点续传、进度跟踪
+  - 新增 URL 安全校验：强制 HTTPS（本地开发除外）、域名黑名单、端口限制、协议白名单
+  - 新增速率限制：按用户/团队级别限制并发下载数和请求频率
+  - 新增速度限制和并发控制配置：支持全局和每任务级别的带宽与并发数限制
+  - 新增 `offline_download` 审计动作类型，记录下载发起者和目标 URL
+  - 新增 `task_service/offline_download.rs`（1052 行）和 `spec/offline_download.rs`（65 行）
+  - 前端任务展示层新增离线下载专用摘要和图标映射
+- **审计日志结构化展示层**
+  - 新增 `AuditPresentation` 类型，支持按动作分组、计数和嵌套详情展示
+  - 审计日志响应新增 `presentation` 字段（可选结构化展示数据）
+  - 新增 `audit_log_recorded_actions` 运行时配置，支持自定义审计记录的动作范围
+  - 新增 `audit_service/presentation.rs`（298 行），实现审计展示格式化逻辑
+  - 新增 `server_start`、`server_shutdown` 审计动作类型
+  - 前端审计格式化库扩展展示字段解析（`lib/audit.ts`，131 行改动）
+  - 新增审计展示层和配置字段的完整文档（中英文）
+  - 新增审计展示边界处理：缺失枚举组、数组参数兼容性修复
+- **管理后台设置体验优化**
+  - 运行时配置区块默认折叠，仅后台任务保持展开，减少页面视觉噪音
+  - 新增 `AdminSettingsLoadedContent` 组件，分离配置加载内容展示
+  - 新增 `adminSettingsCategoryMetadata.ts`（228 行）和测试（211 行），集中维护分类元数据
+
+### Changed
+
+- 根 crate 版本从 `0.2.4` 升级到 `0.2.5`
+- **管理后台设置架构重构**
+  - 分类元数据从分散定义 consolidated 为统一查找表（`adminSettingsCategoryMetadata.ts`）
+  - 设置页数据加载逻辑拆分为 `useAdminSettingsData` 和独立内容组件
+  - 配置项 schema 新增 `options` 字段，支持下拉选项类型
+- **配置模块整理**
+  - 重命名设置分类，拆分文件处理相关配置到独立模块
+  - `config/admin` 和 `config/settings` 相关结构清理
+- **审计日志查询增强**
+  - 审计查询支持 `presentation` 字段序列化和反序列化
+  - 审计动作枚举扩展 `server_start`、`server_shutdown`、`offline_download`
+- **文档更新**
+  - README 和 README.zh 添加产品截图展示
+  - 项目提交语言统一切换为英文
+- **任务调度**
+  - 任务调度 lane 逻辑更新，支持 `offline_download` 任务类型分通道调度
+  - 任务注册表和类型系统扩展离线下载规范
+
+### Fixed
+
+- 修复审计展示中缺失枚举组导致格式化失败的问题
+- 修复审计展示中数组参数处理不当的问题
+- 修复管理后台设置页测试中的异步数据断言稳定性
+
+### Notes
+
+- 本版本为 `0.2.5` 功能增强版本
+- 没有新增数据库 migration
+- **Breaking Change**：API 变更
+  - 审计日志响应新增 `presentation` 字段（可选）
+  - `AuditAction` 枚举新增 `server_start`、`server_shutdown`、`offline_download`
+  - 新增 `POST /api/v1/tasks/offline-download` 和团队版本接口
+  - 配置 schema 新增 `options` 字段
+- 强类型 API 客户端建议重新生成，以同步离线下载接口、审计展示字段和新增审计动作
+- 新增运行时配置项：
+  - `audit_log_recorded_actions` — 控制审计记录的动作范围
+  - 离线下载相关速率限制和并发控制配置
+
+---
+
+**统计数据**：
+- 177 files changed, 7,627 insertions(+), 1,444 deletions(-)
+- 17 commits
+- Rust Edition 2024
+
 ## [v0.2.4] - 2026-05-31
 
 ### Release Highlights
