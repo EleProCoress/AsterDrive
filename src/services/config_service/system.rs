@@ -9,7 +9,7 @@ use crate::entities::system_config;
 use crate::errors::{AsterError, Result};
 use crate::runtime::PrimaryAppState;
 use crate::services::audit_service::{self, AuditContext};
-use crate::types::{SystemConfigSource, SystemConfigValueType};
+use crate::types::{SystemConfigSource, SystemConfigValueType, SystemConfigVisibility};
 use serde::{Deserialize, Serialize};
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::ToSchema;
@@ -116,6 +116,7 @@ pub struct SystemConfig {
     pub requires_restart: bool,
     pub is_sensitive: bool,
     pub source: SystemConfigSource,
+    pub visibility: SystemConfigVisibility,
     pub namespace: String,
     pub category: String,
     pub description: String,
@@ -140,6 +141,7 @@ impl From<system_config::Model> for SystemConfig {
             requires_restart: model.requires_restart,
             is_sensitive: model.is_sensitive,
             source: model.source,
+            visibility: model.visibility,
             namespace: model.namespace,
             category: model.category,
             description: model.description,
@@ -181,6 +183,17 @@ pub async fn set(
     value: impl Into<SystemConfigValue>,
     updated_by: i64,
 ) -> Result<SystemConfig> {
+    set_with_visibility(state, key, value, None, updated_by).await
+}
+
+pub async fn set_with_visibility(
+    state: &PrimaryAppState,
+    key: &str,
+    value: impl Into<SystemConfigValue>,
+    visibility: Option<SystemConfigVisibility>,
+    updated_by: i64,
+) -> Result<SystemConfig> {
+    validate_visibility_target(key, visibility)?;
     let value = value.into();
     let value_type = ALL_CONFIGS
         .iter()
@@ -196,7 +209,8 @@ pub async fn set(
     validate_config_dependencies(state, key, &normalized_value)?;
 
     let changed =
-        upsert_config_and_apply_dependents(state, key, &normalized_value, updated_by).await?;
+        upsert_config_and_apply_dependents(state, key, &normalized_value, visibility, updated_by)
+            .await?;
     let config = changed
         .iter()
         .find(|item| item.key == key)
@@ -243,6 +257,18 @@ pub async fn set_with_audit(
     updated_by: i64,
     audit_ctx: &AuditContext,
 ) -> Result<SystemConfig> {
+    set_with_audit_and_visibility(state, key, value, None, updated_by, audit_ctx).await
+}
+
+pub async fn set_with_audit_and_visibility(
+    state: &PrimaryAppState,
+    key: &str,
+    value: &SystemConfigValue,
+    visibility: Option<SystemConfigVisibility>,
+    updated_by: i64,
+    audit_ctx: &AuditContext,
+) -> Result<SystemConfig> {
+    validate_visibility_target(key, visibility)?;
     let value = value.clone();
     let value_type = ALL_CONFIGS
         .iter()
@@ -257,8 +283,12 @@ pub async fn set_with_audit(
     }
     validate_config_dependencies(state, key, &normalized_value)?;
 
+    let prior_visibility = config_repo::find_by_key(state.reader_db(), key)
+        .await?
+        .map(|config| config.visibility);
     let changed =
-        upsert_config_and_apply_dependents(state, key, &normalized_value, updated_by).await?;
+        upsert_config_and_apply_dependents(state, key, &normalized_value, visibility, updated_by)
+            .await?;
     let config = changed
         .iter()
         .find(|item| item.key == key)
@@ -267,7 +297,12 @@ pub async fn set_with_audit(
 
     for changed_config in &changed {
         invalidate_dependent_public_config_caches(&changed_config.key);
-        audit_config_update(state, audit_ctx, changed_config).await;
+        let audit_prior_visibility = if changed_config.key == key {
+            prior_visibility
+        } else {
+            Some(changed_config.visibility)
+        };
+        audit_config_update(state, audit_ctx, changed_config, audit_prior_visibility).await;
     }
 
     Ok(config.into())
@@ -277,6 +312,7 @@ async fn audit_config_update(
     state: &PrimaryAppState,
     audit_ctx: &AuditContext,
     config: &system_config::Model,
+    prior_visibility: Option<SystemConfigVisibility>,
 ) {
     audit_service::log_with_details(
         state,
@@ -294,6 +330,8 @@ async fn audit_config_update(
             };
             audit_service::details(audit_service::ConfigUpdateDetails {
                 value: &audit_value,
+                visibility: config.visibility,
+                prior_visibility,
             })
         },
     )
@@ -302,6 +340,15 @@ async fn audit_config_update(
 
 fn validate_value_type(value_type: SystemConfigValueType, value: &str) -> Result<()> {
     shared_system_config::validate_value_type(value_type, value)
+}
+
+fn validate_visibility_target(key: &str, visibility: Option<SystemConfigVisibility>) -> Result<()> {
+    if visibility.is_some() && ALL_CONFIGS.iter().any(|def| def.key == key) {
+        return Err(AsterError::validation_error(
+            "visibility can only be changed for custom configuration",
+        ));
+    }
+    Ok(())
 }
 
 fn normalize_system_value(state: &PrimaryAppState, key: &str, value: &str) -> Result<String> {
@@ -327,11 +374,14 @@ async fn upsert_config_and_apply_dependents(
     state: &PrimaryAppState,
     key: &str,
     value: &str,
+    visibility: Option<SystemConfigVisibility>,
     updated_by: i64,
 ) -> Result<Vec<system_config::Model>> {
     let txn = crate::db::transaction::begin(state.writer_db()).await?;
     let result = async {
-        let saved = config_repo::upsert(&txn, key, value, updated_by).await?;
+        let saved =
+            config_repo::upsert_with_options(&txn, key, value, visibility, Some(updated_by))
+                .await?;
         let mut changed = vec![apply_system_config_definition(saved)];
         if key != auth_runtime::AUTH_EMAIL_CODE_LOGIN_ENABLED_KEY
             && mail_config_change_disables_email_code_mfa(state, key, value)
