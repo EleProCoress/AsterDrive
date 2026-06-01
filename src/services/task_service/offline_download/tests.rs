@@ -536,6 +536,31 @@ async fn aria2_output_dir_is_writable_by_external_process_user() {
     assert_eq!(modes, [0o777, 0o777, 0o777]);
 }
 
+#[cfg(unix)]
+#[tokio::test]
+async fn aria2_output_dir_repairs_existing_parent_permissions() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let root = std::env::temp_dir().join(format!(
+        "aster-drive-aria2-existing-parent-{}",
+        crate::utils::id::new_uuid()
+    ));
+    let tasks_dir = root.join("tasks");
+    std::fs::create_dir_all(&tasks_dir).unwrap();
+    std::fs::set_permissions(&tasks_dir, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+    let temp_path = tasks_dir.join("42/7/source");
+    prepare_aria2_output_dir(&temp_path).await.unwrap();
+
+    let token_dir = temp_path.parent().unwrap();
+    let task_dir = token_dir.parent().unwrap();
+    let modes = [&tasks_dir, task_dir, token_dir]
+        .map(|dir| std::fs::metadata(dir).unwrap().permissions().mode() & 0o777);
+    let _ = std::fs::remove_dir_all(root);
+
+    assert_eq!(modes, [0o777, 0o777, 0o777]);
+}
+
 #[test]
 fn aria2_rpc_unauthorized_maps_to_auth_subcode() {
     let error = Aria2RpcCallError::Rpc {
