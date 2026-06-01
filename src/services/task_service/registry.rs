@@ -201,6 +201,7 @@ mod tests {
             display_name: "registry test".to_string(),
             payload_json: StoredTaskPayload(payload_json.to_string()),
             result_json: result_json.map(|value| StoredTaskResult(value.to_string())),
+            runtime_json: None,
             steps_json: None,
             progress_current: 1,
             progress_total: 1,

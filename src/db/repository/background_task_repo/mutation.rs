@@ -144,6 +144,28 @@ pub async fn mark_progress<C: ConnectionTrait>(
     Ok(result.rows_affected == 1)
 }
 
+pub async fn set_runtime_json<C: ConnectionTrait>(
+    db: &C,
+    id: i64,
+    processing_token: i64,
+    runtime_json: Option<&str>,
+    now: DateTime<Utc>,
+) -> Result<bool> {
+    let result = BackgroundTask::update_many()
+        .col_expr(
+            background_task::Column::RuntimeJson,
+            Expr::value(runtime_json.map(str::to_string)),
+        )
+        .col_expr(background_task::Column::UpdatedAt, Expr::value(now))
+        .filter(background_task::Column::Id.eq(id))
+        .filter(background_task::Column::Status.eq(BackgroundTaskStatus::Processing))
+        .filter(background_task::Column::ProcessingToken.eq(processing_token))
+        .exec(db)
+        .await
+        .map_err(AsterError::from)?;
+    Ok(result.rows_affected == 1)
+}
+
 pub struct TaskSuccessUpdate<'a> {
     pub id: i64,
     pub processing_token: i64,

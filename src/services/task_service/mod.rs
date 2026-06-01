@@ -684,6 +684,7 @@ impl<S: BackgroundTaskSpec> TypedTaskCreate<S> {
             display_name: Set(truncate_display_name(&self.display_name)),
             payload_json: Set(payload_json),
             result_json: Set(self.result_json),
+            runtime_json: Set(None),
             steps_json: Set(steps_json),
             progress_current: Set(self.progress_current),
             progress_total: Set(self.progress_total),
@@ -796,6 +797,29 @@ pub(super) async fn update_task_progress_db(
             status_text: status_text.as_deref(),
             steps_json: Some(steps_json.as_ref()),
         },
+    )
+    .await?
+    {
+        lease_guard.record_renewed();
+        Ok(())
+    } else {
+        Err(lease_guard.mark_lost())
+    }
+}
+
+pub(super) async fn set_task_runtime_json(
+    state: &PrimaryAppState,
+    lease_guard: &TaskLeaseGuard,
+    runtime_json: Option<&str>,
+) -> Result<()> {
+    let lease = lease_guard.lease();
+    let now = Utc::now();
+    if background_task_repo::set_runtime_json(
+        state.writer_db(),
+        lease.task_id,
+        lease.processing_token,
+        runtime_json,
+        now,
     )
     .await?
     {
@@ -1059,6 +1083,7 @@ mod tests {
                 .to_string(),
             ),
             result_json: None,
+            runtime_json: None,
             steps_json: None,
             progress_current: 0,
             progress_total: 0,
@@ -1119,6 +1144,7 @@ mod tests {
                 })
                 .to_string(),
             )),
+            runtime_json: None,
             steps_json: None,
             progress_current: 4,
             progress_total: 4,
@@ -1180,6 +1206,7 @@ mod tests {
                 })
                 .to_string(),
             )),
+            runtime_json: None,
             steps_json: None,
             progress_current: 1,
             progress_total: 1,
@@ -1241,6 +1268,7 @@ mod tests {
                 })
                 .to_string(),
             )),
+            runtime_json: None,
             steps_json: None,
             progress_current: 1,
             progress_total: 1,
@@ -1305,6 +1333,7 @@ mod tests {
                 })
                 .to_string(),
             )),
+            runtime_json: None,
             steps_json: None,
             progress_current: 1,
             progress_total: 1,
@@ -1377,6 +1406,7 @@ mod tests {
                 .to_string(),
             ),
             result_json: None,
+            runtime_json: None,
             steps_json: None,
             progress_current: 0,
             progress_total: 0,
@@ -1450,6 +1480,7 @@ mod tests {
                 ))
                 .expect("runtime result should serialize"),
             ),
+            runtime_json: None,
             steps_json: None,
             progress_current: 1,
             progress_total: 1,
@@ -1513,6 +1544,7 @@ mod tests {
                 .to_string(),
             ),
             result_json: None,
+            runtime_json: None,
             steps_json: None,
             progress_current: 1,
             progress_total: 1,
@@ -1628,6 +1660,7 @@ mod tests {
             display_name: "missing creator".to_string(),
             payload_json: StoredTaskPayload("{}".to_string()),
             result_json: None,
+            runtime_json: None,
             steps_json: None,
             progress_current: 0,
             progress_total: 0,
@@ -1668,6 +1701,7 @@ mod tests {
             display_name: "team task".to_string(),
             payload_json: StoredTaskPayload("{}".to_string()),
             result_json: None,
+            runtime_json: None,
             steps_json: None,
             progress_current: 0,
             progress_total: 0,

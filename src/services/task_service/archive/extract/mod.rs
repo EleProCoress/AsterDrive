@@ -482,6 +482,7 @@ mod tests {
             display_name: "Extract archive.zip".to_string(),
             payload_json: StoredTaskPayload("{}".to_string()),
             result_json: None,
+            runtime_json: None,
             steps_json: None,
             progress_current: 0,
             progress_total: 0,
