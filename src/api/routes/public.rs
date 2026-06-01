@@ -129,7 +129,11 @@ pub async fn get_media_data_support(state: web::Data<PrimaryAppState>) -> Result
 
 fn public_config_response<T: serde::Serialize>(data: T) -> HttpResponse {
     HttpResponse::Ok()
-        .insert_header(("Cache-Control", config_service::PUBLIC_CONFIG_CACHE_CONTROL))
+        .insert_header((
+            header::CACHE_CONTROL,
+            config_service::PUBLIC_CONFIG_CACHE_CONTROL,
+        ))
+        .insert_header((header::VARY, "Authorization, Cookie"))
         .json(ApiResponse::ok(data))
 }
 

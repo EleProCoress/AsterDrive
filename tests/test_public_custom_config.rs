@@ -55,6 +55,12 @@ async fn get_public_custom_config(
             Some("public, max-age=60")
         }
     );
+    assert_eq!(
+        resp.headers()
+            .get("Vary")
+            .and_then(|value| value.to_str().ok()),
+        Some("Authorization, Cookie")
+    );
     test::read_body_json(resp).await
 }
 
