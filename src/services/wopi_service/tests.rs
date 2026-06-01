@@ -325,7 +325,10 @@ fn normalize_requested_rename_target_normalizes_nfd_and_rejects_windows_reserved
 
 #[test]
 fn parse_discovery_xml_extracts_proof_keys() {
-    let modulus = STANDARD.encode([1_u8; 256]);
+    let mut modulus_bytes = vec![0_u8; 256];
+    modulus_bytes[0] = 0x80;
+    modulus_bytes[255] = 1;
+    let modulus = STANDARD.encode(modulus_bytes);
     let exponent = STANDARD.encode([1_u8, 0, 1]);
     let discovery = parse_discovery_xml(&format!(
         r#"

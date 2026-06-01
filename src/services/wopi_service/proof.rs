@@ -30,9 +30,12 @@ pub(crate) fn parse_wopi_proof_key_set(
     old_modulus: Option<&str>,
     old_exponent: Option<&str>,
 ) -> Result<WopiProofKeySet> {
+    let current_modulus = parse_wopi_key_component(current_modulus, "modulus")?;
+    let current_exponent = parse_wopi_key_component(current_exponent, "exponent")?;
+    validate_wopi_rsa_public_key(&current_modulus, &current_exponent, "current")?;
     let current = WopiProofPublicKey {
-        modulus: parse_wopi_key_component(current_modulus, "modulus")?,
-        exponent: parse_wopi_key_component(current_exponent, "exponent")?,
+        modulus: current_modulus,
+        exponent: current_exponent,
     };
     let old = match (
         old_modulus.map(str::trim).filter(|value| !value.is_empty()),
@@ -41,10 +44,12 @@ pub(crate) fn parse_wopi_proof_key_set(
             .filter(|value| !value.is_empty()),
     ) {
         (None, None) => None,
-        (Some(modulus), Some(exponent)) => Some(WopiProofPublicKey {
-            modulus: parse_wopi_key_component(modulus, "old modulus")?,
-            exponent: parse_wopi_key_component(exponent, "old exponent")?,
-        }),
+        (Some(modulus), Some(exponent)) => {
+            let modulus = parse_wopi_key_component(modulus, "old modulus")?;
+            let exponent = parse_wopi_key_component(exponent, "old exponent")?;
+            validate_wopi_rsa_public_key(&modulus, &exponent, "old")?;
+            Some(WopiProofPublicKey { modulus, exponent })
+        }
         _ => {
             return Err(AsterError::validation_error(
                 "WOPI proof-key old modulus/exponent must be provided together",
@@ -107,6 +112,54 @@ fn parse_wopi_key_component(encoded: &str, name: &str) -> Result<Vec<u8>> {
         )));
     }
     Ok(trimmed)
+}
+
+fn validate_wopi_rsa_public_key(modulus: &[u8], exponent: &[u8], key_name: &str) -> Result<()> {
+    let modulus_bit_len = bit_len(modulus);
+    if !(2048..=8192).contains(&modulus_bit_len) {
+        return Err(AsterError::validation_error(format!(
+            "WOPI proof-key {key_name} modulus must be 2048-8192 bits"
+        )));
+    }
+    if modulus.last().is_some_and(|value| value % 2 == 0) {
+        return Err(AsterError::validation_error(format!(
+            "WOPI proof-key {key_name} modulus must be odd"
+        )));
+    }
+
+    let exponent_value = parse_wopi_rsa_exponent(exponent, key_name)?;
+    if exponent_value > ((1_u64 << 33) - 1) {
+        return Err(AsterError::validation_error(format!(
+            "WOPI proof-key {key_name} exponent is too large"
+        )));
+    }
+    if exponent_value < 3 || exponent_value % 2 == 0 {
+        return Err(AsterError::validation_error(format!(
+            "WOPI proof-key {key_name} exponent must be an odd integer >= 3"
+        )));
+    }
+    Ok(())
+}
+
+fn parse_wopi_rsa_exponent(exponent: &[u8], key_name: &str) -> Result<u64> {
+    if exponent.len() > 8 {
+        return Err(AsterError::validation_error(format!(
+            "WOPI proof-key {key_name} exponent is too large"
+        )));
+    }
+
+    let mut value = 0_u64;
+    for byte in exponent {
+        value = (value << 8) | u64::from(*byte);
+    }
+    Ok(value)
+}
+
+fn bit_len(bytes: &[u8]) -> usize {
+    let Some(first) = bytes.first() else {
+        return 0;
+    };
+    (bytes.len() - 1) * 8 + (u8::BITS as usize - first.leading_zeros() as usize)
 }
 
 fn parse_wopi_timestamp(timestamp: Option<&str>) -> Result<i64> {
@@ -193,65 +246,9 @@ mod tests {
         validate_wopi_proof,
     };
 
-    const CURRENT_PRIVATE_KEY: &str = r#"
------BEGIN RSA PRIVATE KEY-----
-MIIEpAIBAAKCAQEAvLjzLcWtd+Rn5EKEGSEt7HsRUg6rQd9rc+CF4tPYOOMEKTyB
-M5z9mWWV6+IMNDRh57E+3QAPAIthcBqEkws7aIHA3bm0owFFt1E1UGmfDoJWLJvT
-oGUkuL//qWTHXdxVID5fNHSpksfPQcxoIPSqhgP3AQkzsi06taFehYSZeUBcctPm
-Px0LPfamGy9yd28CtC0MpIUkpp8Y3iDfx4CyOoNxymxEIpM9O86IpiyP3jZ3qNA+
-ldP4dYaWfw2aDKA+xt8VcAJ8ONHR9lZBzJxiUl3ouz/j5sgCAkQHgviPuZ9GtyXG
-uqGuztg33ktjPP+Nt3hNOO6/BMM1bI1xLN5yEQIDAQABAoIBAAhyKofw4duMwE2J
-4ImTX4/Gzjai620uR4vPD47gNjwNhOEnkQyzSPI1hqkg27T2Zy9MUmjnmMRIeJrg
-xPAjv4vkyrHhnsDwzKLwoncv0ut+T8b9TlJOVH9kMFfvZ7C+rJydzfr2AaTNBmyG
-bl6TNJJ82PAV7ldaCNeaGjXVglzXvalw3vXalh2UHXkGWxWDr9G4/y3iF52L1gDD
-OH8o82cQXEm/yAbFeWtPERtkxWpsEQTOxnrqYdQeJ18tWIEQVFtGl6wCjYHYFqaw
-n1xdo6Lr87oSqxNnpNFDrhHNeKlC+c5cWyA51TR3z0u/ZS7z24idcCZJebb6XDo6
-Fr+3u8UCgYEA/j2OzVExgFJQ8Nu3r2QyIweMEjBbxjt2Y6xK4mvpo5VrWq5llBpj
-zCzn8AJSxHQqdXBgK+6zuQuTeWQz3YIC49/NZ/2aGdcusuTdTNN8yqrX5IXOWwAJ
-YRW7dLRq6fJ+vhTtOSaOS8BCRQmF6YWzvOzSbwFtpri4Ih919ZGZvRMCgYEAvgdQ
-D1owrFXZov5es8/gJoMZLNOJr3LM7QDZzrcyohBimVNbdWrFYGf5U2J8l+aOod8U
-DUSu48+MVttrs22mvrN9TTV3AK1vDsQHZdSjpp44XZWB1/kZNWZWLqbK4SdByFIU
-z9zJKLnVP8QKQpw8JkmPMfHirT+62D8vqYi47MsCgYEA2+qBiMYvzHDnxMA5zkQc
-PkK7/cvIxtsOmD8jc2Gm8rI/72ulQAvnwWgipHBOCdL2Gym+dqH+4hTKVxm+518b
-guNHOSmbz7hbk7D2YAscCe7n2quHiR2p/0meIeAiDwWMbn2JiYL5WTsP18naBNp7
-U/OCPzT8FVf5JsMR9P4h/vMCgYBO7dCmH8r5ucrk9Yy2WRB8TpWlVdPpiOBvTJwr
-TVJ9mBqsHsBtO8Txrx4TMWQY3828lGDKxg1yWCGtbgQFCfVpXjocWKmuIVtwoaGE
-/VZf/XXiARhmcXO0B2aih+rarCiZoOY+FDGFdfKKQs4ULrqZGJKepx6E4WSlL1GH
-tF9DEwKBgQDnZskrCh32LTbUPIsL/0dmOb8N4/PCTQbjfYksUhATzh4P70NjI7e0
-4ZhQ2zrejfnc3k+fWn2GIlkckwosLAI6f/A7ZTh8CTAPtKOXpNZAh24r5yDYRdI9
-F6gxJgCziHksLP4HsC5JC5RoOoSOPQclCtnS/1wUWyArvcWzVU/JUw==
------END RSA PRIVATE KEY-----
-"#;
-
-    const OLD_PRIVATE_KEY: &str = r#"
------BEGIN RSA PRIVATE KEY-----
-MIIEogIBAAKCAQEAvcp/R2SvETmScvR9YgyB2Y/4Vxj8+MWfYfh7RFFTWEP84vOP
-PaqmLzxAwOAYZBE5/beEaGaxwro+bdXcqsCrWhTJDtAO2+6NCBXFd+FV8Y4s/Mpc
-KRzEvOiquIn9gdT4QAd25HkYQ0EZrVSzFA4FKblDFmfYNCkDRANbXhtihhJTXgEx
-8ffa/j5sNhit+A8f+9uF56gWGD5FVYAjIiVzFmqzD7tHENKd6rnJDYNfvPJfJYn6
-vMfKC44ixsthZA00AZ5lD95hBLl1jrGkHyhsJy9iIqDrT/uQLH7WgeRRqPTkC4DM
-BIMDqdb8g+rIg6qm2+jhUAQSnn8M70qfJ+GE8wIDAQABAoIBACjf7EKRfhzNE+vb
-GQfdXrffCGKluJHRag6dB9tCUptfZR7xyqdC0fC5Xs7LVKV0ilNIy2T6vQ0NtHVO
-Smyh+yV29YhRqemW+lvD6Jf1eV+BOdIluOyHzB1NVLtSyLzGA8MyeFojdGTDqAaL
-B9hpXpZKVpcEPW2aaaAjwvFFH5Z1C28OlkdCk7f4qE1HYLk0bF9rUpjExz5GwFnE
-8Rmvc6pml/eI7eHY+WddWeJnXHvhiw6tCo0HJgscksjDZn+OscHZSEQmyoQ7wEQI
-B6TdBVSFawvOevopUXfO8eYTwHyhKUnArEgE/fNXBg78FMhE7y9PPRKEhaJCXsh+
-PUmTmGECgYEA9VK2UrDtljP8wpgoApJOm7+rA6DHY+kqGnYWabDleAoFH/H2eXoc
-TmLNulme5giX/dY7WJ9qBH1yK3UZ8TQRz5+9BxdhDpo4LRjUEOuuzolDtm1hqlUW
-hE4DY+VL2x7+/SO2rHQCIYniyKil7FJ3Ym3jOoPIDoNmXUn2FpCiMeECgYEAxg0R
-zkoQ6pwy6XPeAZEPuJdtD2uXDIsW/EupHevP8uOn0JTepn0T29OT2dGNPJYSfBOb
-L+AMnV32IidLLMoqEm/YbFrUUJfAvukWQEm6BJv1Djw3RKsfBSfsCnB0nQT+JZuf
-UYeJ45jUt8mjDT9X7s7QRoB2vftNMWvVlcC4eVMCgYAlfDP7wqkrEFqI6XMDoZN9
-XPYmocSV0aTrUivujmchxnYuAWzl9vCoUZSZ6uPKxnljAf8jdYhfk0OEvGnwX0Jx
-dTkPAlWEQ7Bdw7Nzum+Fg5fjIieQPVwpbzo5Y2oJ21yfFXvuMfO5aDZM7ugbiiZP
-1faolEZXYWCc1JZTsFn4QQKBgEePcV+YY4Rh7ANuWkk2oPeRv1ZTCcD+gM+ohvLI
-wdqBZ6F2KPz/NK25RTLvBJlfoE40x14FFonF6altiTwl0A3ZW9nK9+wm6P4SOngA
-K7Z+o40BNPca3Zp/UkpzV69knm/4SxiqYKhcEIBX2xJuUNd44siWolEC/GFfFU2G
-1SEBAoGAYdgiEhIdsrrK5j08Ib8uYVLYVw+dvwdK+ylBw9RwqakIkI0se2Vm2LOK
-ABzR7yXWbGsEuWuFOURfwc0jHSCA/s/p0oKRTJS1xFbdO92VCBJwTvvltcjGHXre
-80sGcP+jhvPhNUptnWQJP2ioMw6kjhQfMxJaMF5g/cfmRggGvMY=
------END RSA PRIVATE KEY-----
-"#;
+    const CURRENT_PRIVATE_KEY: &str =
+        include_str!("../../../tests/fixtures/rsa/wopi_current_test_key.pem");
+    const OLD_PRIVATE_KEY: &str = include_str!("../../../tests/fixtures/rsa/wopi_old_test_key.pem");
 
     fn build_test_keys() -> (RsaKeyPair, RsaKeyPair, WopiProofKeySet) {
         let current = load_private_key(CURRENT_PRIVATE_KEY);
@@ -292,6 +289,13 @@ ABzR7yXWbGsEuWuFOURfwc0jHSCA/s/p0oKRTJS1xFbdO92VCBJwTvvltcjGHXre
             .sign(&RSA_PKCS1_SHA256, &rng, payload, &mut signature)
             .unwrap();
         STANDARD.encode(signature)
+    }
+
+    fn valid_test_modulus() -> Vec<u8> {
+        let mut modulus = vec![0_u8; 256];
+        modulus[0] = 0x80;
+        modulus[255] = 1;
+        modulus
     }
 
     fn build_reference_payload(access_token: &str, request_url: &str, timestamp: i64) -> Vec<u8> {
@@ -477,13 +481,46 @@ ABzR7yXWbGsEuWuFOURfwc0jHSCA/s/p0oKRTJS1xFbdO92VCBJwTvvltcjGHXre
 
     #[test]
     fn parse_wopi_proof_key_set_requires_old_pairs() {
+        let modulus = valid_test_modulus();
         let err = parse_wopi_proof_key_set(
-            &STANDARD.encode([1_u8; 256]),
+            &STANDARD.encode(modulus),
             &STANDARD.encode([1_u8, 0, 1]),
             Some("AQAB"),
             None,
         )
         .unwrap_err();
         assert!(err.message().contains("must be provided together"));
+    }
+
+    #[test]
+    fn parse_wopi_proof_key_set_rejects_invalid_rsa_constraints() {
+        let modulus = valid_test_modulus();
+
+        let short_modulus_err = parse_wopi_proof_key_set(
+            &STANDARD.encode([0x80_u8; 128]),
+            &STANDARD.encode([1_u8, 0, 1]),
+            None,
+            None,
+        )
+        .unwrap_err();
+        assert!(short_modulus_err.message().contains("2048-8192 bits"));
+
+        let even_exponent_err = parse_wopi_proof_key_set(
+            &STANDARD.encode(&modulus),
+            &STANDARD.encode([2_u8]),
+            None,
+            None,
+        )
+        .unwrap_err();
+        assert!(even_exponent_err.message().contains("odd integer >= 3"));
+
+        let large_exponent_err = parse_wopi_proof_key_set(
+            &STANDARD.encode(modulus),
+            &STANDARD.encode([2_u8, 0, 0, 0, 0]),
+            None,
+            None,
+        )
+        .unwrap_err();
+        assert!(large_exponent_err.message().contains("too large"));
     }
 }
