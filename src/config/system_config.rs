@@ -290,6 +290,7 @@ mod tests {
             requires_restart: false,
             is_sensitive: false,
             source,
+            visibility: crate::types::SystemConfigVisibility::Private,
             namespace: String::new(),
             category: String::new(),
             description: String::new(),
