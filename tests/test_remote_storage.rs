@@ -1516,6 +1516,51 @@ async fn test_follower_internal_storage_records_object_audit_logs() {
     assert_eq!(delete_details["binding_id"], binding.id);
     assert_eq!(delete_details["object_key"], "audit-object.bin");
 
+    client
+        .put_bytes("audit-part-a.bin", b"abc")
+        .await
+        .expect("first compose part write should succeed");
+    client
+        .put_bytes("audit-part-b.bin", b"def")
+        .await
+        .expect("second compose part write should succeed");
+    let composed = client
+        .compose_objects(
+            "audit-composed.bin",
+            vec![
+                "audit-part-a.bin".to_string(),
+                "audit-part-b.bin".to_string(),
+            ],
+            6,
+        )
+        .await
+        .expect("object compose should succeed");
+    assert_eq!(composed.bytes_written, 6);
+    let compose_entry = latest_audit_log(
+        provider_state.writer_db(),
+        aster_drive::types::AuditAction::FollowerObjectCompose,
+    )
+    .await;
+    assert_eq!(
+        compose_entry.entity_name.as_deref(),
+        Some("audit-composed.bin")
+    );
+    let compose_details = audit_details(&compose_entry);
+    assert_eq!(compose_details["binding_id"], binding.id);
+    assert_eq!(compose_details["object_key"], "audit-composed.bin");
+    assert_eq!(compose_details["size"], 6);
+    assert_eq!(compose_details["bytes_written"], 6);
+    assert_eq!(
+        compose_details["parts"],
+        serde_json::json!(["audit-part-a.bin", "audit-part-b.bin"])
+    );
+    assert!(
+        compose_details["storage_path"]
+            .as_str()
+            .expect("compose storage path should be string")
+            .ends_with("/audit-composed.bin")
+    );
+
     provider_server.stop().await;
 }
 
@@ -1646,6 +1691,8 @@ async fn test_follower_internal_storage_records_binding_and_profile_audit_logs()
     let delete_details = audit_details(&delete_entry);
     assert_eq!(delete_details["binding_id"], binding.id);
     assert_eq!(delete_details["profile_key"], profile.profile_key);
+    assert_eq!(delete_details["driver_type"], "local");
+    assert_eq!(delete_details["is_default"], true);
 
     provider_server.stop().await;
 }

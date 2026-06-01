@@ -217,6 +217,8 @@ pub struct FollowerObjectAuditDetails<'a> {
     pub bytes_written: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub partial: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parts: Option<&'a [String]>,
 }
 
 #[derive(Serialize)]

@@ -218,6 +218,7 @@ fn object_audit_details<'a>(
     size: Option<i64>,
     bytes_written: Option<u64>,
     partial: Option<bool>,
+    parts: Option<&'a [String]>,
 ) -> Option<serde_json::Value> {
     audit_service::details(audit_service::FollowerObjectAuditDetails {
         binding_id,
@@ -226,6 +227,7 @@ fn object_audit_details<'a>(
         size,
         bytes_written,
         partial,
+        parts,
     })
 }
 
@@ -406,25 +408,31 @@ async fn put_object(
         content_length,
         "follower object written"
     );
-    audit_service::log_with_details(
+    if audit_service::should_record(
         state.get_ref(),
-        &follower_audit_context(&req),
         audit_service::AuditAction::FollowerObjectWrite,
-        audit_service::AuditEntityType::File,
-        None,
-        Some(&object_key),
-        || {
-            object_audit_details(
-                ctx.binding.id,
-                &object_key,
-                &storage_path,
-                Some(content_length),
-                None,
-                None,
-            )
-        },
-    )
-    .await;
+    ) {
+        audit_service::log_with_details(
+            state.get_ref(),
+            &follower_audit_context(&req),
+            audit_service::AuditAction::FollowerObjectWrite,
+            audit_service::AuditEntityType::File,
+            None,
+            Some(&object_key),
+            || {
+                object_audit_details(
+                    ctx.binding.id,
+                    &object_key,
+                    &storage_path,
+                    Some(content_length),
+                    None,
+                    None,
+                    None,
+                )
+            },
+        )
+        .await;
+    }
     Ok(HttpResponse::Ok()
         .insert_header((actix_web::http::header::ETAG, etag))
         .json(ApiResponse::<()>::ok_empty()))
@@ -556,25 +564,31 @@ async fn compose_objects(
         "follower object composed"
     );
 
-    audit_service::log_with_details(
+    if audit_service::should_record(
         state.get_ref(),
-        &follower_audit_context(&req),
         audit_service::AuditAction::FollowerObjectCompose,
-        audit_service::AuditEntityType::File,
-        None,
-        Some(&target_key),
-        || {
-            object_audit_details(
-                ctx.binding.id,
-                &target_key,
-                &target_storage_path,
-                Some(body.expected_size),
-                Some(bytes_written),
-                None,
-            )
-        },
-    )
-    .await;
+    ) {
+        audit_service::log_with_details(
+            state.get_ref(),
+            &follower_audit_context(&req),
+            audit_service::AuditAction::FollowerObjectCompose,
+            audit_service::AuditEntityType::File,
+            None,
+            Some(&target_key),
+            || {
+                object_audit_details(
+                    ctx.binding.id,
+                    &target_key,
+                    &target_storage_path,
+                    Some(body.expected_size),
+                    Some(bytes_written),
+                    None,
+                    Some(&body.part_keys),
+                )
+            },
+        )
+        .await;
+    }
 
     Ok(
         HttpResponse::Ok().json(ApiResponse::ok(RemoteStorageComposeResponse {
@@ -660,25 +674,31 @@ async fn get_object(
         partial = partial_range.is_some(),
         "follower object read prepared"
     );
-    audit_service::log_with_details(
+    if audit_service::should_record(
         state.get_ref(),
-        &follower_audit_context(&req),
         audit_service::AuditAction::FollowerObjectRead,
-        audit_service::AuditEntityType::File,
-        None,
-        Some(&object_key),
-        || {
-            object_audit_details(
-                ctx.binding.id,
-                &object_key,
-                &storage_path,
-                i64::try_from(metadata.size).ok(),
-                None,
-                Some(partial_range.is_some()),
-            )
-        },
-    )
-    .await;
+    ) {
+        audit_service::log_with_details(
+            state.get_ref(),
+            &follower_audit_context(&req),
+            audit_service::AuditAction::FollowerObjectRead,
+            audit_service::AuditEntityType::File,
+            None,
+            Some(&object_key),
+            || {
+                object_audit_details(
+                    ctx.binding.id,
+                    &object_key,
+                    &storage_path,
+                    i64::try_from(metadata.size).ok(),
+                    None,
+                    Some(partial_range.is_some()),
+                    None,
+                )
+            },
+        )
+        .await;
+    }
     Ok(response.streaming(body))
 }
 
@@ -745,16 +765,31 @@ async fn delete_object(
         object_key = %object_key,
         "follower object deleted"
     );
-    audit_service::log_with_details(
+    if audit_service::should_record(
         state.get_ref(),
-        &follower_audit_context(&req),
         audit_service::AuditAction::FollowerObjectDelete,
-        audit_service::AuditEntityType::File,
-        None,
-        Some(&object_key),
-        || object_audit_details(ctx.binding.id, &object_key, &storage_path, None, None, None),
-    )
-    .await;
+    ) {
+        audit_service::log_with_details(
+            state.get_ref(),
+            &follower_audit_context(&req),
+            audit_service::AuditAction::FollowerObjectDelete,
+            audit_service::AuditEntityType::File,
+            None,
+            Some(&object_key),
+            || {
+                object_audit_details(
+                    ctx.binding.id,
+                    &object_key,
+                    &storage_path,
+                    None,
+                    None,
+                    None,
+                    None,
+                )
+            },
+        )
+        .await;
+    }
     Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
 }
 
@@ -861,7 +896,8 @@ async fn delete_ingress_profile(
     let binding =
         master_binding_service::authorize_binding_sync_request(state.get_ref(), &req).await?;
     let profile_key = path.into_inner();
-    managed_ingress_profile_service::delete(state.get_ref(), &binding, &profile_key).await?;
+    let deleted_profile =
+        managed_ingress_profile_service::delete(state.get_ref(), &binding, &profile_key).await?;
     tracing::info!(
         binding_id = binding.id,
         profile_key = %profile_key,
@@ -875,10 +911,12 @@ async fn delete_ingress_profile(
         None,
         Some(&profile_key),
         || {
-            audit_service::details(serde_json::json!({
-                "binding_id": binding.id,
-                "profile_key": profile_key,
-            }))
+            audit_service::details(audit_service::FollowerIngressProfileAuditDetails {
+                binding_id: binding.id,
+                profile_key: &deleted_profile.profile_key,
+                driver_type: deleted_profile.driver_type.as_str(),
+                is_default: deleted_profile.is_default,
+            })
         },
     )
     .await;
