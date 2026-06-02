@@ -5,6 +5,114 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.2.6] - 2026-06-02
+
+### Release Highlights
+
+**AsterDrive `0.2.6` 聚焦 aria2 离线下载引擎、后台任务优雅关闭、自定义配置可见性和从节点审计可观测性。** 本版本新增 aria2 外部下载引擎支持，具备断点续传、多连接并发和内置引擎 fallback 能力；后台任务系统引入优雅关闭机制，服务重启时给予 30 秒宽限期让任务安全退出；自定义配置支持 private / authenticated / public 三级可见性控制，前端可按需暴露配置；从节点存储操作补齐完整审计日志和追踪覆盖。
+
+- **aria2 离线下载引擎** — 新增 aria2 外部引擎支持，RPC 调用、断点续传、多连接、速度限制、探测和 fallback 到内置引擎
+- **后台任务优雅关闭** — 服务关闭时发送取消信号，任务支持检查点同步检测和异步可中断睡眠，30 秒宽限期后强制终止
+- **自定义配置可见性控制** — 系统配置新增 visibility 字段，支持 private / authenticated / public 三级可见度，公开 API 带缓存和 Vary 头
+- **从节点审计日志** — 新增 8 个 follower 专属审计动作，覆盖绑定同步、对象读写删和 Ingress Profile 管理
+- **WOPI RSA 安全重构** — 生产环境 `rsa` 替换为 `ring`，公钥增加约束校验，测试密钥运行时生成
+- **开发者文档英文版** — 新增完整英文 REST API、架构、模块设计和测试文档
+- **管理后台版本徽章彩蛋** — ↖(^ω^)↗
+
+### Added
+
+- **aria2 离线下载引擎**
+  - 新增 `Aria2` 下载引擎，通过 RPC 调用外部 aria2 进程（`aria2.addUri`、`aria2.tellStatus`）
+  - 支持断点续传：持久化 `gid` 和 `processing_token` 到 `runtime_json`，重启后恢复
+  - 支持多连接下载：`split` 分片数、`max_connection_per_server` 单服务器最大连接数
+  - 支持最低速度限制：`lowest_speed_limit_bytes_per_sec`，低于阈值自动重试
+  - 新增 RPC 探测功能：`probe_aria2_rpc` 测试连通性并返回 aria2 版本
+  - 新增引擎注册表架构：`offline_download_engine_registry_json`，支持多引擎优先级排序和链式 fallback
+  - aria2 失败时自动降级到内置引擎，并清理 aria2 runtime 状态
+  - Docker Compose 新增可选 `aria2` 服务（`p3terx/aria2-pro`），使用 `--profile aria2` 启动
+  - 新增 `offline_download_engine_registry_json`、`offline_download_aria2_rpc_url`、`offline_download_aria2_rpc_secret` 等配置项
+  - 前端新增 `OfflineDownloadEngineRegistryEditor` 组件，支持可视化引擎管理、启用禁用、优先级拖拽和 RPC 连通性测试
+  - 新增 `offline_download` 文档（中英文），覆盖引擎配置和 Docker 部署
+- **后台任务优雅关闭**
+  - 新增 `TaskExecutionContext`，统一封装 `TaskLeaseGuard` 和 `shutdown_token`
+  - 提供 `ensure_active()` 同步检查点、`sleep_or_shutdown()` 异步可中断睡眠、`shutdown_requested()` 异步等待
+  - 压缩任务（`archive/compress.rs`）在 `spawn_blocking` 前后调用 `context.ensure_active()`
+  - 任务派发器每轮循环检查 `shutdown_token.is_cancelled()`
+  - 任务执行器外层 `select!` 同时监控业务流程和心跳/lease
+  - 系统周期任务（`tasks.rs`）所有 worker 监听 `shutdown_token.cancelled()`
+  - 关闭时 `release_task_for_shutdown()` 将正在执行的任务 lease 释放回 `Retry` 状态，避免标记为失败
+  - 新增 `TaskWorkerShutdownRequested` 错误码，区分正常关闭、lease 丢失和续约超时
+- **自定义配置可见性控制**
+  - `system_config` 表新增 `visibility` 字段（`private` / `authenticated` / `public`），默认 `private`
+  - 新增 `idx_system_config_visibility` 索引
+  - 内置配置不允许修改 visibility，仅 `custom.*` 自定义配置可改
+  - 敏感配置值在 API 响应中脱敏为 `***REDACTED***`
+  - 新增 `GET /api/v1/public/custom-config`：匿名返回 `public`，认证返回 `public` + `authenticated`
+  - 匿名响应 `Cache-Control: public, max-age=60`，认证响应 `Cache-Control: private, max-age=60`
+  - 新增 `Vary` 头处理公开配置响应
+  - 新增 5 个集成测试和 E2E 测试覆盖
+- **从节点审计日志**
+  - 新增 8 个 follower 专属审计动作：`FollowerBindingSync`、`FollowerObjectRead`、`FollowerObjectWrite`、`FollowerObjectDelete`、`FollowerObjectCompose`、`FollowerIngressProfileCreate`、`FollowerIngressProfileUpdate`、`FollowerIngressProfileDelete`
+  - 从节点启动时初始化 `global_audit_log_manager`
+- **开发者文档英文版**
+  - 新增 `developer-docs/en/` 完整英文文档，覆盖 REST API（admin、auth、batch、files、folders、health、public、shares、tasks、teams、trash、webdav、wopi）、架构、模块设计和测试指南
+  - 原有中文文档迁移到 `developer-docs/zh-CN/`
+- **管理后台版本徽章彩蛋**
+  - ↖(^ω^)↗
+- **测试覆盖**
+  - 新增 task dispatch、archive validation、offline download 路径测试
+  - 新增离线下载路径长度和权限修复测试
+  - 新增公开自定义配置可见性集成测试和 E2E 测试
+  - 新增从节点网络拓扑部署文档
+
+### Changed
+
+- 根 crate 版本从 `0.2.5` 升级到 `0.2.6`
+- **WOPI RSA 安全重构**
+  - 生产依赖 `rsa` 移除，`ring` 加入
+  - WOPI proof 验签使用 `ring::signature::RSA_PKCS1_2048_8192_SHA256`
+  - 新增 RSA 公钥约束校验：模数 2048-8192 位、奇数、指数 3 以上奇数
+  - 测试保留 `rsa 0.9` 仅用于测试密钥运行时生成（dev-dependencies）
+- **依赖升级**
+  - `jsonwebtoken` 从 `rust_crypto` 切换到 `aws_lc_rs`
+  - `sea-orm` 从 `2.0.0-rc.38` 升级到 `2.0.0-rc.40`
+- **敏感配置脱敏**
+  - `SystemConfig` 序列化时敏感值自动替换为 `***REDACTED***`
+  - 审计日志中的敏感值同样脱敏
+  - 审计日志记录 `visibility` 和 `prior_visibility` 变更
+- **压缩任务错误处理**
+  - 归档压缩工作流错误处理改进，使用 `TaskExecutionContext` 统一上下文
+
+### Fixed
+
+- 修复 aria2 输出目录权限问题
+- 修复迁移时间戳从 `000001` 到 `000002` 的修正
+- 修复静态 RSA 测试密钥，改为运行时生成（减少测试文件大小和密钥泄露风险）
+
+### Notes
+
+- 本版本为 `0.2.6` 功能增强版本
+- 新增数据库迁移：
+  - `m20260601_000001_add_system_config_visibility` — `system_config` 表新增 `visibility` 字段
+  - `m20260601_000002_add_background_task_runtime_json` — `background_tasks` 表新增 `runtime_json` 字段
+- **Breaking Change**：API 变更
+  - 新增 `GET /api/v1/public/custom-config` 公开自定义配置接口
+  - `SystemConfig` 响应中敏感值可能显示为 `***REDACTED***`
+- **Breaking Change**：依赖变更
+  - 生产构建不再依赖 `rsa` crate，改为 `ring`
+- 新增运行时配置项：
+  - `offline_download_engine_registry_json` — 引擎注册表
+  - `offline_download_aria2_rpc_url` / `offline_download_aria2_rpc_secret` / `offline_download_aria2_request_timeout_secs` / `offline_download_aria2_split` / `offline_download_aria2_max_connection_per_server` / `offline_download_aria2_lowest_speed_limit_bytes_per_sec` — aria2 专用配置
+- Docker 用户如需 aria2 离线下载，使用 `docker compose --profile aria2 up -d`
+- 强类型 API 客户端建议重新生成，以同步公开自定义配置和离线下载引擎接口
+
+---
+
+**统计数据**：
+- 209 files changed, 15,033 insertions(+), 2,223 deletions(-)
+- 41 commits
+- Rust Edition 2024
+
 ## [v0.2.5] - 2026-06-01
 
 ### Release Highlights
@@ -3966,7 +4074,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 66 commits
 - Rust Edition 2024, MSRV 1.91.1
 
-[Unreleased]: https://github.com/AptS-1547/AsterDrive/compare/v0.2.4...HEAD
+[Unreleased]: https://github.com/AptS-1547/AsterDrive/compare/v0.2.6...HEAD
+[v0.2.6]: https://github.com/AptS-1547/AsterDrive/compare/v0.2.5...v0.2.6
+[v0.2.5]: https://github.com/AptS-1547/AsterDrive/compare/v0.2.4...v0.2.5
 [v0.2.4]: https://github.com/AptS-1547/AsterDrive/compare/v0.2.3...v0.2.4
 [v0.2.3]: https://github.com/AptS-1547/AsterDrive/compare/v0.2.2...v0.2.3
 [v0.2.2]: https://github.com/AptS-1547/AsterDrive/compare/v0.2.1...v0.2.2
