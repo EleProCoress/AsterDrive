@@ -8,14 +8,15 @@ use jsonwebtoken::{
         RSAKeyParameters,
     },
 };
+use rand_08::rngs::OsRng;
 use ring::signature::{KeyPair, RsaKeyPair, RsaPublicKeyComponents};
+use rsa::{RsaPrivateKey, pkcs1::EncodeRsaPrivateKey};
 use serde::Deserialize;
 use std::sync::{Arc, Mutex};
 
 use super::TEST_CLIENT_ID;
 
 const TEST_KID: &str = "aster-test-kid";
-const TEST_RSA_PRIVATE_KEY: &str = include_str!("../../fixtures/rsa/wopi_current_test_key.pem");
 
 #[derive(Clone)]
 struct StaticRsaKey {
@@ -61,7 +62,7 @@ struct TokenRequest {
 
 impl MockOidcProvider {
     fn new() -> Self {
-        let key = StaticRsaKey::from_pem(TEST_RSA_PRIVATE_KEY);
+        let key = StaticRsaKey::generate();
         Self {
             issuer: String::new(),
             key: Arc::new(key),
@@ -213,8 +214,8 @@ impl MockOidcProvider {
 }
 
 impl StaticRsaKey {
-    fn from_pem(pem: &str) -> Self {
-        let private_der = decode_pem(pem);
+    fn generate() -> Self {
+        let private_der = generate_test_rsa_private_der();
         let key_pair = RsaKeyPair::from_der(&private_der).expect("RSA private key should parse");
         let public = RsaPublicKeyComponents::<Vec<u8>>::from(key_pair.public());
         Self {
@@ -225,14 +226,13 @@ impl StaticRsaKey {
     }
 }
 
-fn decode_pem(pem: &str) -> Vec<u8> {
-    let body: String = pem
-        .lines()
-        .filter(|line| !line.starts_with("-----"))
-        .collect();
-    base64::engine::general_purpose::STANDARD
-        .decode(body)
-        .expect("RSA private key PEM should decode")
+fn generate_test_rsa_private_der() -> Vec<u8> {
+    let mut rng = OsRng;
+    let key = RsaPrivateKey::new(&mut rng, 2048).expect("RSA test key should generate");
+    key.to_pkcs1_der()
+        .expect("RSA test key should encode")
+        .as_bytes()
+        .to_vec()
 }
 
 fn base64_url(bytes: impl AsRef<[u8]>) -> String {

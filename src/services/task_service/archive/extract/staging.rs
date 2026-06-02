@@ -283,17 +283,10 @@ where
             )));
         }
 
-        tokio::select! {
-            biased;
-            shutdown = context.shutdown_requested() => {
-                shutdown?;
-                unreachable!("shutdown_requested only resolves when shutdown is requested");
-            }
-            write = writer.write_all(&buffer[..read]) => write.map_aster_err_ctx(
-                "write source archive stream chunk",
-                AsterError::storage_driver_error,
-            )?,
-        };
+        writer.write_all(&buffer[..read]).await.map_aster_err_ctx(
+            "write source archive stream chunk",
+            AsterError::storage_driver_error,
+        )?;
         copied = next_copied;
     }
 
