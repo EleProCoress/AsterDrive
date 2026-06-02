@@ -1,5 +1,6 @@
 //! 存储驱动实现：`local`。
 
+mod copy;
 mod driver_impl;
 mod listing;
 mod paths;
@@ -13,8 +14,9 @@ use std::path::PathBuf;
 use crate::entities::storage_policy;
 use crate::errors::Result;
 
+pub(crate) use copy::copy_file_with_checkpoint;
 pub use paths::{effective_base_path, resolved_base_path, upload_staging_path};
-pub use promote::promote_local_file_if_absent;
+pub use promote::{promote_local_file_if_absent, promote_local_file_if_absent_with_check};
 
 pub struct LocalDriver {
     pub(super) base_path: PathBuf,
