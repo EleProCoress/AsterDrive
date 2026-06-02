@@ -1,4 +1,4 @@
-import { type ReactNode, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { CodePreviewEditor } from "@/components/files/preview/CodePreviewEditor";
 import { Icon } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
@@ -238,6 +238,11 @@ export function isRedactedConfigValue(value: ConfigDraftValue | undefined) {
 	return typeof value === "string" && value.trim() === REDACTED_CONFIG_VALUE;
 }
 
+/**
+ * Sensitive values are displayed as REDACTED_CONFIG_VALUE. When the current
+ * value is redacted, an empty draft means "keep the stored value", while a
+ * non-empty draft means "replace it"; other configs use configDraftValuesEqual.
+ */
 export function configDraftValueChanged(
 	config: SystemConfig,
 	draftValue: ConfigDraftValue | undefined,
@@ -374,8 +379,20 @@ export function UrlAssetPreview({
 	url: string;
 	appearance: BrandingAssetPreviewAppearance;
 }) {
-	const trimmedUrl = url.trim();
-	const normalizedUrl = useMemo(() => normalizeAssetPreviewUrl(url), [url]);
+	const [debouncedUrl, setDebouncedUrl] = useState(url);
+
+	useEffect(() => {
+		const timer = window.setTimeout(() => {
+			setDebouncedUrl(url);
+		}, 300);
+		return () => window.clearTimeout(timer);
+	}, [url]);
+
+	const trimmedUrl = debouncedUrl.trim();
+	const normalizedUrl = useMemo(
+		() => normalizeAssetPreviewUrl(debouncedUrl),
+		[debouncedUrl],
+	);
 	const isInvalid = trimmedUrl.length > 0 && !normalizedUrl;
 	const previewClassName = cn(
 		"group flex h-12 shrink-0 items-center justify-center overflow-hidden rounded-xl border transition-colors",
@@ -592,15 +609,48 @@ export function AnimatedCollapsible({
 	contentClassName?: string;
 	open: boolean;
 }) {
+	const [mounted, setMounted] = useState(open);
+	const supportsInert =
+		typeof HTMLElement !== "undefined" && "inert" in HTMLElement.prototype;
+
+	useEffect(() => {
+		if (open) {
+			setMounted(true);
+			return;
+		}
+		if (!mounted) {
+			return;
+		}
+		const prefersReducedMotion =
+			typeof window !== "undefined" &&
+			typeof window.matchMedia === "function" &&
+			window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+		const duration = prefersReducedMotion
+			? 0
+			: TEMPLATE_GROUP_COLLAPSE_DURATION_MS;
+		const timer = window.setTimeout(() => setMounted(false), duration);
+		return () => window.clearTimeout(timer);
+	}, [mounted, open]);
+
+	if (!mounted) {
+		return null;
+	}
+
 	return (
 		<div
 			aria-hidden={!open}
-			inert={!open}
+			inert={supportsInert && !open ? true : undefined}
 			className={cn(
 				"grid overflow-hidden transition-[grid-template-rows,opacity] motion-reduce:transition-none",
 				open ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0",
+				!open && !supportsInert && "pointer-events-none invisible",
 				className,
 			)}
+			onTransitionEnd={(event) => {
+				if (event.currentTarget === event.target && !open) {
+					setMounted(false);
+				}
+			}}
 			style={{
 				transitionDuration: `${
 					open

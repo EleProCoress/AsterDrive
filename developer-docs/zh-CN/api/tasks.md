@@ -90,7 +90,7 @@
 }
 ```
 
-其中 `filename`、`target_folder_id` 和 `expected_sha256` 都可省略。服务端会把源地址脱敏后写入 `payload.source_display_url`，任务完成后 `result` 会包含导入后的 `file_id`、`file_name`、`folder_id`、`file_path`、`source_display_url`、`content_length`、实际 `sha256` 和 `download_engine`。
+其中 `filename`、`target_folder_id` 和 `expected_sha256` 都可省略。服务端会把源地址脱敏后写入 `payload.source_display_url`，任务完成后 `result` 会包含导入后的 `file_id`、`file_name`、`folder_id`、`file_path`、`source_display_url`、`content_length`、实际 `sha256` 和 `download_engine`。`result.source_display_url` 与 `payload.source_display_url` 一致，敏感 URL 参数和认证信息已移除，适合在 UI 中展示；aria2 GID 等内部运行时元数据仍写入 `background_tasks.runtime_json` 供诊断使用，但不作为公开字段返回。
 
 链接导入引擎由管理员运行时注册表决定，任务 API 不需要也不能指定引擎。注册表可以启用内置下载器、aria2 或二者按顺序兜底；如果所有引擎都关闭，创建请求会在插入后台任务前被拒绝。无论使用哪个引擎，引擎切换都不会改变任务类型、创建请求体和 `payload` 结构。任务运行中会把当前选中的引擎写入内部 runtime metadata，成功后写入 `result.download_engine`，这样任务展示可以显示实际使用的下载器。aria2 执行期的 GID 也会作为内部运行时元数据写入 `background_tasks.runtime_json`，用于失败诊断和恢复边界，不作为公开 API 字段返回。
 

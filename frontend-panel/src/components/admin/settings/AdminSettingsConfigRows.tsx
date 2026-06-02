@@ -401,12 +401,11 @@ function StringEnumSetConfigControl({
 			return;
 		}
 		// New selections are inserted by schema order, not click order.
-		const orderedValues: string[] = [];
-		for (const option of options) {
-			if (option.value === value || selectedValues.has(option.value)) {
-				orderedValues.push(option.value);
-			}
-		}
+		const orderedValues = options
+			.filter(
+				(option) => option.value === value || selectedValues.has(option.value),
+			)
+			.map((option) => option.value);
 		setSelected(orderedValues);
 	};
 
@@ -415,12 +414,9 @@ function StringEnumSetConfigControl({
 		for (const value of visibleValues) {
 			nextValues.add(value);
 		}
-		const orderedValues: string[] = [];
-		for (const option of options) {
-			if (nextValues.has(option.value)) {
-				orderedValues.push(option.value);
-			}
-		}
+		const orderedValues = options
+			.filter((option) => nextValues.has(option.value))
+			.map((option) => option.value);
 		setSelected(orderedValues);
 	};
 
@@ -591,7 +587,7 @@ function ScaledNumberInputControl({
 		availableUnits.find((unit) => unit.value === displayUnits[config.key]) ??
 		preferredUnit;
 	const displayValue = formatDisplayValue(draftValue, selectedUnit);
-	const [editingValue, setEditingValue] = useState("");
+	const [editingValue, setEditingValue] = useState(() => displayValue);
 	const [focused, setFocused] = useState(false);
 
 	if (hasInvalidDraftValue) {

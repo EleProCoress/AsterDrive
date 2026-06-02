@@ -316,18 +316,12 @@ export function useAdminSettingsData({
 						return [[key, configValueToString(draftValue)]];
 					}),
 				);
-				const registryValueChanged = draftValueChangedForKey(
-					draftConfigMap,
-					OFFLINE_DOWNLOAD_ENGINE_REGISTRY_KEY,
-					value,
-				);
-
 				const response = await adminConfigService.action(
 					OFFLINE_DOWNLOAD_ENGINE_REGISTRY_KEY,
 					{
 						action: "test_aria2_rpc" satisfies ConfigActionType,
 						draft_values: draftValuesForAction,
-						...(registryValueChanged ? { value } : {}),
+						value,
 					},
 				);
 				toast.success(response.message);
@@ -672,25 +666,29 @@ export function useAdminSettingsData({
 		);
 	}, [configs, draftValues]);
 
-	const configValidationErrors = useMemo(() => {
-		const errors = new Map<string, string>();
-		const draftValueByKey = (key: string) => {
+	const getDraftValueForKey = useCallback(
+		(key: string) => {
 			const config = configsByKey.get(key);
 			return effectiveDraftValueForConfig(
 				config,
 				draftValues[key] ?? (config?.value as DraftValues[string]),
 			);
-		};
+		},
+		[configsByKey, draftValues],
+	);
+
+	const configValidationErrors = useMemo(() => {
+		const errors = new Map<string, string>();
 		const allowedOrigins = configValueToString(
-			draftValueByKey(CORS_ALLOWED_ORIGINS_KEY),
+			getDraftValueForKey(CORS_ALLOWED_ORIGINS_KEY),
 		).trim();
 		const allowCredentials =
 			configValueToString(
-				draftValueByKey(CORS_ALLOW_CREDENTIALS_KEY),
+				getDraftValueForKey(CORS_ALLOW_CREDENTIALS_KEY),
 			).trim() === "true";
 		const emailCodeLoginEnabled =
 			configValueToString(
-				draftValueByKey(AUTH_EMAIL_CODE_LOGIN_ENABLED_KEY),
+				getDraftValueForKey(AUTH_EMAIL_CODE_LOGIN_ENABLED_KEY),
 			).trim() === "true";
 
 		if (allowCredentials && allowedOrigins === "*") {
@@ -699,7 +697,10 @@ export function useAdminSettingsData({
 			errors.set(CORS_ALLOW_CREDENTIALS_KEY, message);
 		}
 
-		if (emailCodeLoginEnabled && !isMailDeliveryConfigReady(draftValueByKey)) {
+		if (
+			emailCodeLoginEnabled &&
+			!isMailDeliveryConfigReady(getDraftValueForKey)
+		) {
 			errors.set(
 				AUTH_EMAIL_CODE_LOGIN_ENABLED_KEY,
 				t("email_code_mfa_mail_config_required"),
@@ -714,7 +715,7 @@ export function useAdminSettingsData({
 			const options = schema?.options ?? [];
 			const allowedValues = new Set(options.map((option) => option.value));
 			const selectedValues = configValueToStringArray(
-				draftValueByKey(config.key),
+				getDraftValueForKey(config.key),
 			);
 			const seen = new Set<string>();
 			const invalidValue = selectedValues.find((value) => {
@@ -733,7 +734,7 @@ export function useAdminSettingsData({
 		}
 
 		return errors;
-	}, [configs, configsByKey, draftValues, schemaMap, t]);
+	}, [configs, getDraftValueForKey, schemaMap, t]);
 
 	const changedCount =
 		changedExistingConfigs.length +

@@ -14,7 +14,7 @@ use crate::runtime::PrimaryAppState;
 use crate::services::{
     batch_service,
     task_service::{
-        TaskLeaseGuard, cleanup_task_temp_dir_for_task, create_typed_task_record,
+        TaskLeaseGuard, cleanup_task_temp_dir_for_task_kind, create_typed_task_record,
         get_task_in_scope, mark_task_progress, mark_task_succeeded, prepare_task_temp_dir,
         spec::{self, ArchiveCompressTask, decode_payload_as},
         steps::{
@@ -253,7 +253,7 @@ pub(super) async fn process_archive_compress_task(
         EMIT_ARCHIVE_STORAGE_EVENT,
     )
     .await?;
-    cleanup_task_temp_dir_for_task(state, task.id).await?;
+    cleanup_task_temp_dir_for_task_kind(state, task.kind, task.id).await?;
     set_task_step_succeeded(
         &mut steps,
         TASK_STEP_STORE_RESULT,

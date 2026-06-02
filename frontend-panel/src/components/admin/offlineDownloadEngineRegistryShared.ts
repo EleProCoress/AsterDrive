@@ -20,14 +20,18 @@ export interface OfflineDownloadEngineConfigIssue {
 }
 
 const DEFAULT_ENGINE_ORDER: OfflineDownloadEngineKind[] = ["builtin", "aria2"];
+const DEFAULT_ENGINE_ENABLED: Record<OfflineDownloadEngineKind, boolean> = {
+	builtin: true,
+	aria2: false,
+};
 
 export function defaultOfflineDownloadEngineConfig(): OfflineDownloadEngineEditorConfig {
 	return {
 		version: OFFLINE_DOWNLOAD_ENGINE_REGISTRY_VERSION,
-		engines: [
-			{ kind: "builtin", enabled: true },
-			{ kind: "aria2", enabled: false },
-		],
+		engines: DEFAULT_ENGINE_ORDER.map((kind) => ({
+			kind,
+			enabled: DEFAULT_ENGINE_ENABLED[kind] ?? false,
+		})),
 	};
 }
 
@@ -55,10 +59,13 @@ export function parseOfflineDownloadEngineConfig(
 			if (!isRecord(item) || !isEngineKind(item.kind)) {
 				return [];
 			}
+			if (typeof item.enabled !== "boolean") {
+				throw new Error("offline download engine enabled must be a boolean");
+			}
 			return [
 				{
 					kind: item.kind,
-					enabled: typeof item.enabled === "boolean" ? item.enabled : true,
+					enabled: item.enabled,
 				},
 			];
 		},
@@ -66,7 +73,7 @@ export function parseOfflineDownloadEngineConfig(
 	const seen = new Set(engines.map((engine) => engine.kind));
 	for (const kind of DEFAULT_ENGINE_ORDER) {
 		if (!seen.has(kind)) {
-			engines.push({ kind, enabled: kind === "builtin" });
+			engines.push({ kind, enabled: DEFAULT_ENGINE_ENABLED[kind] ?? false });
 		}
 	}
 
@@ -84,7 +91,8 @@ export function serializeOfflineDownloadEngineConfig(
 ) {
 	return JSON.stringify(
 		{
-			version: OFFLINE_DOWNLOAD_ENGINE_REGISTRY_VERSION,
+			// Preserve an existing version so editing does not silently migrate configs.
+			version: config.version || OFFLINE_DOWNLOAD_ENGINE_REGISTRY_VERSION,
 			engines: config.engines.map((engine) => ({
 				kind: engine.kind,
 				enabled: engine.enabled,

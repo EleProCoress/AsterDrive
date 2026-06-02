@@ -95,11 +95,11 @@ AsterDrive 会在这个目录下创建 `tasks/{task_id}/{processing_token}/sourc
 - 外部下载器（如 aria2）也能访问并写入同一个绝对路径
 - 目录只存放任务临时产物，可以排除在备份之外
 
-全 Docker 部署建议设置为 `/data/.tmp/offline-download`，并把同一个宿主机 `./data` 挂到 AsterDrive 和 aria2 的 `/data`。宿主机 `cargo run` + Compose aria2 的混合模式，可以设置为宿主机绝对路径，例如 `/Users/esap/Desktop/Github/AsterDrive/data/offline-download-temp`，并把 aria2 容器也挂载到同一个容器内绝对路径：
+全 Docker 部署建议设置为 `/data/.tmp/offline-download`，并把同一个宿主机 `./data` 挂到 AsterDrive 和 aria2 的 `/data`。宿主机 `cargo run` + Compose aria2 的混合模式，可以设置为宿主机绝对路径，例如 `/srv/asterdrive/offline-download-temp`，并把 aria2 容器也挂载到同一个容器内绝对路径：
 
 ```yaml
 volumes:
-  - ./data/offline-download-temp:/Users/esap/Desktop/Github/AsterDrive/data/offline-download-temp
+  - ./data/offline-download-temp:/srv/asterdrive/offline-download-temp
 ```
 
 ## 启用 aria2

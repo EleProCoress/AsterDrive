@@ -113,7 +113,7 @@ mkdir -p ./data ./aria2-config
 sudo chown -R 10001:10001 ./data ./aria2-config
 ```
 
-Set an RPC secret and start both services:
+Set an RPC secret and start both services. `ASTERDRIVE_ARIA2_RPC_SECRET` is required; do not start the `aria2` profile with this variable unset, because the Compose service passes it directly to `RPC_SECRET` for `p3terx/aria2-pro`:
 
 ```bash
 export ASTERDRIVE_ARIA2_RPC_SECRET="$(openssl rand -hex 24)"
@@ -128,7 +128,9 @@ Then open `Admin -> System Settings -> File Processing -> Link Import` and enabl
 | `offline_download_aria2_rpc_url` | `http://aria2:6800/jsonrpc` |
 | `offline_download_aria2_rpc_secret` | the value of `ASTERDRIVE_ARIA2_RPC_SECRET` above |
 
-If you start only aria2 with Compose while running AsterDrive on the host with `cargo run`, use `http://127.0.0.1:6800/jsonrpc` instead. This mixed development mode still requires `offline_download_temp_dir` to be the same absolute path visible to both sides. For example, mount host `./data/offline-download-temp` into the aria2 container at `/Users/esap/Desktop/Github/AsterDrive/data/offline-download-temp`, then put that host absolute path in AsterDrive.
+If you start only aria2 with Compose while running AsterDrive on the host with `cargo run`, use `http://127.0.0.1:6800/jsonrpc` instead. This mixed development mode still requires `offline_download_temp_dir` to be the same absolute path visible to both sides. For example, mount host `./data/offline-download-temp` into the aria2 container at `/srv/asterdrive/offline-download-temp`, then put that host absolute path in AsterDrive.
+
+When aria2 runs as a different OS user, AsterDrive must let that external writer create the downloaded temp file under the per-task `token_dir`. The compatibility path in `allow_external_aria2_writer_chain` makes the per-task directories world-writable, while leaving the shared parent tasks directory traversable only. This is acceptable for isolated single-tenant Compose deployments where the temp volume is not shared with untrusted local users. Safer production alternatives are to run both processes under the same UID, assign a shared group and use `0o770`, or apply POSIX ACLs for the aria2 user on `token_dir`.
 
 After saving, use **Test aria2** in the link-import engine registry. The server calls `aria2.getVersion` with the current RPC URL and secret to confirm AsterDrive can reach the aria2 JSON-RPC endpoint.
 

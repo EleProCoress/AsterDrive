@@ -8,9 +8,10 @@ use serde_json::json;
 use url::Url;
 
 use super::aria2::{
-    Aria2AddUriOptions, Aria2DownloadStatus, Aria2OfflineDownloadEngine, Aria2RpcCallError,
-    Aria2RpcClient, Aria2RpcMethod, Aria2RpcParam, aria2_rpc_error_is_missing_download,
-    aria2_rpc_error_is_unauthorized, parse_aria2_length, parse_aria2_rpc_error_response,
+    Aria2AddUriOptions, Aria2DownloadFailureClass, Aria2DownloadStatus, Aria2OfflineDownloadEngine,
+    Aria2RpcCallError, Aria2RpcClient, Aria2RpcMethod, Aria2RpcParam, Aria2TellStatus,
+    aria2_rpc_error_is_missing_download, aria2_rpc_error_is_unauthorized,
+    classify_aria2_download_failure, parse_aria2_length, parse_aria2_rpc_error_response,
     prepare_aria2_output_dir,
 };
 use super::naming::{
@@ -470,16 +471,19 @@ fn aria2_rpc_http_error_body_preserves_json_rpc_unauthorized() {
     assert!(aria2_rpc_error_is_unauthorized(
         Aria2RpcMethod::GetVersion,
         error.code,
+        &error.message,
         Some(reqwest::StatusCode::BAD_REQUEST),
     ));
-    assert!(!aria2_rpc_error_is_unauthorized(
+    assert!(aria2_rpc_error_is_unauthorized(
         Aria2RpcMethod::GetVersion,
         error.code,
+        &error.message,
         None,
     ));
     assert!(!aria2_rpc_error_is_unauthorized(
         Aria2RpcMethod::ForceRemove,
         error.code,
+        &error.message,
         Some(reqwest::StatusCode::BAD_REQUEST),
     ));
 }
@@ -489,26 +493,43 @@ fn aria2_rpc_missing_download_detection_is_method_and_status_specific() {
     assert!(aria2_rpc_error_is_missing_download(
         Aria2RpcMethod::ForceRemove,
         1,
+        "GID 1234567890abcdef not found",
         None,
     ));
     assert!(aria2_rpc_error_is_missing_download(
         Aria2RpcMethod::RemoveDownloadResult,
         1,
+        "GID 1234567890abcdef not found",
         None,
     ));
     assert!(aria2_rpc_error_is_missing_download(
         Aria2RpcMethod::ForceRemove,
         1,
+        "GID 1234567890abcdef not found",
+        Some(reqwest::StatusCode::BAD_REQUEST),
+    ));
+    assert!(aria2_rpc_error_is_missing_download(
+        Aria2RpcMethod::ForceRemove,
+        1,
+        "GID 1234567890abcdef does not exist",
         Some(reqwest::StatusCode::BAD_REQUEST),
     ));
     assert!(!aria2_rpc_error_is_missing_download(
         Aria2RpcMethod::GetVersion,
         1,
+        "GID 1234567890abcdef not found",
         None,
     ));
     assert!(!aria2_rpc_error_is_missing_download(
         Aria2RpcMethod::ForceRemove,
         2,
+        "GID 1234567890abcdef not found",
+        Some(reqwest::StatusCode::BAD_REQUEST),
+    ));
+    assert!(!aria2_rpc_error_is_missing_download(
+        Aria2RpcMethod::ForceRemove,
+        1,
+        "wrong type",
         Some(reqwest::StatusCode::BAD_REQUEST),
     ));
 }
@@ -533,7 +554,7 @@ async fn aria2_output_dir_is_writable_by_external_process_user() {
         .map(|dir| std::fs::metadata(dir).unwrap().permissions().mode() & 0o777);
     let _ = std::fs::remove_dir_all(root);
 
-    assert_eq!(modes, [0o777, 0o777, 0o777]);
+    assert_eq!(modes, [0o711, 0o777, 0o777]);
 }
 
 #[cfg(unix)]
@@ -558,7 +579,7 @@ async fn aria2_output_dir_repairs_existing_parent_permissions() {
         .map(|dir| std::fs::metadata(dir).unwrap().permissions().mode() & 0o777);
     let _ = std::fs::remove_dir_all(root);
 
-    assert_eq!(modes, [0o777, 0o777, 0o777]);
+    assert_eq!(modes, [0o711, 0o777, 0o777]);
 }
 
 #[test]
@@ -566,7 +587,7 @@ fn aria2_rpc_unauthorized_maps_to_auth_subcode() {
     let error = Aria2RpcCallError::Rpc {
         method: Aria2RpcMethod::GetVersion,
         code: 1,
-        message: "message text is not used for classification".to_string(),
+        message: "Unauthorized".to_string(),
         http_status: Some(reqwest::StatusCode::BAD_REQUEST),
     }
     .into_aster_error();
@@ -597,6 +618,32 @@ fn aria2_download_status_deserializes_known_and_unknown_values() {
             .status,
         Aria2DownloadStatus::Unknown(value) if value == "future"
     ));
+}
+
+fn aria2_error_status(message: &str) -> Aria2TellStatus {
+    Aria2TellStatus {
+        status: Aria2DownloadStatus::Error,
+        total_length: "0".to_string(),
+        completed_length: "0".to_string(),
+        error_code: Some("1".to_string()),
+        error_message: Some(message.to_string()),
+    }
+}
+
+#[test]
+fn aria2_download_failure_classifier_isolates_client_error_heuristics() {
+    assert_eq!(
+        classify_aria2_download_failure(&aria2_error_status("HTTP response status code 404")),
+        Aria2DownloadFailureClass::PermanentClientError
+    );
+    assert_eq!(
+        classify_aria2_download_failure(&aria2_error_status("Resource not found")),
+        Aria2DownloadFailureClass::PermanentClientError
+    );
+    assert_eq!(
+        classify_aria2_download_failure(&aria2_error_status("connection timed out")),
+        Aria2DownloadFailureClass::TransientOrUnknown
+    );
 }
 
 #[test]

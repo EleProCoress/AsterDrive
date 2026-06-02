@@ -128,7 +128,7 @@ docker compose --profile aria2 up -d
 | `offline_download_aria2_rpc_url` | `http://aria2:6800/jsonrpc` |
 | `offline_download_aria2_rpc_secret` | 上面 `ASTERDRIVE_ARIA2_RPC_SECRET` 的值 |
 
-如果只用 Compose 启动 aria2，而 AsterDrive 自己用 `cargo run` 跑在宿主机上，RPC 地址要改成 `http://127.0.0.1:6800/jsonrpc`。这种混合开发模式仍然要求 `offline_download_temp_dir` 是双方都能访问的同一个绝对路径，例如把宿主机的 `./data/offline-download-temp` 挂到 aria2 容器里的 `/Users/esap/Desktop/Github/AsterDrive/data/offline-download-temp`，并在 AsterDrive 里填写这个宿主机绝对路径。
+如果只用 Compose 启动 aria2，而 AsterDrive 自己用 `cargo run` 跑在宿主机上，RPC 地址要改成 `http://127.0.0.1:6800/jsonrpc`。这种混合开发模式仍然要求 `offline_download_temp_dir` 是双方都能访问的同一个绝对路径，例如把宿主机的 `./data/offline-download-temp` 挂到 aria2 容器里的 `/srv/asterdrive/offline-download-temp`，并在 AsterDrive 里填写这个宿主机绝对路径。
 
 保存后可以在“链接导入引擎注册表”里点“测试 aria2”。服务端会用当前 RPC 地址和密钥调用 `aria2.getVersion`，用于确认 AsterDrive 到 aria2 JSON-RPC 的连通性。
 
