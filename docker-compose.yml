@@ -36,5 +36,5 @@ services:
       - PGID=10001
       - UMASK_SET=022
       - RPC_PORT=6800
-      - RPC_SECRET=${ASTERDRIVE_ARIA2_RPC_SECRET:-change-this-secret}
+      - RPC_SECRET=${ASTERDRIVE_ARIA2_RPC_SECRET}
     restart: unless-stopped

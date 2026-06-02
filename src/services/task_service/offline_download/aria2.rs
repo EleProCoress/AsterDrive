@@ -25,6 +25,7 @@ use super::{
 };
 
 const ARIA2_STATUS_POLL_INTERVAL: StdDuration = StdDuration::from_secs(2);
+const ARIA2_STATUS_MAX_CONSECUTIVE_RPC_ERRORS: u8 = 3;
 
 pub(super) struct Aria2OfflineDownloadEngine {
     pub(super) max_bytes: i64,
@@ -139,16 +140,30 @@ impl OfflineDownloadEngine for Aria2OfflineDownloadEngine {
         let result = self
             .poll_until_complete(state, context, &request, steps, &gid)
             .await;
-        if result.is_err()
-            && let Err(cleanup_error) = self.client.force_remove(&gid).await
-        {
-            tracing::warn!(
-                task_id = lease_guard.lease().task_id,
-                gid,
-                "failed to cleanup aria2 offline download after error: {cleanup_error}"
-            );
+        if result.is_err() {
+            self.cleanup_download_after_error(lease_guard.lease().task_id, &gid)
+                .await;
         }
         result
+    }
+}
+
+impl Aria2OfflineDownloadEngine {
+    async fn cleanup_download_after_error(&self, task_id: i64, gid: &str) {
+        if let Err(cleanup_error) = self.client.force_remove(gid).await {
+            tracing::warn!(
+                task_id,
+                gid,
+                "failed to force-remove aria2 offline download after error: {cleanup_error}"
+            );
+        }
+        if let Err(cleanup_error) = self.client.remove_download_result(gid).await {
+            tracing::warn!(
+                task_id,
+                gid,
+                "failed to remove aria2 offline download result after error: {cleanup_error}"
+            );
+        }
     }
 }
 
@@ -167,6 +182,10 @@ pub(super) async fn prepare_aria2_output_dir(temp_path: &Path) -> Result<()> {
 async fn allow_external_aria2_writer_chain(token_dir: &Path) -> Result<()> {
     use std::os::unix::fs::PermissionsExt;
 
+    // aria2 may run as a different OS user from AsterDrive. The shared task
+    // leaf directories must therefore be writable by that external process.
+    // Prefer a shared owner/group or POSIX ACLs in deployments that can manage
+    // them; these broad modes are the compatibility fallback.
     let Some(task_dir) = token_dir.parent() else {
         return Ok(());
     };
@@ -174,7 +193,14 @@ async fn allow_external_aria2_writer_chain(token_dir: &Path) -> Result<()> {
         return Ok(());
     };
 
-    for dir in [tasks_dir, task_dir, token_dir] {
+    tokio::fs::set_permissions(tasks_dir, std::fs::Permissions::from_mode(0o711))
+        .await
+        .map_aster_err_ctx(
+            "set aria2 offline download tasks dir permissions",
+            AsterError::storage_driver_error,
+        )?;
+
+    for dir in [task_dir, token_dir] {
         tokio::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o777))
             .await
             .map_aster_err_ctx(
@@ -206,6 +232,7 @@ impl Aria2OfflineDownloadEngine {
             .checked_sub(ARIA2_STATUS_POLL_INTERVAL)
             .unwrap_or_else(Instant::now);
         let mut declared_content_length = None;
+        let mut consecutive_rpc_errors = 0_u8;
 
         loop {
             context.ensure_active()?;
@@ -221,7 +248,30 @@ impl Aria2OfflineDownloadEngine {
                     shutdown?;
                     unreachable!("shutdown_requested only resolves when shutdown is requested");
                 }
-                status = self.client.tell_status(gid) => status?,
+                status = self.client.tell_status(gid) => status,
+            };
+            let status = match status {
+                Ok(status) => {
+                    consecutive_rpc_errors = 0;
+                    status
+                }
+                Err(error) => {
+                    consecutive_rpc_errors = consecutive_rpc_errors.saturating_add(1);
+                    if consecutive_rpc_errors >= ARIA2_STATUS_MAX_CONSECUTIVE_RPC_ERRORS {
+                        return Err(error);
+                    }
+                    tracing::warn!(
+                        task_id = lease_guard.lease().task_id,
+                        gid,
+                        consecutive_rpc_errors,
+                        max_consecutive_rpc_errors = ARIA2_STATUS_MAX_CONSECUTIVE_RPC_ERRORS,
+                        "transient aria2 tellStatus poll failed: {error}"
+                    );
+                    context
+                        .sleep_or_shutdown(ARIA2_STATUS_POLL_INTERVAL)
+                        .await?;
+                    continue;
+                }
             };
             let completed = parse_aria2_length(&status.completed_length, "aria2 completedLength")?;
             ensure_download_size_allowed(completed, self.max_bytes)?;
@@ -260,9 +310,13 @@ impl Aria2OfflineDownloadEngine {
                     }
                 }
                 Aria2DownloadStatus::Error => {
+                    let summary = status.error_summary();
+                    let prefix = match classify_aria2_download_failure(&status) {
+                        Aria2DownloadFailureClass::TransientOrUnknown => "transient: ",
+                        Aria2DownloadFailureClass::PermanentClientError => "",
+                    };
                     return Err(AsterError::storage_driver_error(format!(
-                        "transient: aria2 offline download failed: {}",
-                        status.error_summary()
+                        "{prefix}aria2 offline download failed: {summary}"
                     )));
                 }
                 Aria2DownloadStatus::Removed => {
@@ -413,9 +467,11 @@ impl Aria2RpcClient {
             Err(Aria2RpcCallError::Rpc {
                 method,
                 code,
-                message: _,
+                message,
                 http_status,
-            }) if aria2_rpc_error_is_missing_download(method, code, http_status) => Ok(()),
+            }) if aria2_rpc_error_is_missing_download(method, code, &message, http_status) => {
+                Ok(())
+            }
             Err(error) => Err(error.into_aster_error()),
         }
     }
@@ -661,7 +717,7 @@ impl Aria2RpcCallError {
                 message,
                 http_status,
             } => {
-                if aria2_rpc_error_is_unauthorized(method, code, http_status) {
+                if aria2_rpc_error_is_unauthorized(method, code, &message, http_status) {
                     return storage_driver_error_with_subcode(
                         StorageErrorKind::Auth,
                         crate::api::subcode::ApiSubcode::OfflineDownloadAria2RpcAuthFailed,
@@ -715,23 +771,38 @@ pub(super) fn parse_aria2_rpc_error_response(raw: &str) -> Option<Aria2JsonRpcEr
 pub(super) fn aria2_rpc_error_is_unauthorized(
     method: Aria2RpcMethod,
     code: i64,
+    message: &str,
     http_status: Option<reqwest::StatusCode>,
 ) -> bool {
+    let message = message.to_ascii_lowercase();
+    // aria2 1.36.x JSON-RPC auth failures have code 1 and messages such as
+    // "Unauthorized" or "session not started"; ambiguous type errors are not auth.
     matches!(method, Aria2RpcMethod::GetVersion)
         && code == 1
-        && http_status == Some(reqwest::StatusCode::BAD_REQUEST)
+        && (http_status.is_none() || http_status == Some(reqwest::StatusCode::BAD_REQUEST))
+        && (message.contains("unauthorized")
+            || message.contains("session not started")
+            || message.contains("authentication"))
 }
 
 pub(super) fn aria2_rpc_error_is_missing_download(
     method: Aria2RpcMethod,
     code: i64,
+    message: &str,
     http_status: Option<reqwest::StatusCode>,
 ) -> bool {
+    let message = message.to_ascii_lowercase();
+    // aria2 1.36.x missing-download errors mention GID/not-found. "wrong type"
+    // is intentionally not treated as missing because it can indicate bad params.
     matches!(
         method,
         Aria2RpcMethod::ForceRemove | Aria2RpcMethod::RemoveDownloadResult
     ) && code == 1
         && (http_status.is_none() || http_status == Some(reqwest::StatusCode::BAD_REQUEST))
+        && message.contains("gid")
+        && (message.contains("not found")
+            || message.contains("notfound")
+            || message.contains("does not exist"))
 }
 
 #[derive(Debug, Deserialize)]
@@ -742,16 +813,16 @@ struct Aria2Version {
 }
 
 #[derive(Debug, Deserialize)]
-struct Aria2TellStatus {
-    status: Aria2DownloadStatus,
+pub(super) struct Aria2TellStatus {
+    pub(super) status: Aria2DownloadStatus,
     #[serde(rename = "totalLength", default)]
-    total_length: String,
+    pub(super) total_length: String,
     #[serde(rename = "completedLength", default)]
-    completed_length: String,
+    pub(super) completed_length: String,
     #[serde(rename = "errorCode", default)]
-    error_code: Option<String>,
+    pub(super) error_code: Option<String>,
     #[serde(rename = "errorMessage", default)]
-    error_message: Option<String>,
+    pub(super) error_message: Option<String>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -796,8 +867,72 @@ impl Aria2TellStatus {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum Aria2DownloadFailureClass {
+    PermanentClientError,
+    TransientOrUnknown,
+}
+
+pub(super) fn classify_aria2_download_failure(
+    status: &Aria2TellStatus,
+) -> Aria2DownloadFailureClass {
+    // aria2 tellStatus exposes download failures as errorCode/errorMessage rather
+    // than a typed HTTP status. Keep that compatibility parsing isolated here so
+    // the polling path consumes a typed classification and treats ambiguous
+    // messages as retryable.
+    if let Some(message) = status.error_message.as_deref()
+        && aria2_error_message_indicates_permanent_client_error(message)
+    {
+        return Aria2DownloadFailureClass::PermanentClientError;
+    }
+
+    Aria2DownloadFailureClass::TransientOrUnknown
+}
+
+fn aria2_error_message_indicates_permanent_client_error(message: &str) -> bool {
+    if let Some(status_code) = extract_http_status_code(message)
+        && (400..500).contains(&status_code)
+    {
+        return true;
+    }
+
+    let message = message.to_ascii_lowercase();
+    [
+        "resource not found",
+        "not found",
+        "forbidden",
+        "unauthorized",
+        "permission denied",
+        "bad request",
+    ]
+    .iter()
+    .any(|phrase| message.contains(phrase))
+}
+
+fn extract_http_status_code(message: &str) -> Option<u16> {
+    let lower = message.to_ascii_lowercase();
+    for marker in ["status=", "status:", "status code", "http status"] {
+        if let Some(index) = lower.find(marker) {
+            let rest = &lower[index + marker.len()..];
+            let digits: String = rest
+                .chars()
+                .skip_while(|ch| !ch.is_ascii_digit())
+                .take_while(|ch| ch.is_ascii_digit())
+                .collect();
+            if digits.len() == 3
+                && let Ok(status) = digits.parse::<u16>()
+                && (100..600).contains(&status)
+            {
+                return Some(status);
+            }
+        }
+    }
+    None
+}
+
 pub(super) fn parse_aria2_length(value: &str, field: &str) -> Result<i64> {
     if value.trim().is_empty() {
+        tracing::warn!(field, "aria2 RPC length field was empty; treating as zero");
         return Ok(0);
     }
     let parsed = value

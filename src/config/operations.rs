@@ -1401,6 +1401,14 @@ mod tests {
         );
         assert!(normalize_offline_download_temp_dir_config_value("data/offline").is_err());
         assert!(normalize_offline_download_temp_dir_config_value("/tmp/offline\nbad").is_err());
+        assert!(
+            normalize_offline_download_temp_dir_config_value(&format!("/{}", "a".repeat(4095)))
+                .is_ok()
+        );
+        assert!(
+            normalize_offline_download_temp_dir_config_value(&format!("/{}", "a".repeat(4096)))
+                .is_err()
+        );
 
         let runtime_config = RuntimeConfig::new();
         assert_eq!(offline_download_temp_dir(&runtime_config), None);

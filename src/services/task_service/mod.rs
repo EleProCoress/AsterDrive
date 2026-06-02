@@ -1050,7 +1050,7 @@ pub(super) async fn cleanup_task_temp_dir_for_task(
     cleanup_task_temp_dir_for_task_in_root(&state.config.server.temp_dir, task_id).await
 }
 
-async fn cleanup_task_temp_dir_for_task_kind(
+pub(super) async fn cleanup_task_temp_dir_for_task_kind(
     state: &PrimaryAppState,
     kind: BackgroundTaskKind,
     task_id: i64,

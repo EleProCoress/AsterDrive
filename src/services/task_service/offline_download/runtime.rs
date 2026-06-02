@@ -30,7 +30,10 @@ pub(super) fn decode_offline_download_runtime_state(
         return OfflineDownloadRuntimeState::default();
     }
     serde_json::from_str(raw).unwrap_or_else(|error| {
-        tracing::warn!("invalid offline download runtime_json; ignoring it: {error}");
+        tracing::error!(
+            runtime_json = raw,
+            "invalid offline download runtime_json; ignoring it: {error}"
+        );
         OfflineDownloadRuntimeState::default()
     })
 }

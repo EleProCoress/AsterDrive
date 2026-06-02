@@ -1038,6 +1038,7 @@ describe("useAdminSettingsData", () => {
 			{
 				action: "test_aria2_rpc",
 				draft_values: {},
+				value: savedRegistry,
 			},
 		);
 		expect(mockState.toastSuccess).toHaveBeenCalledWith(
@@ -1076,6 +1077,7 @@ describe("useAdminSettingsData", () => {
 					[OFFLINE_DOWNLOAD_ARIA2_RPC_URL_KEY]:
 						"http://draft-aria2:6800/jsonrpc",
 				},
+				value: savedRegistry,
 			},
 		);
 		expect(mockState.actionConfig).not.toHaveBeenCalledWith(
@@ -1118,6 +1120,7 @@ describe("useAdminSettingsData", () => {
 				draft_values: {
 					[OFFLINE_DOWNLOAD_ARIA2_RPC_SECRET_KEY]: "***REDACTED***",
 				},
+				value: savedRegistry,
 			},
 		);
 	});

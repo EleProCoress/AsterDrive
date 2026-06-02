@@ -172,6 +172,7 @@ pub async fn execute_config_action(
     path: web::Path<String>,
     body: web::Json<ExecuteConfigActionReq>,
 ) -> Result<HttpResponse> {
+    crate::api::dto::validate_request(&*body)?;
     let key = path.into_inner();
     let ctx = audit_service::AuditContext::from_request(&req, &claims);
     let action_result = config_service::execute_action_with_audit(

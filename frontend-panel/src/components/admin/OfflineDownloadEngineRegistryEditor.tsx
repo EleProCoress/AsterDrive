@@ -28,9 +28,23 @@ interface OfflineDownloadEngineRegistryEditorProps {
 function parseDraftValue(value: string): OfflineDownloadEngineEditorConfig {
 	try {
 		return parseOfflineDownloadEngineConfig(value);
-	} catch {
+	} catch (error) {
+		console.error("Failed to parse offline download engine registry draft", {
+			error,
+			value,
+		});
 		return parseOfflineDownloadEngineConfig("");
 	}
+}
+
+function validationIssueKey(
+	issue: ReturnType<typeof getOfflineDownloadEngineConfigIssues>[number],
+) {
+	const values = Object.entries(issue.values ?? {})
+		.sort(([left], [right]) => left.localeCompare(right))
+		.map(([key, value]) => `${key}:${value}`)
+		.join(",");
+	return `${issue.key}:${values}`;
 }
 
 function getEngineLabelKey(kind: OfflineDownloadEngineKind) {
@@ -128,7 +142,7 @@ export function OfflineDownloadEngineRegistryEditor({
 					</p>
 					<ul className="mt-2 space-y-1 text-destructive">
 						{validationIssues.map((issue) => (
-							<li key={JSON.stringify([issue.key, issue.values ?? null])}>
+							<li key={validationIssueKey(issue)}>
 								{t(issue.key, issue.values)}
 							</li>
 						))}
@@ -219,7 +233,11 @@ export function OfflineDownloadEngineRegistryEditor({
 											variant="outline"
 											size="sm"
 											disabled={testingAria2}
-											onClick={() => void handleTestAria2Rpc()}
+											onClick={() => {
+												handleTestAria2Rpc().catch((error) => {
+													console.error("Failed to test aria2 RPC", error);
+												});
+											}}
 										>
 											<Icon name="WifiHigh" className="size-3.5" />
 											{testingAria2

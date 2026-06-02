@@ -39,7 +39,9 @@ pub(in crate::services::task_service) fn response_filename(
 pub(super) fn filename_from_content_disposition(raw: &str) -> Option<String> {
     let mut fallback = None;
     for part in raw.split(';').skip(1) {
-        let (name, value) = part.trim().split_once('=')?;
+        let Some((name, value)) = part.trim().split_once('=') else {
+            continue;
+        };
         let name = name.trim();
         if name.eq_ignore_ascii_case("filename*") {
             if let Some(decoded) = decode_rfc5987_filename(value.trim())

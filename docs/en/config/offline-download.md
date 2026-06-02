@@ -95,11 +95,11 @@ Deployment requirements:
 - External downloaders such as aria2 must also be able to access and write the same absolute path.
 - The directory contains only task staging files and can be excluded from backups.
 
-For full Docker deployments, use `/data/.tmp/offline-download` and mount the same host `./data` directory to `/data` in both AsterDrive and aria2. For mixed host `cargo run` + Compose aria2 development, use a host absolute path such as `/Users/esap/Desktop/Github/AsterDrive/data/offline-download-temp`, and mount the aria2 container to the same absolute path:
+For full Docker deployments, use `/data/.tmp/offline-download` and mount the same host `./data` directory to `/data` in both AsterDrive and aria2. For mixed host `cargo run` + Compose aria2 development, use a host absolute path such as `/srv/asterdrive/offline-download-temp`, and mount the aria2 container to the same absolute path:
 
 ```yaml
 volumes:
-  - ./data/offline-download-temp:/Users/esap/Desktop/Github/AsterDrive/data/offline-download-temp
+  - ./data/offline-download-temp:/srv/asterdrive/offline-download-temp
 ```
 
 ## Enable aria2

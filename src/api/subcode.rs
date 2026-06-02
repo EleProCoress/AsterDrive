@@ -122,6 +122,9 @@ define_api_subcodes! {
     ExternalAuthProviderDisabled => "external_auth.provider_disabled",
     ExternalAuthPolicyDenied => "external_auth.policy_denied",
 
+    OfflineDownloadAria2RpcAuthFailed => "offline_download.aria2_rpc_auth_failed",
+    OfflineDownloadAria2RpcProbeFailed => "offline_download.aria2_rpc_probe_failed",
+
     RemoteNodeDisabled => "remote_node.disabled",
     RemoteNodeEnrollmentRequired => "remote_node.enrollment_required",
     RemoteNodeUniqueConflict => "remote_node.unique_conflict",
@@ -138,9 +141,6 @@ define_api_subcodes! {
 
     TaskLeaseLost => "task.lease_lost",
     TaskLeaseRenewalTimedOut => "task.lease_renewal_timed_out",
-
-    OfflineDownloadAria2RpcAuthFailed => "offline_download.aria2_rpc_auth_failed",
-    OfflineDownloadAria2RpcProbeFailed => "offline_download.aria2_rpc_probe_failed",
 
     TeamMemberExists => "team.member_exists",
 
