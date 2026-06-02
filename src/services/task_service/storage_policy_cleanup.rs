@@ -24,7 +24,7 @@ use super::types::{
     StoragePolicyTempCleanupTaskResult,
 };
 use super::{
-    TaskLeaseGuard, TypedTaskCreate, insert_typed_task_record, mark_task_progress,
+    TaskExecutionContext, TypedTaskCreate, insert_typed_task_record, mark_task_progress,
     mark_task_succeeded,
 };
 
@@ -82,8 +82,9 @@ pub(crate) async fn create_storage_policy_temp_cleanup_task(
 pub(super) async fn process_storage_policy_temp_cleanup_task(
     state: &PrimaryAppState,
     task: &background_task::Model,
-    lease_guard: TaskLeaseGuard,
+    context: TaskExecutionContext,
 ) -> Result<()> {
+    let lease_guard = context.lease_guard().clone();
     let payload = decode_payload_as::<StoragePolicyTempCleanupTask>(task)?;
     let mut steps =
         parse_task_steps_json(task.steps_json.as_ref().map(|raw| raw.as_ref()), task.kind)?;
@@ -112,6 +113,7 @@ pub(super) async fn process_storage_policy_temp_cleanup_task(
         Some("Policy driver snapshot is ready"),
         None,
     )?;
+    context.ensure_active()?;
     set_task_step_active(
         &mut steps,
         TASK_STEP_CLEANUP_OBJECTS,
@@ -132,6 +134,7 @@ pub(super) async fn process_storage_policy_temp_cleanup_task(
     let mut current = 0_i64;
 
     for temp_key in &payload.temp_keys {
+        context.ensure_active()?;
         delete_object_if_present(driver.as_ref(), temp_key, &mut stats).await;
         current += 1;
         mark_task_progress(
@@ -147,6 +150,7 @@ pub(super) async fn process_storage_policy_temp_cleanup_task(
 
     if let Some(multipart) = driver.as_multipart() {
         for target in &payload.multipart_uploads {
+            context.ensure_active()?;
             match multipart
                 .abort_multipart_upload(&target.temp_key, &target.multipart_id)
                 .await
@@ -176,6 +180,7 @@ pub(super) async fn process_storage_policy_temp_cleanup_task(
         }
     } else {
         for target in &payload.multipart_uploads {
+            context.ensure_active()?;
             stats.failed_objects += 1;
             stats.errors.push(format!(
                 "driver does not support multipart cleanup for {} ({})",
@@ -194,6 +199,7 @@ pub(super) async fn process_storage_policy_temp_cleanup_task(
         }
     }
 
+    context.ensure_active()?;
     if !stats.errors.is_empty() {
         return Err(AsterError::storage_driver_error(format!(
             "storage policy temp cleanup failed for {} object(s): {}",

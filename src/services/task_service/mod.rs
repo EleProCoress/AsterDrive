@@ -44,6 +44,7 @@ use sea_orm::{ConnectionTrait, DatabaseConnection, Set};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration as StdDuration, Instant};
+use tokio_util::sync::CancellationToken;
 
 use crate::api::pagination::{AdminTaskSortBy, OffsetPage, SortOrder};
 use crate::api::subcode::ApiSubcode;
@@ -66,6 +67,7 @@ pub(crate) use archive::{
     prepare_archive_download_in_scope, stream_archive_download_in_scope,
 };
 pub(crate) use blob_maintenance::create_blob_maintenance_task_for_admin;
+pub(crate) use dispatch::dispatch_due_with_shutdown;
 pub use dispatch::{DispatchStats, cleanup_expired, dispatch_due, drain};
 pub(crate) use media_metadata::ensure_media_metadata_task;
 pub(crate) use offline_download::{
@@ -108,6 +110,8 @@ pub(super) const TASK_STATUS_TEXT_MAX_LEN: usize = 255;
 pub(super) const TASK_DRAIN_MAX_ROUNDS: usize = 32;
 const TASK_LEASE_LOST_MESSAGE_PREFIX: &str = "background task lease lost";
 const TASK_LEASE_RENEWAL_TIMEOUT_MESSAGE_PREFIX: &str = "background task lease renewal timed out";
+const TASK_WORKER_SHUTDOWN_REQUESTED_MESSAGE_PREFIX: &str =
+    "background task worker shutdown requested";
 
 #[derive(Debug, Clone, Copy, Default)]
 pub(crate) struct AdminTaskListFilters {
@@ -151,6 +155,7 @@ pub(super) struct TaskLeaseGuard {
     // lease guard 负责“防旧 worker 在本地继续做副作用”。
     lease: TaskLease,
     renewal_timeout: StdDuration,
+    shutdown_token: Option<CancellationToken>,
     state: Arc<Mutex<TaskLeaseGuardState>>,
 }
 
@@ -164,6 +169,7 @@ struct TaskLeaseGuardState {
 enum TaskLeaseTermination {
     Lost,
     RenewalTimedOut,
+    ShutdownRequested,
 }
 
 impl TaskLeaseGuard {
@@ -175,10 +181,18 @@ impl TaskLeaseGuard {
         Self {
             lease,
             renewal_timeout,
+            shutdown_token: None,
             state: Arc::new(Mutex::new(TaskLeaseGuardState {
                 last_renewed_at: Instant::now(),
                 termination: None,
             })),
+        }
+    }
+
+    fn with_shutdown_token(lease: TaskLease, shutdown_token: CancellationToken) -> Self {
+        Self {
+            shutdown_token: Some(shutdown_token),
+            ..Self::new(lease)
         }
     }
 
@@ -199,6 +213,12 @@ impl TaskLeaseGuard {
         task_lease_lost(self.lease)
     }
 
+    fn mark_shutdown_requested(&self) -> AsterError {
+        let mut state = self.state.lock();
+        state.termination = Some(TaskLeaseTermination::ShutdownRequested);
+        task_worker_shutdown_requested(self.lease)
+    }
+
     pub(super) fn ensure_active(&self) -> Result<()> {
         let mut state = self.state.lock();
         match state.termination {
@@ -206,13 +226,82 @@ impl TaskLeaseGuard {
             Some(TaskLeaseTermination::RenewalTimedOut) => {
                 return Err(task_lease_renewal_timed_out(self.lease));
             }
+            Some(TaskLeaseTermination::ShutdownRequested) => {
+                return Err(task_worker_shutdown_requested(self.lease));
+            }
             None => {}
+        }
+        if self
+            .shutdown_token
+            .as_ref()
+            .is_some_and(CancellationToken::is_cancelled)
+        {
+            state.termination = Some(TaskLeaseTermination::ShutdownRequested);
+            return Err(task_worker_shutdown_requested(self.lease));
         }
         if state.last_renewed_at.elapsed() >= self.renewal_timeout {
             state.termination = Some(TaskLeaseTermination::RenewalTimedOut);
             return Err(task_lease_renewal_timed_out(self.lease));
         }
         Ok(())
+    }
+}
+
+#[derive(Debug, Clone)]
+pub(super) struct TaskExecutionContext {
+    // Public task implementations should depend on this context, not on a bare
+    // lease guard. The context keeps shutdown cancellation and lease fencing
+    // together, so deep helper code cannot accidentally keep running after the
+    // dispatcher has started graceful shutdown.
+    //
+    // The same cancellation token is intentionally held twice:
+    // - TaskLeaseGuard uses it from synchronous ensure_active() checkpoints.
+    // - TaskExecutionContext uses it in async select! paths, such as sleeps and
+    //   stream reads, where waiting must be interrupted immediately.
+    lease_guard: TaskLeaseGuard,
+    shutdown_token: CancellationToken,
+}
+
+impl TaskExecutionContext {
+    pub(super) fn new(lease: TaskLease, shutdown_token: CancellationToken) -> Self {
+        Self {
+            lease_guard: TaskLeaseGuard::with_shutdown_token(lease, shutdown_token.clone()),
+            shutdown_token,
+        }
+    }
+
+    #[cfg(test)]
+    pub(super) fn with_lease_guard(
+        lease_guard: TaskLeaseGuard,
+        shutdown_token: CancellationToken,
+    ) -> Self {
+        Self {
+            lease_guard,
+            shutdown_token,
+        }
+    }
+
+    pub(super) fn lease_guard(&self) -> &TaskLeaseGuard {
+        &self.lease_guard
+    }
+
+    pub(super) fn ensure_active(&self) -> Result<()> {
+        self.lease_guard.ensure_active()
+    }
+
+    pub(super) async fn sleep_or_shutdown(&self, duration: StdDuration) -> Result<()> {
+        self.lease_guard.ensure_active()?;
+
+        tokio::select! {
+            biased;
+            _ = self.shutdown_token.cancelled() => Err(self.lease_guard.mark_shutdown_requested()),
+            _ = tokio::time::sleep(duration) => Ok(()),
+        }
+    }
+
+    pub(super) async fn shutdown_requested(&self) -> Result<()> {
+        self.shutdown_token.cancelled().await;
+        Err(self.lease_guard.mark_shutdown_requested())
     }
 }
 
@@ -1072,12 +1161,26 @@ pub(super) fn task_lease_renewal_timed_out(lease: TaskLease) -> AsterError {
     )
 }
 
+pub(super) fn task_worker_shutdown_requested(lease: TaskLease) -> AsterError {
+    precondition_failed_with_subcode(
+        ApiSubcode::TaskWorkerShutdownRequested,
+        format!(
+            "{TASK_WORKER_SHUTDOWN_REQUESTED_MESSAGE_PREFIX} for task #{} with token {}",
+            lease.task_id, lease.processing_token
+        ),
+    )
+}
+
 pub(super) fn is_task_lease_lost(error: &AsterError) -> bool {
     error.api_error_subcode() == Some(ApiSubcode::TaskLeaseLost)
 }
 
 pub(super) fn is_task_lease_renewal_timed_out(error: &AsterError) -> bool {
     error.api_error_subcode() == Some(ApiSubcode::TaskLeaseRenewalTimedOut)
+}
+
+pub(super) fn is_task_worker_shutdown_requested(error: &AsterError) -> bool {
+    error.api_error_subcode() == Some(ApiSubcode::TaskWorkerShutdownRequested)
 }
 
 fn task_lease_renewal_timeout() -> StdDuration {

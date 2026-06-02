@@ -8,7 +8,7 @@ use crate::runtime::PrimaryAppState;
 use crate::services::{
     archive_preview_service,
     task_service::{
-        TaskLeaseGuard, cleanup_task_temp_dir_for_task_kind, create_typed_task_record,
+        TaskExecutionContext, cleanup_task_temp_dir_for_task_kind, create_typed_task_record,
         mark_task_progress, mark_task_succeeded, prepare_task_temp_dir,
         spec::{self, ArchivePreviewGenerateTask, decode_payload_as},
         steps::{
@@ -105,8 +105,9 @@ fn archive_preview_task_display_name(
 pub(super) async fn process_archive_preview_task(
     state: &PrimaryAppState,
     task: &background_task::Model,
-    lease_guard: TaskLeaseGuard,
+    context: TaskExecutionContext,
 ) -> Result<()> {
+    let lease_guard = context.lease_guard().clone();
     let result = async {
         let payload = decode_payload_as::<ArchivePreviewGenerateTask>(task)?;
         let mut steps =
@@ -148,6 +149,7 @@ pub(super) async fn process_archive_preview_task(
         let driver = state.driver_registry.get_driver(&policy)?;
         let use_range_scan = driver.supports_efficient_range();
         let source_archive_path = if use_range_scan {
+            context.ensure_active()?;
             set_task_step_succeeded(
                 &mut steps,
                 TASK_STEP_DOWNLOAD_SOURCE,
@@ -156,6 +158,7 @@ pub(super) async fn process_archive_preview_task(
             )?;
             None
         } else {
+            context.ensure_active()?;
             set_task_step_active(
                 &mut steps,
                 TASK_STEP_DOWNLOAD_SOURCE,
@@ -176,6 +179,7 @@ pub(super) async fn process_archive_preview_task(
                 std::path::Path::new(&task_temp_dir).join(archive_format.temp_file_name());
             archive_preview_service::download_blob_to_temp(
                 state,
+                &context,
                 &source_file,
                 &blob,
                 &source_archive_path,
@@ -189,6 +193,7 @@ pub(super) async fn process_archive_preview_task(
             )?;
             Some(source_archive_path)
         };
+        context.ensure_active()?;
         set_task_step_active(
             &mut steps,
             TASK_STEP_SCAN_ARCHIVE,
@@ -224,6 +229,7 @@ pub(super) async fn process_archive_preview_task(
                 .await?
             }
         };
+        context.ensure_active()?;
         set_task_step_succeeded(
             &mut steps,
             TASK_STEP_SCAN_ARCHIVE,

@@ -115,9 +115,14 @@ pub struct BackgroundTasks {
 }
 
 impl BackgroundTasks {
+    #[cfg(test)]
     fn new() -> Self {
+        Self::with_shutdown_token(CancellationToken::new())
+    }
+
+    fn with_shutdown_token(shutdown_token: CancellationToken) -> Self {
         Self {
-            shutdown_token: CancellationToken::new(),
+            shutdown_token,
             handles: JoinSet::new(),
         }
     }
@@ -186,6 +191,9 @@ async fn spawn_periodic<F, I, Fut>(
     // 必须用 `Instrument::instrument` 而非 `Span::enter`：后者返回的 guard
     // 跨 await 会被 drop（tracing 文档警告），span 只对同步段生效，
     // 而我们的 task_fn 全是 async 跨 await 的。
+    if shutdown_token.is_cancelled() {
+        return;
+    }
     run_periodic_iteration(name, &state, &task_fn)
         .instrument(tracing::info_span!("bg_task", task.name = task_name))
         .await;
@@ -263,7 +271,10 @@ async fn spawn_background_task_dispatcher(
         background_task_dispatch_interval(&state),
         background_task_dispatch_idle_max_interval(&state),
     );
-    let iteration = run_background_task_dispatch_iteration(&state)
+    if shutdown_token.is_cancelled() {
+        return;
+    }
+    let iteration = run_background_task_dispatch_iteration(&state, shutdown_token.clone())
         .instrument(tracing::info_span!(
             "bg_task",
             task.name = SystemRuntimeTaskKind::BackgroundTaskDispatch.as_str()
@@ -296,7 +307,7 @@ async fn spawn_background_task_dispatcher(
             break;
         }
 
-        let iteration = run_background_task_dispatch_iteration(&state)
+        let iteration = run_background_task_dispatch_iteration(&state, shutdown_token.clone())
             .instrument(tracing::info_span!(
                 "bg_task",
                 task.name = SystemRuntimeTaskKind::BackgroundTaskDispatch.as_str()
@@ -313,41 +324,41 @@ async fn spawn_background_task_dispatcher(
 
 async fn run_background_task_dispatch_iteration(
     state: &web::Data<PrimaryAppState>,
+    shutdown_token: CancellationToken,
 ) -> BackgroundTaskDispatchIteration {
     let started_at = Utc::now();
-    let (iteration, outcome) =
-        match AssertUnwindSafe(crate::services::task_service::dispatch_due(state.get_ref()))
-            .catch_unwind()
-            .await
-        {
-            Ok(result) => {
-                let iteration = match &result {
-                    Ok(stats) if stats.has_activity() => BackgroundTaskDispatchIteration::active(),
-                    Ok(_) => BackgroundTaskDispatchIteration::idle(),
-                    Err(_) => BackgroundTaskDispatchIteration::failed(),
-                };
-                (iteration, background_task_dispatch_outcome(result))
-            }
-            Err(panic) => {
-                let panic_message = if let Some(message) = panic.downcast_ref::<&str>() {
-                    (*message).to_string()
-                } else if let Some(message) = panic.downcast_ref::<String>() {
-                    message.clone()
-                } else {
-                    "unknown panic payload".to_string()
-                };
-                tracing::error!(
-                    "background task 'background-task-dispatch' panicked: {panic_message}"
-                );
-                (
-                    BackgroundTaskDispatchIteration::failed(),
-                    crate::services::task_service::RuntimeTaskRunOutcome::failed(
-                        Some("Task panicked".to_string()),
-                        panic_message,
-                    ),
-                )
-            }
-        };
+    let (iteration, outcome) = match AssertUnwindSafe(
+        crate::services::task_service::dispatch_due_with_shutdown(state.get_ref(), shutdown_token),
+    )
+    .catch_unwind()
+    .await
+    {
+        Ok(result) => {
+            let iteration = match &result {
+                Ok(stats) if stats.has_activity() => BackgroundTaskDispatchIteration::active(),
+                Ok(_) => BackgroundTaskDispatchIteration::idle(),
+                Err(_) => BackgroundTaskDispatchIteration::failed(),
+            };
+            (iteration, background_task_dispatch_outcome(result))
+        }
+        Err(panic) => {
+            let panic_message = if let Some(message) = panic.downcast_ref::<&str>() {
+                (*message).to_string()
+            } else if let Some(message) = panic.downcast_ref::<String>() {
+                message.clone()
+            } else {
+                "unknown panic payload".to_string()
+            };
+            tracing::error!("background task 'background-task-dispatch' panicked: {panic_message}");
+            (
+                BackgroundTaskDispatchIteration::failed(),
+                crate::services::task_service::RuntimeTaskRunOutcome::failed(
+                    Some("Task panicked".to_string()),
+                    panic_message,
+                ),
+            )
+        }
+    };
     let finished_at = Utc::now();
 
     if let Err(error) = crate::services::task_service::record_runtime_task_run(
@@ -434,8 +445,9 @@ fn effective_dispatch_max_interval(base_interval: Duration, max_interval: Durati
 
 fn build_background_tasks_base(
     metrics: &crate::metrics_core::SharedMetricsRecorder,
+    shutdown_token: CancellationToken,
 ) -> BackgroundTasks {
-    let mut tasks = BackgroundTasks::new();
+    let mut tasks = BackgroundTasks::with_shutdown_token(shutdown_token);
     if let Some(task) = metrics.system_metrics_updater_task(tasks.shutdown_token()) {
         tasks.push(task);
     }
@@ -446,8 +458,9 @@ fn build_background_tasks_base(
 pub fn spawn_primary_background_tasks(
     state: web::Data<PrimaryAppState>,
     share_download_rollback_worker: ShareDownloadRollbackWorker,
+    shutdown_token: CancellationToken,
 ) -> BackgroundTasks {
-    let mut tasks = build_background_tasks_base(&state.metrics);
+    let mut tasks = build_background_tasks_base(&state.metrics, shutdown_token);
     let shutdown_token = tasks.shutdown_token();
 
     tasks.push(
@@ -855,9 +868,12 @@ pub fn spawn_primary_background_tasks(
 }
 
 /// Spawn only follower-safe background tasks.
-pub fn spawn_follower_background_tasks(state: web::Data<FollowerAppState>) -> BackgroundTasks {
+pub fn spawn_follower_background_tasks(
+    state: web::Data<FollowerAppState>,
+    shutdown_token: CancellationToken,
+) -> BackgroundTasks {
     tracing::info!("follower mode enabled; skipping primary-only background tasks");
-    let mut tasks = build_background_tasks_base(&state.metrics);
+    let mut tasks = build_background_tasks_base(&state.metrics, shutdown_token);
     let shutdown_token = tasks.shutdown_token();
     tasks.push(
         crate::storage::remote_protocol::tunnel::client::run_follower_tunnel_worker(
@@ -920,8 +936,9 @@ mod tests {
     use crate::services::task_service::{DispatchStats, RuntimeTaskRunOutcome};
     use chrono::Utc;
     use migration::Migrator;
-    use sea_orm::EntityTrait;
+    use sea_orm::{ActiveModelTrait, EntityTrait, Set};
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     async fn setup_state() -> web::Data<PrimaryAppState> {
         let db = crate::db::connect_with_metrics(
@@ -1032,9 +1049,84 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn external_shutdown_token_stops_background_worker_before_shutdown_join() {
+        let shutdown_token = CancellationToken::new();
+        let mut tasks = BackgroundTasks::with_shutdown_token(shutdown_token.clone());
+        let (stopped_tx, stopped_rx) = tokio::sync::oneshot::channel();
+
+        tasks.push({
+            let shutdown_token = shutdown_token.clone();
+            async move {
+                shutdown_token.cancelled().await;
+                let _ = stopped_tx.send(());
+            }
+        });
+
+        shutdown_token.cancel();
+        tokio::time::timeout(Duration::from_millis(50), stopped_rx)
+            .await
+            .expect("background worker should observe external shutdown")
+            .expect("background worker should report shutdown");
+
+        tasks.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn pre_cancelled_shutdown_token_skips_periodic_startup_iteration() {
+        let state = setup_state().await;
+        let shutdown_token = CancellationToken::new();
+        let calls = Arc::new(AtomicUsize::new(0));
+        shutdown_token.cancel();
+
+        spawn_periodic(
+            SystemRuntimeTaskKind::MailOutboxDispatch,
+            |_| Duration::from_secs(60),
+            None,
+            shutdown_token,
+            state.clone(),
+            {
+                let calls = calls.clone();
+                move |_| {
+                    let calls = calls.clone();
+                    async move {
+                        calls.fetch_add(1, Ordering::SeqCst);
+                        RuntimeTaskRunOutcome::succeeded(None)
+                    }
+                }
+            },
+        )
+        .await;
+
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+        let tasks = crate::entities::background_task::Entity::find()
+            .all(state.writer_db())
+            .await
+            .unwrap();
+        assert!(tasks.is_empty());
+    }
+
+    #[tokio::test]
+    async fn pre_cancelled_shutdown_token_skips_dispatcher_startup_iteration() {
+        let state = setup_state().await;
+        let shutdown_token = CancellationToken::new();
+        shutdown_token.cancel();
+
+        spawn_background_task_dispatcher(shutdown_token, state.clone()).await;
+
+        let tasks = crate::entities::background_task::Entity::find()
+            .all(state.writer_db())
+            .await
+            .unwrap();
+        assert!(tasks.is_empty());
+    }
+
+    #[tokio::test]
     async fn follower_background_tasks_can_shutdown_without_primary_workers() {
         let state = setup_state().await;
-        let tasks = spawn_follower_background_tasks(web::Data::new(state.follower_view()));
+        let tasks = spawn_follower_background_tasks(
+            web::Data::new(state.follower_view()),
+            CancellationToken::new(),
+        );
 
         tasks.shutdown().await;
     }
@@ -1099,6 +1191,84 @@ mod tests {
                 Some("Background task dispatch failed".to_string()),
                 "Internal Server Error: dispatcher crashed",
             )
+        );
+    }
+
+    async fn insert_pending_system_runtime_task(
+        state: &web::Data<PrimaryAppState>,
+    ) -> crate::entities::background_task::Model {
+        let now = Utc::now();
+        crate::entities::background_task::ActiveModel {
+            kind: Set(crate::types::BackgroundTaskKind::SystemRuntime),
+            status: Set(crate::types::BackgroundTaskStatus::Pending),
+            creator_user_id: Set(None),
+            team_id: Set(None),
+            share_id: Set(None),
+            display_name: Set("dispatch runtime task".to_string()),
+            payload_json: Set(crate::types::StoredTaskPayload(
+                serde_json::json!({"task_name": "background-task-dispatch"}).to_string(),
+            )),
+            result_json: Set(None),
+            runtime_json: Set(None),
+            steps_json: Set(None),
+            progress_current: Set(0),
+            progress_total: Set(1),
+            status_text: Set(None),
+            attempt_count: Set(0),
+            max_attempts: Set(1),
+            next_run_at: Set(now - chrono::Duration::seconds(1)),
+            processing_token: Set(0),
+            processing_started_at: Set(None),
+            last_heartbeat_at: Set(None),
+            lease_expires_at: Set(None),
+            started_at: Set(None),
+            finished_at: Set(None),
+            last_error: Set(None),
+            failure_can_retry: Set(None),
+            expires_at: Set(now + chrono::Duration::hours(1)),
+            created_at: Set(now),
+            updated_at: Set(now),
+            ..Default::default()
+        }
+        .insert(state.writer_db())
+        .await
+        .expect("pending runtime task should insert")
+    }
+
+    #[tokio::test]
+    async fn background_task_dispatch_iteration_is_idle_for_empty_queue() {
+        let state = setup_state().await;
+
+        let iteration =
+            run_background_task_dispatch_iteration(&state, CancellationToken::new()).await;
+
+        assert_eq!(iteration, BackgroundTaskDispatchIteration::idle());
+        let tasks = crate::entities::background_task::Entity::find()
+            .all(state.writer_db())
+            .await
+            .unwrap();
+        assert!(tasks.is_empty());
+    }
+
+    #[tokio::test]
+    async fn background_task_dispatch_iteration_is_active_when_task_was_processed() {
+        let state = setup_state().await;
+        let task = insert_pending_system_runtime_task(&state).await;
+
+        let iteration =
+            run_background_task_dispatch_iteration(&state, CancellationToken::new()).await;
+
+        assert_eq!(iteration, BackgroundTaskDispatchIteration::active());
+        let stored =
+            crate::db::repository::background_task_repo::find_by_id(state.writer_db(), task.id)
+                .await
+                .unwrap();
+        assert_eq!(stored.status, crate::types::BackgroundTaskStatus::Failed);
+        assert!(
+            stored
+                .last_error
+                .as_deref()
+                .is_some_and(|error| error.contains("should not be dispatched"))
         );
     }
 

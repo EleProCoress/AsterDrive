@@ -234,25 +234,28 @@ fn dotnet_ticks(value: DateTime<Utc>) -> i64 {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::OnceLock;
+
     use base64::{Engine as _, engine::general_purpose::STANDARD};
     use chrono::{Duration, Utc};
+    use rand_08::rngs::OsRng;
     use ring::{
         rand::SystemRandom,
         signature::{RSA_PKCS1_SHA256, RsaKeyPair, RsaPublicKeyComponents},
     };
+    use rsa::{RsaPrivateKey, pkcs1::EncodeRsaPrivateKey};
 
     use super::{
         WopiProofKeySet, build_expected_proof, dotnet_ticks, parse_wopi_proof_key_set,
         validate_wopi_proof,
     };
 
-    const CURRENT_PRIVATE_KEY: &str =
-        include_str!("../../../tests/fixtures/rsa/wopi_current_test_key.pem");
-    const OLD_PRIVATE_KEY: &str = include_str!("../../../tests/fixtures/rsa/wopi_old_test_key.pem");
+    static CURRENT_PRIVATE_KEY_DER: OnceLock<Vec<u8>> = OnceLock::new();
+    static OLD_PRIVATE_KEY_DER: OnceLock<Vec<u8>> = OnceLock::new();
 
     fn build_test_keys() -> (RsaKeyPair, RsaKeyPair, WopiProofKeySet) {
-        let current = load_private_key(CURRENT_PRIVATE_KEY);
-        let old = load_private_key(OLD_PRIVATE_KEY);
+        let current = load_private_key(current_private_key_der());
+        let old = load_private_key(old_private_key_der());
         let current_public = public_components(&current);
         let old_public = public_components(&old);
         let proof_keys = parse_wopi_proof_key_set(
@@ -266,16 +269,26 @@ mod tests {
         (current, old, proof_keys)
     }
 
-    fn load_private_key(pem: &str) -> RsaKeyPair {
-        RsaKeyPair::from_der(&decode_pem(pem)).unwrap()
+    fn current_private_key_der() -> &'static [u8] {
+        CURRENT_PRIVATE_KEY_DER
+            .get_or_init(generate_test_rsa_private_der)
+            .as_slice()
     }
 
-    fn decode_pem(pem: &str) -> Vec<u8> {
-        let body: String = pem
-            .lines()
-            .filter(|line| !line.starts_with("-----"))
-            .collect();
-        STANDARD.decode(body).unwrap()
+    fn old_private_key_der() -> &'static [u8] {
+        OLD_PRIVATE_KEY_DER
+            .get_or_init(generate_test_rsa_private_der)
+            .as_slice()
+    }
+
+    fn generate_test_rsa_private_der() -> Vec<u8> {
+        let mut rng = OsRng;
+        let key = RsaPrivateKey::new(&mut rng, 2048).unwrap();
+        key.to_pkcs1_der().unwrap().as_bytes().to_vec()
+    }
+
+    fn load_private_key(private_der: &[u8]) -> RsaKeyPair {
+        RsaKeyPair::from_der(private_der).unwrap()
     }
 
     fn public_components(key: &RsaKeyPair) -> RsaPublicKeyComponents<Vec<u8>> {
