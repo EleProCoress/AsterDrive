@@ -457,6 +457,127 @@ html[lang="zh-CN"] .VPHomeHero .main::before {
 	border-radius: 10px;
 }
 
+.vp-doc .mermaid {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	margin: 24px 0;
+	padding: 12px;
+	width: 100%;
+	max-width: 100%;
+	overflow: hidden;
+	border: 1px solid var(--vp-c-divider);
+	border-radius: 10px;
+	background: color-mix(in srgb, var(--vp-c-bg-soft) 94%, var(--vp-c-brand-1));
+	cursor: zoom-in;
+	line-height: 1.4;
+	box-shadow: 0 12px 34px rgb(15 23 42 / 0.06);
+}
+
+.vp-doc .mermaid svg {
+	display: block;
+	margin: 0 auto;
+	width: auto !important;
+	max-width: 100% !important;
+	height: auto !important;
+	max-height: min(380px, 58vh);
+	overflow: visible;
+}
+
+.vp-doc .mermaid svg foreignObject {
+	overflow: visible;
+}
+
+.dark .vp-doc .mermaid {
+	background: color-mix(in srgb, var(--vp-c-bg-soft) 88%, var(--vp-c-brand-1));
+	box-shadow: 0 18px 46px rgb(0 0 0 / 0.22);
+}
+
+@media (max-width: 768px) {
+	.vp-doc .mermaid {
+		padding: 10px;
+	}
+
+	.vp-doc .mermaid svg {
+		max-height: 300px;
+	}
+}
+
+body.aster-diagram-zoom-open {
+	overflow: hidden;
+}
+
+.aster-diagram-zoom {
+	position: fixed;
+	inset: 0;
+	z-index: 10000;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 64px 28px 28px;
+	background: rgb(2 6 23 / 0.88);
+	backdrop-filter: blur(12px);
+}
+
+.aster-diagram-zoom-close {
+	position: fixed;
+	top: 18px;
+	right: 18px;
+	z-index: 1;
+	padding: 8px 14px;
+	border: 1px solid rgb(255 255 255 / 0.18);
+	border-radius: 8px;
+	background: rgb(15 23 42 / 0.82);
+	color: #f8fafc;
+	font-weight: 600;
+	font-size: 14px;
+	line-height: 1;
+	cursor: pointer;
+	transition: background-color 160ms ease, border-color 160ms ease;
+}
+
+.aster-diagram-zoom-close:hover {
+	border-color: rgb(255 255 255 / 0.34);
+	background: rgb(30 41 59 / 0.92);
+}
+
+.aster-diagram-zoom-canvas {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 100%;
+	height: 100%;
+	overflow: auto;
+}
+
+.aster-diagram-zoom-canvas svg {
+	display: block;
+	width: min(1120px, calc(100vw - 96px)) !important;
+	max-width: calc(100vw - 96px) !important;
+	height: auto !important;
+	max-height: calc(100vh - 128px) !important;
+	padding: 24px;
+	border-radius: 10px;
+	background: #ffffff;
+}
+
+@media (max-width: 768px) {
+	.aster-diagram-zoom {
+		padding: 56px 14px 18px;
+	}
+
+	.aster-diagram-zoom-canvas svg {
+		width: calc(100vw - 28px) !important;
+		max-width: calc(100vw - 28px) !important;
+		max-height: calc(100vh - 92px) !important;
+		padding: 14px;
+	}
+}
+
+.dark .aster-diagram-zoom-canvas svg {
+	background: #111827;
+}
+
 .vp-doc table {
 	display: table;
 	width: 100%;

@@ -32,30 +32,18 @@ If you need multi-primary hot standby, automatic failover, or cross-region stron
 
 ## Enrollment Flow
 
-```text
-Primary node is already available
-  |
-  +-- Set the public site URL
-  |
-  +-- Admin -> Follower Nodes: create node record
-  |     |
-  |     +-- Choose direct, reverse tunnel, or auto transport
-  |     |
-  |     +-- Generate one-time enroll command
-  |
-  +-- Follower node: run node enroll
-  |     |
-  |     +-- Write follower configuration and binding information
-  |
-  +-- Restart follower service
-  |
-  +-- Test connectivity from the primary admin console
-  |
-  +-- Create default ingress target
-  |
-  +-- Create remote storage policy
-  |
-  +-- Put the policy into a policy group and assign it to users or teams
+```mermaid
+flowchart LR
+  Ready["Primary node is already available"] --> PublicUrl["Set the public site URL"]
+  PublicUrl --> CreateNode["Admin -> Follower Nodes: create node record"]
+  CreateNode --> Transport["Choose transport mode"]
+  Transport --> EnrollCommand["Generate enroll command"]
+  EnrollCommand --> Enroll["Follower runs node enroll"]
+  Enroll --> Restart["Restart follower"]
+  Restart --> Connectivity["Test connectivity from primary"]
+  Connectivity --> Ingress["Create default ingress target"]
+  Ingress --> Policy["Create remote storage policy"]
+  Policy --> Assign["Assign to users or teams"]
 ```
 
 ::: tip The easiest step to miss

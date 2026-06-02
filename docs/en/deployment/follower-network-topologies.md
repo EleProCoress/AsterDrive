@@ -17,10 +17,11 @@ With remote `presigned` upload or download, the primary only validates permissio
 
 So do not only ask whether the primary can reach the follower. Check all three paths:
 
-```text
-Primary node -> follower base_url
-User browser -> follower base_url
-Follower -> primary public_site_url
+```mermaid
+flowchart LR
+  Primary["Primary node"] --> FollowerBase["follower base_url"]
+  Browser["User browser"] --> FollowerBase
+  Follower["Follower"] --> PublicSite["primary public_site_url"]
 ```
 
 Each path serves a different purpose:
@@ -49,15 +50,12 @@ For a first setup, use `relay_stream`. After the primary, follower, ingress targ
 
 This is the most direct production shape:
 
-```text
-User browser
-  |
-  +-- https://drive.example.com        -> Primary node
-  |
-  +-- https://follower-a.example.com   -> Follower node
-
-Primary node -> https://follower-a.example.com
-Follower     -> https://drive.example.com
+```mermaid
+flowchart LR
+  Browser["User browser"] --> Drive["https://drive.example.com"] --> Primary["Primary node"]
+  Browser --> FollowerUrl["https://follower-a.example.com"] --> Follower["Follower node"]
+  Primary --> FollowerUrl
+  Follower --> Drive
 ```
 
 Use this when:
@@ -80,12 +78,11 @@ This mode can use remote `presigned` upload/download. The cost is that the follo
 
 This mode does not require a public follower address. It only requires the primary, follower, and actual users to share the same private network:
 
-```text
-tailnet / VPN
-  |
-  +-- Primary node
-  +-- Follower node: 100.x.y.z or follower.tailnet-name.ts.net
-  +-- User browser
+```mermaid
+flowchart TD
+  Tailnet["tailnet / VPN"] --> Primary["Primary node"]
+  Tailnet --> Follower["Follower node: 100.x.y.z or follower.tailnet-name.ts.net"]
+  Tailnet --> Browser["User browser"]
 ```
 
 Use this for:

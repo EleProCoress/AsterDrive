@@ -21,23 +21,14 @@ AsterDrive 的配置分得很清楚。先把这些层分开，后续就能更容
 
 前面几层是 AsterDrive 自己管的；最后一层属于反向代理、对象存储和外部网络环境。
 
-```text
-启动服务
-  |
-  +-- config.toml / ASTER__ 环境变量
-  |     负责：监听地址、数据库、日志、WebDAV 前缀、节点模式
-  |
-  +-- 数据库里的系统设置
-  |     负责：站点、注册、Cookie、邮件、分享流播放、压缩包预览、回收站、WOPI、审计
-  |
-  +-- 外部认证提供商
-  |     负责：OIDC / 通用 OAuth2 / SSO 登录入口、外部身份和本地账号绑定规则
-  |
-  +-- 存储策略 + 策略组
-  |     负责：文件落点、上传方式、用户/团队分流
-  |
-  +-- 外部环境
-        负责：HTTPS、反向代理、S3 CORS、WebDAV 方法透传
+```mermaid
+flowchart TD
+  Start["启动服务"]
+  Start --> Static["config.toml / ASTER__ 环境变量<br/>监听地址、数据库、日志、WebDAV 前缀、节点模式"]
+  Start --> Runtime["数据库里的系统设置<br/>站点、注册、Cookie、邮件、分享流播放、压缩包预览、回收站、WOPI、审计"]
+  Start --> Auth["外部认证提供商<br/>OIDC / 通用 OAuth2 / SSO 登录入口、外部身份和本地账号绑定规则"]
+  Start --> Storage["存储策略 + 策略组<br/>文件落点、上传方式、用户/团队分流"]
+  Start --> Environment["外部环境<br/>HTTPS、反向代理、S3 CORS、WebDAV 方法透传"]
 ```
 
 ::: tip 判断规则

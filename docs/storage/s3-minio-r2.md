@@ -18,16 +18,12 @@ S3 / MinIO / R2 适合这些场景：
 
 ## 先分清你要配哪几层
 
-```text
-对象存储服务
-  |
-  +-- Bucket / 凭证 / CORS
-      |
-      +-- AsterDrive 存储策略
-          |
-          +-- 策略组规则
-              |
-              +-- 用户或团队绑定策略组
+```mermaid
+flowchart TD
+  ObjectStorage["对象存储服务"] --> Bucket["Bucket / 凭证 / CORS"]
+  Bucket --> Policy["AsterDrive 存储策略"]
+  Policy --> Rule["策略组规则"]
+  Rule --> Binding["用户或团队绑定策略组"]
 ```
 
 只创建 S3 存储策略还不够。用户或团队真正上传时，会先命中策略组，再由策略组规则分配到某条存储策略。
@@ -95,14 +91,16 @@ AsterDrive 数据库记录了对象路径。人工移动、重命名或删除 bu
 
 上传时：
 
-```text
-浏览器 -> AsterDrive -> 对象存储
+```mermaid
+flowchart LR
+  Browser["浏览器"] --> AsterDrive["AsterDrive"] --> ObjectStorage["对象存储"]
 ```
 
 下载时：
 
-```text
-对象存储 -> AsterDrive -> 浏览器
+```mermaid
+flowchart LR
+  ObjectStorage["对象存储"] --> AsterDrive["AsterDrive"] --> Browser["浏览器"]
 ```
 
 好处是入口集中，排查简单。代价是应用节点要承接上传和下载带宽。
@@ -111,14 +109,16 @@ AsterDrive 数据库记录了对象路径。人工移动、重命名或删除 bu
 
 上传时：
 
-```text
-浏览器 -> 对象存储
+```mermaid
+flowchart LR
+  Browser["浏览器"] --> ObjectStorage["对象存储"]
 ```
 
 下载时：
 
-```text
-浏览器 -> 对象存储短时效 URL
+```mermaid
+flowchart LR
+  Browser["浏览器"] --> PresignedUrl["对象存储短时效 URL"]
 ```
 
 好处是减轻 AsterDrive 节点带宽压力。前提是浏览器能访问对象存储 endpoint，并且 CORS 配置正确。
@@ -275,9 +275,10 @@ S3 Test Group
 
 常见生产策略不是“所有文件都走 S3”，而是按大小分流：
 
-```text
-小文件 -> 本地策略
-大文件 -> S3 策略
+```mermaid
+flowchart TD
+  Small["小文件"] --> Local["本地策略"]
+  Large["大文件"] --> S3["S3 策略"]
 ```
 
 进入：

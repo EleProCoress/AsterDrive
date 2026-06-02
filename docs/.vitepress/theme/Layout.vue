@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { useData } from "vitepress"
 import DefaultTheme from "vitepress/theme"
-import { nextTick, provide } from "vue"
+import { nextTick, onBeforeUnmount, onMounted, provide, ref } from "vue"
 
 const { isDark } = useData()
 const { Layout } = DefaultTheme
+const zoomedDiagram = ref("")
 
 function canUseViewTransition() {
 	return (
@@ -38,10 +39,57 @@ provide("toggle-appearance", async ({ clientX: x, clientY: y }: MouseEvent) => {
 		},
 	)
 })
+
+function closeDiagramZoom() {
+	zoomedDiagram.value = ""
+	document.body.classList.remove("aster-diagram-zoom-open")
+}
+
+function openDiagramZoom(event: MouseEvent) {
+	const target = event.target instanceof Element ? event.target : null
+	const diagram = target?.closest(".vp-doc .mermaid")
+
+	if (!(diagram instanceof HTMLElement)) {
+		return
+	}
+
+	const svg = diagram.querySelector("svg")
+	if (!svg) {
+		return
+	}
+
+	zoomedDiagram.value = svg.outerHTML
+	document.body.classList.add("aster-diagram-zoom-open")
+}
+
+function closeDiagramZoomOnEscape(event: KeyboardEvent) {
+	if (event.key === "Escape") {
+		closeDiagramZoom()
+	}
+}
+
+onMounted(() => {
+	document.addEventListener("click", openDiagramZoom)
+	document.addEventListener("keydown", closeDiagramZoomOnEscape)
+})
+
+onBeforeUnmount(() => {
+	document.removeEventListener("click", openDiagramZoom)
+	document.removeEventListener("keydown", closeDiagramZoomOnEscape)
+	document.body.classList.remove("aster-diagram-zoom-open")
+})
 </script>
 
 <template>
 	<Layout />
+	<Teleport to="body">
+		<div v-if="zoomedDiagram" class="aster-diagram-zoom" role="dialog" aria-modal="true" @click.self="closeDiagramZoom">
+			<button class="aster-diagram-zoom-close" type="button" aria-label="Close diagram zoom" @click="closeDiagramZoom">
+				×
+			</button>
+			<div class="aster-diagram-zoom-canvas" v-html="zoomedDiagram" />
+		</div>
+	</Teleport>
 </template>
 
 <style>

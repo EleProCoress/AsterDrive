@@ -133,6 +133,7 @@ bootstrap_insecure_cookies = false
 - 想在命令行里做部署检查、离线配置或跨数据库迁移：看 [运维 CLI](/deployment/ops-cli)
 - 准备挂 HTTPS：看 [反向代理](/deployment/reverse-proxy)
 - 准备接 Prometheus / Grafana：看 [监控与 Grafana](/deployment/monitoring)
+- 想估算文件数量、数据库大小、内存和临时磁盘：看 [容量规划参考](/deployment/capacity-planning)
 - 想确认首次启动到底自动做了哪些事：看 [首次启动检查](/deployment/runtime-behavior)
 - 准备升级：看 [升级与版本迁移](/deployment/upgrade)
 - 升级后浏览器仍显示旧界面：看 [前端资源缓存](/deployment/frontend-assets)

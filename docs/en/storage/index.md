@@ -27,18 +27,13 @@ If you have already decided which backend to connect, use the tutorials here.
 
 ## General Configuration Flow
 
-```text
-Prepare the backend service
-  |
-  +-- Create a storage policy
-  |
-  +-- Test the connection
-  |
-  +-- Create or adjust policy group rules
-  |
-  +-- Bind users or teams
-  |
-  +-- Verify upload / download / sharing with a real account
+```mermaid
+flowchart TD
+  Backend["Prepare the backend service"] --> Policy["Create a storage policy"]
+  Policy --> Test["Test the connection"]
+  Test --> Rules["Create or adjust policy group rules"]
+  Rules --> Bind["Bind users or teams"]
+  Bind --> Verify["Verify upload / download / sharing with a real account"]
 ```
 
 ## Do Not Rush Production Traffic

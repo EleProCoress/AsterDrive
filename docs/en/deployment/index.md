@@ -133,6 +133,7 @@ Validate other role-specific areas (WebDAV, WOPI, mail, trash, and so on) accord
 - Want command-line deployment checks, offline configuration, or cross-database migration: see [Operations CLI](/en/deployment/ops-cli)
 - Preparing HTTPS: see [Reverse Proxy](/en/deployment/reverse-proxy)
 - Preparing Prometheus / Grafana: see [Monitoring and Grafana](/en/deployment/monitoring)
+- Estimating file count, database size, memory, and temporary disk: see [Capacity Planning](/en/deployment/capacity-planning)
 - Want to confirm exactly what first startup does automatically: see [First-Start Checklist](/en/deployment/runtime-behavior)
 - Preparing to upgrade: see [Upgrade and Version Migration](/en/deployment/upgrade)
 - Browser still shows the old UI after an upgrade: see [Frontend Asset Cache](/en/deployment/frontend-assets)

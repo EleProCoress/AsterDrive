@@ -5,7 +5,7 @@ The following paths are relative to `/api/v1` and require authentication.
 Team capabilities have two layers:
 
 - team management: team profile, members, and audit logs
-- team workspace: files, folders, uploads, search, shares, trash, and tasks
+- team workspace: files, folders, uploads, search, shares, WebDAV accounts, trash, and tasks
 
 ## Team management
 
@@ -42,7 +42,7 @@ Team workspace APIs are rooted at:
 /api/v1/teams/{team_id}
 ```
 
-They are not a separate “team filesystem” implementation. They reuse the personal-space file / folder / upload / search / share / trash semantics under a team scope.
+They are not a separate “team filesystem” implementation. They reuse the personal-space file / folder / upload / search / share / trash / task / WebDAV-account semantics under a team scope.
 
 ## Folder and file endpoints
 
@@ -87,7 +87,7 @@ They are not a separate “team filesystem” implementation. They reuse the per
 
 Request bodies, paging parameters, upload modes, locks, and versions match personal-space APIs. See [Files](./files.md) and [Folders](./folders.md).
 
-## Batch, search, sharing, trash, and tasks
+## Batch, Search, Sharing, Trash, Tasks, and WebDAV
 
 | Method | Path | Description |
 | --- | --- | --- |
@@ -108,10 +108,15 @@ Request bodies, paging parameters, upload modes, locks, and versions match perso
 | `DELETE` | `/teams/{team_id}/trash/{entity_type}/{id}` | Permanently delete team trash item |
 | `DELETE` | `/teams/{team_id}/trash` | Empty team trash |
 | `GET` | `/teams/{team_id}/tasks` | List team tasks |
+| `POST` | `/teams/{team_id}/tasks/offline-download` | Create a team offline-download import task |
 | `GET` | `/teams/{team_id}/tasks/{id}` | Read one team task |
 | `POST` | `/teams/{team_id}/tasks/{id}/retry` | Retry failed team task |
+| `GET` | `/teams/{team_id}/webdav-accounts` | List team WebDAV accounts |
+| `POST` | `/teams/{team_id}/webdav-accounts` | Create a team WebDAV account |
+| `DELETE` | `/teams/{team_id}/webdav-accounts/{account_id}` | Delete a team WebDAV account |
+| `POST` | `/teams/{team_id}/webdav-accounts/{account_id}/toggle` | Enable or disable a team WebDAV account |
 
-These reuse personal-space contracts. See [Batch](./batch.md), [Search](./search.md), [Sharing](./shares.md), [Trash](./trash.md), [Tasks](./tasks.md), and [WOPI](./wopi.md).
+These reuse personal-space contracts. See [Batch](./batch.md), [Search](./search.md), [Sharing](./shares.md), [Trash](./trash.md), [Tasks](./tasks.md), [WebDAV](./webdav.md), and [WOPI](./wopi.md).
 
 Team-specific notes:
 
@@ -121,5 +126,7 @@ Team-specific notes:
 - team archive-download tickets can only be consumed under the matching team route
 - recoverable team upload sessions return the same shape as personal sessions but are scoped to the team
 - `frontend_client_id` works for team upload init and recoverable-session filtering
+- `POST /teams/{team_id}/tasks/offline-download` creates an `offline_download` task that imports an HTTP/HTTPS URL into the team space; its request body matches personal `/tasks/offline-download`
+- team WebDAV accounts authenticate through the same WebDAV mount entry, but their storage scope is the team; ordinary members can manage only accounts they created, while team `owner` / `admin` users can manage all accounts in the team
 - archive extraction and compression create background tasks rather than blocking synchronously
 - `target_folder_id = null` defaults to source-folder or common-parent behavior just like personal space

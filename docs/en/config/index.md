@@ -21,23 +21,14 @@ First identify which layer you need to change, then open the corresponding page.
 
 The earlier layers are managed by AsterDrive itself. The last layer belongs to the reverse proxy, object storage, and external network environment.
 
-```text
-Start service
-  |
-  +-- config.toml / ASTER__ environment variables
-  |     Responsible for: listen address, database, logging, WebDAV prefix, node mode
-  |
-  +-- System settings in the database
-  |     Responsible for: site, registration, cookies, mail, share streaming playback, archive preview, trash, WOPI, audit
-  |
-  +-- External authentication providers
-  |     Responsible for: OIDC / Generic OAuth2 / SSO login entries, binding rules between external identities and local accounts
-  |
-  +-- Storage policies + policy groups
-  |     Responsible for: file placement, upload method, user/team routing
-  |
-  +-- External environment
-        Responsible for: HTTPS, reverse proxy, S3 CORS, WebDAV method passthrough
+```mermaid
+flowchart TD
+  Start["Start service"]
+  Start --> Static["config.toml / ASTER__ environment variables<br/>Listen address, database, logging, WebDAV prefix, node mode"]
+  Start --> Runtime["System settings in the database<br/>Site, registration, cookies, mail, share streaming playback, archive preview, trash, WOPI, audit"]
+  Start --> Auth["External authentication providers<br/>OIDC / Generic OAuth2 / SSO login entries, external identity binding rules"]
+  Start --> Storage["Storage policies + policy groups<br/>File placement, upload method, user/team routing"]
+  Start --> Environment["External environment<br/>HTTPS, reverse proxy, S3 CORS, WebDAV method passthrough"]
 ```
 
 ::: tip Rule of thumb

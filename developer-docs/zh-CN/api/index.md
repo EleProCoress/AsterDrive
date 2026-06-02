@@ -180,9 +180,11 @@
 /api/v1/teams/{team_id}/shares
 /api/v1/teams/{team_id}/trash
 /api/v1/teams/{team_id}/tasks
+/api/v1/teams/{team_id}/tasks/offline-download
+/api/v1/teams/{team_id}/webdav-accounts
 ```
 
-也就是说，团队空间不是另一套业务模型，而是把同一套文件 / 文件夹 / 搜索 / 回收站语义切到团队作用域下执行。
+也就是说，团队空间不是另一套业务模型，而是把同一套文件 / 文件夹 / 搜索 / 回收站 / 后台任务 / WebDAV 账号语义切到团队作用域下执行。
 
 ## 模块索引
 

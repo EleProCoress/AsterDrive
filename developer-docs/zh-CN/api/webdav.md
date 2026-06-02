@@ -8,6 +8,8 @@ WebDAV 相关内容可以分成三块：账号、挂载入口、协议能力。
 
 以下路径都相对于 `/api/v1`，且都需要认证。
 
+### 个人空间账号
+
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | `GET` | `/webdav-accounts` | 列出当前用户的 WebDAV 账号 |
@@ -17,17 +19,30 @@ WebDAV 相关内容可以分成三块：账号、挂载入口、协议能力。
 | `GET` | `/webdav-accounts/settings` | 读取当前挂载前缀和客户端可直接使用的挂载地址 |
 | `POST` | `/webdav-accounts/test` | 测试一组 WebDAV 凭据 |
 
+### 团队空间账号
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| `GET` | `/teams/{team_id}/webdav-accounts` | 列出团队 WebDAV 账号 |
+| `POST` | `/teams/{team_id}/webdav-accounts` | 创建团队 WebDAV 账号 |
+| `DELETE` | `/teams/{team_id}/webdav-accounts/{account_id}` | 删除团队 WebDAV 账号 |
+| `POST` | `/teams/{team_id}/webdav-accounts/{account_id}/toggle` | 启用或停用团队 WebDAV 账号 |
+
 常用点：
 
 - 创建账号时，`password` 为空会自动生成随机密码
 - 明文密码只在创建时返回一次
-- `root_folder_id` 为空表示可访问整个用户空间
+- 个人账号的 `root_folder_id` 为空表示可访问整个用户空间；团队账号的 `root_folder_id` 为空表示可访问整个团队空间
+- 创建账号时如果传了 `root_folder_id`，服务端会校验该文件夹确实属于账号所在的个人或团队工作空间
 - `/toggle` 没有请求体，每调用一次就在启用 / 停用之间切换
 - `/settings` 会返回两个字段：
   - `prefix`：服务端当前实际启用的挂载前缀
   - `endpoint`：面向客户端的可访问地址；如果配置了 `public_site_url`，这里会是绝对 URL，否则返回相对路径。多来源配置下，服务端会用当前请求 Origin（scheme + host[:port]）精确匹配 `public_site_url` 列表。命中时返回对应来源下的 WebDAV 地址，未命中时回退第一项。
 - `/test` 用来先验账号密码，不必真的挂载客户端
 - `GET /webdav-accounts` 是分页接口，支持 `limit` 和 `offset`
+- `GET /teams/{team_id}/webdav-accounts` 也是分页接口，支持 `limit` 和 `offset`
+- 团队成员可以创建团队 WebDAV 账号；普通成员只能列出、删除、切换自己创建的账号，团队 `owner` / `admin` 可以列出和管理该团队的全部 WebDAV 账号
+- 团队 WebDAV 账号必须通过 `/teams/{team_id}/webdav-accounts/*` 管理；个人 `/webdav-accounts/{id}` 接口遇到团队账号会返回无权操作
 
 创建请求示例：
 

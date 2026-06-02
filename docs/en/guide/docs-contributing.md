@@ -113,18 +113,18 @@ Same-directory short links are also fine, but avoid relative paths such as `../g
 
 ## Flow Diagram Rules
 
-When a plain-text flow diagram is enough, prefer a `text` code block:
+For flows, topologies, and data paths, prefer Mermaid:
 
-```text
-User action
-  |
-  +-- System decision
-      |
-      +-- Result A
-      +-- Result B
+```mermaid
+flowchart TD
+  Action["User action"] --> Decision{"System decision"}
+  Decision --> ResultA["Result A"]
+  Decision --> ResultB["Result B"]
 ```
 
-Usually there is no need to introduce an extra plugin just for diagrams. Documentation site stability and maintainability matter more.
+For simple admin entry points, paths, configuration values, and command output, keep using `text` code blocks. Do not turn a single-line hint into a diagram.
+
+Mermaid diagrams support click-to-zoom by default. Keep the normal document view compact: use short node labels, and put long explanations in the surrounding prose instead of inside nodes.
 
 ## Verify After Changes
 

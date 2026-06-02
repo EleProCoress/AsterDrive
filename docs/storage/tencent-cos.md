@@ -23,12 +23,10 @@ description: 腾讯云 COS 存储策略教程，覆盖 COS bucket、凭证、COR
 
 AsterDrive 里 `tencent_cos` 是独立的存储后端类型，但它不是从零实现一套对象存储逻辑。
 
-```text
-TencentCosDriver
-  |
-  +-- 基础对象读写 / 分片上传 / 下载分流：复用 S3-compatible 实现
-  |
-  +-- 腾讯云专属能力：COS endpoint 规范化、COS 签名、数据万象处理
+```mermaid
+flowchart TD
+  Driver["TencentCosDriver"] --> Base["基础对象读写 / 分片上传 / 下载分流<br/>复用 S3-compatible 实现"]
+  Driver --> Tencent["腾讯云专属能力<br/>COS endpoint 规范化、COS 签名、数据万象处理"]
 ```
 
 也就是说：
@@ -41,16 +39,12 @@ TencentCosDriver
 
 ## 先分清你要配哪几层
 
-```text
-腾讯云 COS
-  |
-  +-- Bucket / 访问凭证 / CORS / 数据万象
-      |
-      +-- AsterDrive Tencent COS 存储策略
-          |
-          +-- 策略组规则
-              |
-              +-- 用户或团队绑定策略组
+```mermaid
+flowchart TD
+  Cos["腾讯云 COS"] --> Bucket["Bucket / 访问凭证 / CORS / 数据万象"]
+  Bucket --> Policy["AsterDrive Tencent COS 存储策略"]
+  Policy --> Rule["策略组规则"]
+  Rule --> Binding["用户或团队绑定策略组"]
 ```
 
 只创建 COS 存储策略还不够。用户或团队上传时，会先命中策略组，再由策略组规则分配到某条存储策略。
@@ -118,14 +112,16 @@ AsterDrive 数据库记录了对象路径。人工移动、重命名或删除 CO
 
 上传时：
 
-```text
-浏览器 -> AsterDrive -> COS
+```mermaid
+flowchart LR
+  Browser["浏览器"] --> AsterDrive["AsterDrive"] --> Cos["COS"]
 ```
 
 下载时：
 
-```text
-COS -> AsterDrive -> 浏览器
+```mermaid
+flowchart LR
+  Cos["COS"] --> AsterDrive["AsterDrive"] --> Browser["浏览器"]
 ```
 
 好处是入口集中，排查简单。代价是应用节点要承接上传和下载带宽。
@@ -134,14 +130,16 @@ COS -> AsterDrive -> 浏览器
 
 上传时：
 
-```text
-浏览器 -> COS
+```mermaid
+flowchart LR
+  Browser["浏览器"] --> Cos["COS"]
 ```
 
 下载时：
 
-```text
-浏览器 -> COS 短时效 URL
+```mermaid
+flowchart LR
+  Browser["浏览器"] --> PresignedUrl["COS 短时效 URL"]
 ```
 
 好处是减轻 AsterDrive 节点带宽压力。前提是浏览器能访问 COS endpoint，并且 COS CORS 配置正确。

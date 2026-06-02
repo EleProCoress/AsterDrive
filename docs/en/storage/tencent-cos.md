@@ -23,14 +23,10 @@ If you only need generic S3-compatible object storage and do not need Tencent CO
 
 In AsterDrive, `tencent_cos` is an independent storage backend type, but it does not reimplement all object-storage behavior from scratch.
 
-```text
-TencentCosDriver
-  |
-  +-- Base object reads/writes, multipart upload, and download routing:
-  |   reuse the S3-compatible implementation
-  |
-  +-- Tencent-specific features:
-      COS endpoint normalization, COS signing, and COS CI processing
+```mermaid
+flowchart TD
+  Driver["TencentCosDriver"] --> Base["Base object reads/writes, multipart upload, and download routing<br/>Reuse the S3-compatible implementation"]
+  Driver --> Tencent["Tencent-specific features<br/>COS endpoint normalization, COS signing, and COS CI processing"]
 ```
 
 That means:
@@ -43,16 +39,12 @@ If you want to use COS CI features, choose **Tencent COS** when creating the pol
 
 ## First, Separate the Layers
 
-```text
-Tencent COS
-  |
-  +-- Bucket / credentials / CORS / COS CI
-      |
-      +-- AsterDrive Tencent COS storage policy
-          |
-          +-- Policy group rule
-              |
-              +-- User or team bound to the policy group
+```mermaid
+flowchart TD
+  Cos["Tencent COS"] --> Bucket["Bucket / credentials / CORS / COS CI"]
+  Bucket --> Policy["AsterDrive Tencent COS storage policy"]
+  Policy --> Rule["Policy group rule"]
+  Rule --> Binding["User or team bound to the policy group"]
 ```
 
 Creating only a COS storage policy is not enough. When users or teams upload files, they first match a policy group, and then a policy group rule assigns the upload to a storage policy.
@@ -120,14 +112,16 @@ After confirming basic reads and writes work, then consider switching to:
 
 During upload:
 
-```text
-Browser -> AsterDrive -> COS
+```mermaid
+flowchart LR
+  Browser["Browser"] --> AsterDrive["AsterDrive"] --> Cos["COS"]
 ```
 
 During download:
 
-```text
-COS -> AsterDrive -> Browser
+```mermaid
+flowchart LR
+  Cos["COS"] --> AsterDrive["AsterDrive"] --> Browser["Browser"]
 ```
 
 The advantage is a single entry point and simpler troubleshooting. The trade-off is that the application node must carry upload and download bandwidth.
@@ -136,14 +130,16 @@ The advantage is a single entry point and simpler troubleshooting. The trade-off
 
 During upload:
 
-```text
-Browser -> COS
+```mermaid
+flowchart LR
+  Browser["Browser"] --> Cos["COS"]
 ```
 
 During download:
 
-```text
-Browser -> Short-lived COS URL
+```mermaid
+flowchart LR
+  Browser["Browser"] --> PresignedUrl["Short-lived COS URL"]
 ```
 
 The advantage is reduced bandwidth pressure on the AsterDrive node. The prerequisite is that browsers can access the COS endpoint and COS CORS is configured correctly.

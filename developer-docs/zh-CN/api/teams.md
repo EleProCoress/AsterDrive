@@ -5,7 +5,7 @@
 团队相关能力分成两层：
 
 - 团队自身：团队资料、成员、团队审计
-- 团队工作空间：文件、文件夹、上传、搜索、分享、回收站
+- 团队工作空间：文件、文件夹、上传、搜索、分享、WebDAV 账号、回收站、后台任务
 
 ## 团队自身
 
@@ -42,7 +42,7 @@
 /api/v1/teams/{team_id}
 ```
 
-这套接口不是独立实现的一套“团队版文件系统”，而是把个人空间已有的文件 / 文件夹 / 上传 / 搜索 / 分享 / 回收站语义切到团队作用域。
+这套接口不是独立实现的一套“团队版文件系统”，而是把个人空间已有的文件 / 文件夹 / 上传 / 搜索 / 分享 / 回收站 / 后台任务 / WebDAV 账号语义切到团队作用域。
 
 ## 目录与文件
 
@@ -90,7 +90,7 @@
 - [文件 API](./files.md)
 - [文件夹 API](./folders.md)
 
-## 批量、搜索、分享与回收站
+## 批量、搜索、分享、回收站、后台任务与 WebDAV
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
@@ -111,8 +111,13 @@
 | `DELETE` | `/teams/{team_id}/trash/{entity_type}/{id}` | 彻底删除团队回收站条目 |
 | `DELETE` | `/teams/{team_id}/trash` | 清空团队回收站 |
 | `GET` | `/teams/{team_id}/tasks` | 查看该团队作用域下的后台任务 |
+| `POST` | `/teams/{team_id}/tasks/offline-download` | 创建团队空间链接导入任务 |
 | `GET` | `/teams/{team_id}/tasks/{id}` | 读取单个团队任务 |
 | `POST` | `/teams/{team_id}/tasks/{id}/retry` | 重试失败的团队任务 |
+| `GET` | `/teams/{team_id}/webdav-accounts` | 列出团队 WebDAV 账号 |
+| `POST` | `/teams/{team_id}/webdav-accounts` | 创建团队 WebDAV 账号 |
+| `DELETE` | `/teams/{team_id}/webdav-accounts/{account_id}` | 删除团队 WebDAV 账号 |
+| `POST` | `/teams/{team_id}/webdav-accounts/{account_id}/toggle` | 启用或停用团队 WebDAV 账号 |
 
 这几组能力同样复用个人空间契约：
 
@@ -121,6 +126,7 @@
 - [分享 API](./shares.md)
 - [回收站 API](./trash.md)
 - [后台任务 API](./tasks.md)
+- [WebDAV](./webdav.md)
 - [WOPI](./wopi.md)
 
 有几条团队特有语义需要额外记住：
@@ -131,6 +137,8 @@
 - 团队批量打包下载 ticket 只能在对应团队路由下消费，不能拿去个人 `/batch/archive-download/{token}` 复用
 - 团队 `GET /teams/{team_id}/files/upload/sessions` 和个人空间恢复接口返回相同结构，但只列出该团队作用域下当前用户发起、仍未过期且可恢复的 session
 - 团队上传初始化同样支持 `frontend_client_id`；恢复接口也支持同名 query 过滤，只列出同一前端实例创建的 session
+- 团队 `POST /teams/{team_id}/tasks/offline-download` 创建 `offline_download` 任务，把远端 HTTP/HTTPS 链接导入团队空间；请求体和个人 `/tasks/offline-download` 一致
+- 团队 WebDAV 账号用同一个 WebDAV 挂载入口认证，但账号的空间作用域是团队；普通成员只能管理自己创建的团队 WebDAV 账号，团队 `owner` / `admin` 可以管理该团队全部账号
 - 团队 `POST /teams/{team_id}/files/{id}/extract` 语义和个人空间一致：创建 `archive_extract` 任务，不会同步阻塞到解包完成
 - 团队 `POST /teams/{team_id}/files/{id}/extract` 支持 `filename_encoding`，且 `target_folder_id = null` 时默认解包到源压缩包所在目录
 - 团队 `POST /teams/{team_id}/batch/archive-compress` 语义和个人空间一致：创建 `archive_compress` 任务，把打包结果写回团队工作空间；`target_folder_id = null` 时优先写回选中项的共同父目录，没有共同父目录时写回团队根目录

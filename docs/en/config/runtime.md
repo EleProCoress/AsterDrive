@@ -37,14 +37,15 @@ Admin -> System Settings
 | Enable or limit read-only archive preview | `File Processing -> Archive Preview` |
 | Connect OIDC / Generic OAuth2 / SSO login providers | `Admin -> External Authentication` |
 | Disable public registration | `User Management -> Allow Public User Registration` |
-| Change the default quota for new users, then recheck actual team quotas after creating teams | `Storage and Retention -> New User Default Storage Quota` |
+| Change the default quota for new users; teams created without an explicit quota also use it, so recheck actual team quotas after creation | `Storage and Retention -> New User Default Storage Quota` |
 | Tune cookie security requirements and Access / Refresh Token TTLs | `Authentication and Cookies` |
 | Tune activation, email-change, and password reset link TTLs | `Authentication and Cookies` |
 | Enable email-code MFA, or allow TOTP users to use email codes as fallback | `Authentication and Cookies` |
 | Tune the external login email verification mail template | `Mail Delivery -> External Login Email Verification` |
 | Tune the login email code mail template | `Mail Delivery -> Login Email Code` |
 | Configure SMTP, send test mail, or edit transactional mail templates | `Mail Delivery` |
-| Tune retention for trash, version history, team archives, and task artifacts | `Storage and Retention` |
+| Tune retention for trash, version history, and team archives | `Storage and Retention` |
+| Tune temporary background task artifact retention | `Runtime -> Background Tasks` |
 | Tune the online extraction staging size limit | `File Processing -> Online Extraction Staging Size Limit` |
 | Tune thumbnail size limits and vips / ffmpeg / ffprobe processors | `File Processing -> Media Processing` |
 | Tune HTTP/HTTPS link import file size, speed, concurrency, and timeout | `File Processing -> Link Import` |
@@ -60,7 +61,7 @@ Admin -> System Settings
 - **Authentication and Cookies** - Cookie security rules, token TTLs, activation/email-change/reset link TTLs, email-code MFA
 - **Mail Delivery** - SMTP, sender, test mail, registration activation/email-change/password reset/external login email verification/login email code mail templates
 - **Network Access** - Browser cross-site access rules (CORS)
-- **Runtime** - Mail queue, background tasks, task-lane concurrency, share streaming playback sessions, periodic cleanup, low-level consistency checks, follower node health checks, list limits
+- **Runtime** - Mail queue, background tasks, temporary task artifact retention, task-lane concurrency, share streaming playback sessions, periodic cleanup, low-level consistency checks, follower node health checks, list limits
 - **Storage and Retention** - Trash, version history, default quotas
 - **File Processing** - Online extraction, archive building, archive preview, link import, thumbnails, media metadata, and media processors
 - **WebDAV** - Global switch and common system-file blocking
@@ -188,6 +189,7 @@ Administrators decide the pace of background work here. Default behavior:
 You can also tune:
 
 - Background task idle backoff maximum
+- Temporary background task artifact retention
 - Reserved fallback background task concurrency limit. It is currently used only by future unclassified task kinds, not by existing task lanes
 - Concurrency limit for archive tasks: online compression, online extraction, and archive preview
 - Thumbnail generation task concurrency limit
@@ -202,11 +204,13 @@ You can also tune:
 If there are no obvious performance issues, queue backlogs, or follower node detection delays, keep the defaults.  
 If you increase concurrency for the archive, thumbnail, or storage-migration lanes, matching tasks can run together more easily, and CPU, memory, network, and I/O pressure will increase with them. The reserved fallback concurrency cap is not a "global total concurrency" setting, so do not rely on it to limit every background task.
 
+`Task retention` controls how long temporary background task artifacts are kept, defaulting to `24` hours. It mainly affects temporary files or downloadable results produced by package downloads, online compression, online extraction, and link-import tasks. Task records themselves remain as history in the task list until an administrator conditionally cleans finished records.
+
 Audio and video on share pages create a short-lived streaming playback session first to support Range playback. The default TTL is `3` hours, configurable from `5` minutes to `24` hours. Longer TTLs work better for long background music playback; shorter TTLs reduce the access window after a link leak.
 
 ## Storage and Retention
 
-This group decides "how long data is kept" and "how much space new objects get by default". Default rules:
+This group decides "how long data is kept" and "how much space new users / new teams get by default". Default rules:
 
 | Item | Default |
 | --- | --- |
@@ -215,11 +219,12 @@ This group decides "how long data is kept" and "how much space new objects get b
 | Team archive retention | `7` days |
 | New user default storage quota | `0` (unlimited) |
 
-::: warning Default quotas affect only new objects
+::: warning Default quotas affect only accounts and teams created later
 
 - The UI label for this item is `New User Default Storage Quota`
+- When an administrator creates a team without entering an explicit quota, the team also uses this default value
 - After creating a team, recheck the actual team quota under `Admin -> Teams`
-- This setting **only affects objects created later**. Existing accounts or teams are not automatically rewritten.
+- This setting **only affects accounts and teams created later**. Existing accounts or teams are not automatically rewritten.
 
 :::
 
@@ -385,7 +390,7 @@ The primary node's service startup and shutdown are also recorded as audit event
 | Email-code MFA switch, fallback policy, TTL, and resend cooldown | Applied to later MFA login flows and newly sent email codes |
 | Cookie security, token TTLs | Applied to later login, refresh, and share password verification |
 | Avatar directory, avatar size limit | Applied to avatar uploads after the change |
-| Default quota | Only affects objects created later |
+| Default quota | Only affects accounts created later, and teams created later without an explicit quota |
 | Audit log switch and recorded scope | Later audit writes follow the new scope |
 | Audit log retention window | Background cleanup tasks work with the new rules |
 | Version history limit | Applied when new versions are produced later |

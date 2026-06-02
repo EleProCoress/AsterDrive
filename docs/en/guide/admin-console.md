@@ -277,6 +277,8 @@ This page is best for:
 
 Cleaning historical tasks only handles completed, failed, or canceled records. Queued, processing, and retrying tasks are not deleted.
 
+`System Settings -> Runtime -> Task Retention` controls how long temporary task artifacts are kept, such as package-download results, online-compression output, online-extraction staging files, or link-import temporary files. It does not automatically remove historical records from the task list; administrators clean those records conditionally from the Tasks page.
+
 For storage policy data migration tasks, the expanded details are usually more important. Start with the summary row to see whether the task failed, then expand it to check whether it stopped during preflight, copy, verification, or commit.
 
 After a migration succeeds, task details show migrated objects, skipped objects, failed objects, migrated bytes, and renamed opaque keys. Renamed opaque keys mean that the source policy had opaque blob keys that already existed in the target policy. AsterDrive did not merge them across policies; it copied the source object to a new key under the target policy to avoid overwriting or incorrectly reusing the existing target object.
@@ -329,7 +331,8 @@ Commonly changed items include:
 - WebDAV switch, system-file blocking, and blocking rules
 - Trash retention, version count, and team archive retention
 - Default quota for new users
-- Task retention and thumbnail source file size limit
+- Temporary task artifact retention
+- Thumbnail source file size limit
 - Online extraction source, staging, uncompressed size, entry count, path, and compression-ratio limits
 - Entry count, total source size, and output size limits for online compression and archive downloads
 - Archive preview switches and limits

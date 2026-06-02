@@ -16,18 +16,13 @@ WOPI 最常见的用途是让 `docx`、`xlsx`、`pptx` 这类文件在 OnlyOffic
 
 ## 推荐接入顺序
 
-```text
-准备真实 HTTPS 入口
-  |
-  +-- 填公开站点地址
-  |
-  +-- 部署或确认 WOPI 服务
-  |
-  +-- 在预览应用里导入 WOPI Discovery
-  |
-  +-- 启用对应文件类型的打开方式
-  |
-  +-- 用真实 Office 文件试开和保存
+```mermaid
+flowchart TD
+  Https["准备真实 HTTPS 入口"] --> PublicUrl["填公开站点地址"]
+  PublicUrl --> WopiService["部署或确认 WOPI 服务"]
+  WopiService --> Discovery["在预览应用里导入 WOPI Discovery"]
+  Discovery --> OpenMethods["启用对应文件类型的打开方式"]
+  OpenMethods --> Test["用真实 Office 文件试开和保存"]
 ```
 
 ## 入口在哪里

@@ -30,16 +30,12 @@
 
 ## 先分清三层
 
-```text
-远程节点记录
-  |
-  +-- 接收落点
-      |
-      +-- remote 存储策略
-          |
-          +-- 策略组规则
-              |
-              +-- 用户或团队绑定策略组
+```mermaid
+flowchart TD
+  Node["远程节点记录"] --> Ingress["接收落点"]
+  Ingress --> Policy["remote 存储策略"]
+  Policy --> Rule["策略组规则"]
+  Rule --> Binding["用户或团队绑定策略组"]
 ```
 
 每一层负责的事不同：
@@ -166,14 +162,16 @@ remote
 
 上传链路：
 
-```text
-浏览器 -> 主控节点 -> 从节点 -> 接收落点
+```mermaid
+flowchart LR
+  Browser["浏览器"] --> Primary["主控节点"] --> Follower["从节点"] --> Ingress["接收落点"]
 ```
 
 下载链路：
 
-```text
-接收落点 -> 从节点 -> 主控节点 -> 浏览器
+```mermaid
+flowchart LR
+  Ingress["接收落点"] --> Follower["从节点"] --> Primary["主控节点"] --> Browser["浏览器"]
 ```
 
 优点：
@@ -288,9 +286,10 @@ Remote Test Group
 
 常见做法：
 
-```text
-小文件 -> 主控本地或 S3
-大文件 -> 远程节点
+```mermaid
+flowchart TD
+  Small["小文件"] --> PrimaryStorage["主控本地或 S3"]
+  Large["大文件"] --> Remote["远程节点"]
 ```
 
 在策略组里配置多条规则，例如：

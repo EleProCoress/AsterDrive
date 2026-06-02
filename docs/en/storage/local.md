@@ -22,14 +22,11 @@ If you want object storage to carry capacity and bandwidth, see [S3 / MinIO / R2
 
 ## First, Separate the Layers
 
-```text
-Local directory / mounted disk
-  |
-  +-- AsterDrive local storage policy
-      |
-      +-- Policy group rule
-          |
-          +-- User or team bound to the policy group
+```mermaid
+flowchart TD
+  Disk["Local directory / mounted disk"] --> Policy["AsterDrive local storage policy"]
+  Policy --> Rule["Policy group rule"]
+  Rule --> Binding["User or team bound to the policy group"]
 ```
 
 Creating only a local storage policy is not enough. When users or teams upload files, they first match a policy group, and then a policy group rule assigns the upload to a storage policy.

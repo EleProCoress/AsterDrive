@@ -14,24 +14,20 @@ In daily use, you do not need to distinguish between regular upload, chunked upl
 
 ## How the Upload Path Is Decided
 
-```text
-User selects a file
-  |
-  +-- Who owns the current workspace?
-  |     +-- Personal user
-  |     +-- Team space
-  |
-  +-- Match the policy group bound to the user or team
-  |
-  +-- Match policy group rules by file size
-  |
-  +-- Hit a concrete storage policy
-        |
-        +-- local: write to local storage
-        +-- s3 + relay_stream: relay through the server to object storage
-        +-- s3 + presigned: browser uploads directly to object storage
-        +-- remote + relay_stream: primary node relays to a follower node
-        +-- remote + presigned: browser connects directly to the follower `base_url`
+```mermaid
+flowchart TD
+  Select["User selects a file"] --> Owner{"Who owns the current workspace?"}
+  Owner --> Personal["Personal user"]
+  Owner --> Team["Team space"]
+  Personal --> Group["Match the policy group bound to the user or team"]
+  Team --> Group
+  Group --> SizeRule["Match policy group rules by file size"]
+  SizeRule --> Policy["Hit a concrete storage policy"]
+  Policy --> Local["local: write to local storage"]
+  Policy --> S3Relay["s3 + relay_stream: relay through the server to object storage"]
+  Policy --> S3Presigned["s3 + presigned: browser uploads directly to object storage"]
+  Policy --> RemoteRelay["remote + relay_stream: primary node relays to a follower node"]
+  Policy --> RemotePresigned["remote + presigned: browser connects directly to follower base_url"]
 ```
 
 ::: tip Start with policy groups when diagnosing upload failures

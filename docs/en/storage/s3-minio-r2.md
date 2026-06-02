@@ -18,16 +18,12 @@ If you only use a single-node setup for yourself and do not have many files, a l
 
 ## First, Separate the Layers You Need to Configure
 
-```text
-Object storage service
-  |
-  +-- Bucket / credentials / CORS
-      |
-      +-- AsterDrive storage policy
-          |
-          +-- Policy group rule
-              |
-              +-- User or team bound to the policy group
+```mermaid
+flowchart TD
+  ObjectStorage["Object storage service"] --> Bucket["Bucket / credentials / CORS"]
+  Bucket --> Policy["AsterDrive storage policy"]
+  Policy --> Rule["Policy group rule"]
+  Rule --> Binding["User or team bound to the policy group"]
 ```
 
 Creating only an S3 storage policy is not enough. When users or teams actually upload files, they first match a policy group, then the policy group rule assigns the upload to a storage policy.
@@ -95,14 +91,16 @@ After confirming basic reads and writes work, then consider switching to:
 
 During upload:
 
-```text
-Browser -> AsterDrive -> Object storage
+```mermaid
+flowchart LR
+  Browser["Browser"] --> AsterDrive["AsterDrive"] --> ObjectStorage["Object storage"]
 ```
 
 During download:
 
-```text
-Object storage -> AsterDrive -> Browser
+```mermaid
+flowchart LR
+  ObjectStorage["Object storage"] --> AsterDrive["AsterDrive"] --> Browser["Browser"]
 ```
 
 The advantage is a single entry point and simpler troubleshooting. The trade-off is that the application node must carry upload and download bandwidth.
@@ -111,14 +109,16 @@ The advantage is a single entry point and simpler troubleshooting. The trade-off
 
 During upload:
 
-```text
-Browser -> Object storage
+```mermaid
+flowchart LR
+  Browser["Browser"] --> ObjectStorage["Object storage"]
 ```
 
 During download:
 
-```text
-Browser -> Short-lived object storage URL
+```mermaid
+flowchart LR
+  Browser["Browser"] --> PresignedUrl["Short-lived object storage URL"]
 ```
 
 The advantage is reduced bandwidth pressure on the AsterDrive node. The prerequisite is that browsers can access the object storage endpoint and CORS is configured correctly.
@@ -275,9 +275,10 @@ If all of these are normal, then consider switching real users or teams.
 
 A common production strategy is not "all files go to S3", but routing by size:
 
-```text
-Small files -> Local policy
-Large files -> S3 policy
+```mermaid
+flowchart TD
+  Small["Small files"] --> Local["Local policy"]
+  Large["Large files"] --> S3["S3 policy"]
 ```
 
 Open:

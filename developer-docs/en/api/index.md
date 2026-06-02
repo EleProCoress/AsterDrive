@@ -159,7 +159,11 @@ Typical team paths:
 /api/v1/teams/{team_id}/shares
 /api/v1/teams/{team_id}/trash
 /api/v1/teams/{team_id}/tasks
+/api/v1/teams/{team_id}/tasks/offline-download
+/api/v1/teams/{team_id}/webdav-accounts
 ```
+
+In other words, team spaces reuse the same file / folder / search / trash / task / WebDAV-account semantics under a team scope instead of using a separate business model.
 
 ## Module index
 

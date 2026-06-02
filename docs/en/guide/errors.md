@@ -1,514 +1,490 @@
 # Error Code Handling
 
-This page covers error codes that regular users and administrators may see in the frontend, API, and WebDAV clients: what they mean, what you can do yourself, and when to contact an administrator.  
-Jump to the error code or UI message you saw; you do not need to read it all.
+This page helps you understand AsterDrive errors: which field to read first, what a user can retry, and where an administrator should investigate.
 
-For 5xx-level server errors such as `internal_server_error`, `database_error`, or `config_error`, follow [Troubleshooting](/en/deployment/troubleshooting).
+Regular users do not need to memorize every code. In most cases, send the visible error, the time, and what you were doing to an administrator.
+If you are writing scripts, integrating with the API, or troubleshooting WebDAV / WOPI / remote nodes, read `error.code` first.
 
-## Error Code Ranges
+::: warning 0.3.0 Error Code Migration
+Issue 211 moves the public error contract toward one source: `ApiErrorCode`, exposed as `error.code`.
 
-Backend error codes are grouped by thousands:
+During the transition, the backend keeps both the top-level numeric `code` and the compatibility field `error.subcode`, so old frontends, scripts, and third-party clients do not break immediately. New code should use `error.code` directly; `error.subcode` is only an old-client fallback.
 
-| Range | Purpose |
+In 0.3.0, `error.subcode` will stop being exposed as a public API field, `ApiSubcode` will no longer be a source for new public error codes, and legacy subcode constructors plus message-encoded subcode parsing will be removed. Client copy and business logic will key only on `error.code`.
+
+The longer-term direction is for `ApiErrorCode` to replace the current top-level numeric `code`. Until that replacement is complete, treat the top-level numeric `code` only as an old-client compatibility layer or coarse category, not as the precise business reason.
+:::
+
+## Which Field To Read
+
+A failed AsterDrive response usually looks like this:
+
+```json
+{
+  "code": 2003,
+  "msg": "untrusted request origin for cookie-authenticated action",
+  "error": {
+    "code": "auth.request_origin_untrusted",
+    "internal_code": "E013",
+    "subcode": "auth.request_origin_untrusted",
+    "retryable": false
+  }
+}
+```
+
+Field meanings:
+
+| Field | How to use it |
 | --- | --- |
-| `0` | Success |
-| `1xxx` | Common / server |
-| `2xxx` | Authentication and sessions |
-| `3xxx` | Files / uploads / downloads |
-| `4xxx` | Storage policies |
-| `5xxx` | Folders |
-| `6xxx` | Shares |
+| `error.code` | **The new stable string error code**. Frontends, SDKs, scripts, and third-party clients should use this for business logic. |
+| `error.retryable` | Whether automatic retry is suggested. `true` does not guarantee success; it only means the failure is likely temporary. |
+| Top-level `code` | The old numeric category code. It is still returned for compatibility and quick coarse grouping; it will eventually be replaced by `ApiErrorCode`. |
+| `msg` | A human-readable diagnostic message. Do not branch on it and do not use it as an i18n key. |
+| `error.internal_code` | Backend internal error-source code, mainly for logs and debugging. Normal clients should not depend on it. |
+| `error.subcode` | Compatibility field before 0.3.0. New code should not depend on it. |
+
+When reporting an issue or asking an administrator for help, include:
+
+1. `error.code`
+2. Top-level numeric `code`
+3. `msg`
+4. Time and operation that produced the error
+
+Only pasting an English message makes the issue harder to locate.
+
+## Numeric Codes Are Categories
+
+The top-level numeric `code` is still useful, but it is now closer to an error category than the exact business reason. New clients should not treat it as the long-term primary decision field; the primary field will be `ApiErrorCode`.
+
+| Range | Category | Common stable string codes |
+| --- | --- | --- |
+| `0` | Success | `success` |
+| `1xxx` | Common, server, mail, rate limits | `bad_request`, `not_found`, `database.error`, `mail.delivery_failed` |
+| `2xxx` | Login, sessions, permissions, MFA | `auth.credentials_failed`, `auth.token_expired`, `forbidden`, `auth.mfa_failed` |
+| `3xxx` | Files, uploads, thumbnails, locks | `file.not_found`, `upload.session_expired`, `thumbnail.failed`, `resource.locked` |
+| `4xxx` | Storage policies, drivers, quotas, remote storage | `storage.quota_exceeded`, `storage.auth_failed`, `storage.transient_failure` |
+| `5xxx` | Folders | `folder.not_found` |
+| `6xxx` | Shares | `share.expired`, `share.password_required` |
+
+Use the numeric range for direction, then use `error.code` for the actual handling.
+
+If your client only shows the numeric code, use this table to map it to the corresponding stable string code:
+
+| Numeric `code` | Corresponding `error.code` |
+| --- | --- |
+| `0` | `success` |
+| `1000` | `bad_request` |
+| `1001` | `not_found` |
+| `1002` | `internal_server_error` |
+| `1003` | `database.error` |
+| `1004` | `config.error` |
+| `1005` | `endpoint.not_found` |
+| `1006` | `rate_limited` |
+| `1007` | `mail.not_configured` |
+| `1008` | `mail.delivery_failed` |
+| `1009` | `conflict` |
+| `2000` | `auth.failed` |
+| `2001` | `auth.token_expired` |
+| `2002` | `auth.token_invalid` |
+| `2003` | `forbidden` |
+| `2004` | `auth.pending_activation` |
+| `2005` | `auth.contact_verification_invalid` |
+| `2006` | `auth.contact_verification_expired` |
+| `2007` | `auth.token_missing` |
+| `2008` | `auth.credentials_failed` |
+| `2009` | `auth.mfa_failed` |
+| `2010` | `auth.refresh_token_stale` |
+| `2011` | `auth.refresh_token_reuse_detected` |
+| `3000` | `file.not_found` |
+| `3001` | `file.too_large` |
+| `3002` | `file.type_not_allowed` |
+| `3003` | `file.upload_failed` |
+| `3004` | `upload.session_not_found` |
+| `3005` | `upload.session_expired` |
+| `3006` | `upload.chunk_failed` |
+| `3007` | `upload.assembly_failed` |
+| `3008` | `thumbnail.failed` |
+| `3009` | `resource.locked` |
+| `3010` | `precondition_failed` |
+| `3011` | `upload.assembling` |
+| `4000` | `storage.policy_not_found` |
+| `4001` | `storage.driver_error` |
+| `4002` | `storage.quota_exceeded` |
+| `4003` | `storage.unsupported_driver` |
+| `4004` | `storage.auth_failed` |
+| `4005` | `storage.permission_denied` |
+| `4006` | `storage.misconfigured` |
+| `4007` | `storage.object_not_found` |
+| `4008` | `storage.rate_limited` |
+| `4009` | `storage.transient_failure` |
+| `4010` | `storage.precondition_failed` |
+| `4011` | `storage.operation_unsupported` |
+| `5000` | `folder.not_found` |
+| `6000` | `share.not_found` |
+| `6001` | `share.expired` |
+| `6002` | `share.password_required` |
+| `6003` | `share.download_limit_reached` |
+
+## Common Paths
+
+### Login, Sessions, And Accounts
+
+If login fails, start here:
+
+- `auth.credentials_failed` / `auth.failed`: username, email, password, or credential is wrong. Re-enter it; if it is correct, ask an administrator to check account status.
+- `auth.pending_activation`: the account is not activated. Verify the email or ask an administrator to activate it manually.
+- `auth.contact_verification_invalid` / `auth.contact_verification_expired`: the verification link is invalid or expired. Send a new verification email.
+- `auth.token_missing` / `auth.token_invalid` / `auth.token_expired`: login state is missing, invalid, or expired. Refresh the page; if it repeats, clear cookies and log in again.
+- `auth.refresh_token_stale`: refresh token is too old, often caused by multiple devices, an old page, or an old session. Log in again.
+- `auth.refresh_token_reuse_detected`: refresh token replay was detected. The session is rejected; revoke other sessions and log in again.
+- `auth.account_disabled`: the account is disabled. Regular users must contact an administrator.
+- `auth.registration_disabled`: public registration is disabled. Ask an administrator to create an account or enable registration.
 
-Once you know the range, a new error code roughly tells you which category of problem it belongs to.
+When password login, passkeys, external auth, and MFA overlap, still trust `error.code` first instead of a generic "login failed" message.
 
-Many errors also include a more specific `error.code`. This is the new stable string error code. The frontend, scripts, and third-party clients should check it first instead of parsing the English `msg`. `msg` is only suitable as a fallback explanation or troubleshooting clue.
+### MFA And Passkeys
 
-Before 0.3.0, some responses also include `error.subcode`. It is only a transition field for older clients. New scripts, integrations, and frontend logic should use `error.code`. When troubleshooting or opening an issue, record `error.code` first, then the numeric top-level `code`.
+MFA errors usually happen during second-factor verification, authenticator setup, email-code verification, or recovery-code flows:
 
----
+- `auth.mfa_failed`: generic MFA failure. Check whether the same response contains a more specific code.
+- `auth.mfa_flow_invalid` / `auth.mfa_flow_expired`: the verification flow is invalid or expired. Return to login and start again.
+- `auth.mfa_code_invalid`: authenticator code or recovery code is wrong. Check authenticator time, or use an unused recovery code.
+- `auth.mfa_attempts_exceeded`: too many attempts. Restart the login flow.
+- `auth.mfa_factor_required`: the account requires MFA, but the factor state is incomplete. Ask an administrator to reset MFA.
+- `auth.mfa_factor_already_exists`: the account already has this factor type.
+- `auth.mfa_recovery_code_used`: the recovery code has already been used. Regenerate recovery codes after login.
+- `auth.mfa_email_code_required` / `auth.mfa_email_code_expired`: send an email code first, or send a new one because it expired.
 
-## Common (1xxx)
+Passkey errors:
 
-### `bad_request` (1000)
+- `passkey.name_invalid` / `passkey.name_too_long`: passkey name is invalid or too long. Rename and retry.
+- `passkey.not_discoverable`: the browser or security key did not create a discoverable credential. Use a supported device / browser, or add the passkey again.
 
-Request parameters are invalid.
+Use HTTPS in production. Many WebAuthn / passkey behaviors do not work as expected on insecure origins.
 
-For regular users, this usually means a form field is wrong, such as an invalid character in a name or an invalid date format. Check the form message and correct it.
+### Permissions, Teams, And Workspaces
 
-If you are sure the parameters are correct, the frontend and backend versions may be inconsistent. Force-refresh the page.
+Top-level `code = 2003` or `error.code = forbidden` only means "not allowed". The specific reason is in `error.code`:
 
-Request-source validation formatting problems include more specific suberrors:
+- `auth.admin_required`: administrator permission required.
+- `team.not_member`: current account is not a member of the team.
+- `team.owner_required`: team owner permission required.
+- `team.admin_or_owner_required`: team administrator or owner permission required.
+- `workspace.scope_denied`: the resource is outside the current workspace.
+- `share.scope_denied`: the share scope does not allow access to this resource.
+- `lock.not_owner`: current user is not the lock holder or resource owner.
+- `external_auth.provider_disabled` / `external_auth.policy_denied`: external-auth provider is disabled, or policy denies this operation.
 
-- `validation.request_origin_invalid`: invalid `Origin` request header format
-- `validation.request_referer_invalid`: invalid `Referer` request header format
-- `validation.request_host_invalid`: invalid request Host, commonly caused by wrong reverse proxy forwarded-header configuration
-- `validation.request_scheme_invalid`: invalid request scheme, commonly caused by an HTTPS reverse proxy not passing `X-Forwarded-Proto` correctly
-- `validation.request_header_value_invalid`: request-source-related header is too long or cannot be processed
+Regular users should check whether they are in the correct team and workspace.
+Administrators should check team membership, roles, share scope, and external-auth policies.
 
-### `not_found` (1001) / `endpoint_not_found` (1005)
+### CSRF, Request Source, And Reverse Proxies
 
-The requested resource or endpoint does not exist.
+When cookie-authenticated admin, WOPI, or WebDAV-related requests fail, common codes are:
 
-- `not_found`: the concrete object you accessed, such as a user or configuration item, does not exist
-- `endpoint_not_found`: the URL route itself does not exist; usually you manually changed the URL or the frontend version does not match
-
-### `internal_server_error` (1002) / `database_error` (1003) / `config_error` (1004)
-
-Server-side exception.
-
-Regular users: retry later once. If it keeps failing, send the error code and approximate time to an administrator.  
-Administrators: read [Troubleshooting](/en/deployment/troubleshooting).
-
-### `rate_limited` (1006)
-
-Requests are too frequent and were blocked by rate limiting.
-
-- Regular users: wait a few seconds before trying again
-- Administrators: if legitimate users hit this often, adjust `[rate_limit]` or upstream reverse proxy rate limits in [Rate Limiting](/en/config/rate-limit)
-
-### `mail_not_configured` (1007)
-
-The mail system is not configured, so activation emails, password reset emails, and similar messages cannot be sent.
-
-If you are a regular user, ask an administrator to configure SMTP. If you are an administrator, fill SMTP information in `Admin -> System Settings -> Mail Delivery` and send a test email to verify.
-
-### `mail_delivery_failed` (1008)
-
-Mail delivery failed.
-
-First send a test email from `Admin -> System Settings -> Mail Delivery`, then check server logs for SMTP / mail outbox errors. Common causes:
-
-- Wrong SMTP configuration, such as port, TLS mode, or authentication
-- Recipient domain rejects mail
-- The server has been blocked by the recipient mail provider
-
-### `conflict` (1009)
-
-Resource conflict. Most commonly, the thing you are creating or changing already exists:
-
-- Duplicate username, email, or login identifier
-- File / folder with the same name already exists in the directory
-- Team member already exists
-- WebDAV username is already occupied
-- Remote node binding hit a uniqueness conflict
-
-Regular users should follow the page prompt, choose another name, or refresh and retry.
-Administrators encountering this during batch import, script calls, or remote-node enrollment should first read `error.code`; it is more specific than `conflict` itself. Older transition responses may also include `error.subcode`, but that field is only a compatibility reference.
-
----
-
-## Authentication (2xxx)
-
-### `auth_failed` (2000)
-
-Username or password is wrong.
-
-If you are sure the password is correct, the account may be locked by an administrator. In that case the error code is usually `forbidden`.
-
-### `token_expired` (2001) / `token_invalid` (2002)
-
-Login has expired or is invalid.
-
-Normally the frontend refreshes automatically and continues without interruption. If it repeats, common causes are:
-
-- Browser disabled cookies or third-party cookies
-- You or an administrator manually revoked the session ("revoke all sessions" under `Admin -> Users`)
-- Server clock is badly skewed
-
-Clear browser cookies and log in again.
-
-### `forbidden` (2003)
-
-You do not have permission to perform this operation.
-
-- Regular user operating admin features: switch to an account with permission
-- Administrator disabled: contact another administrator
-- Operating another user's resource: check share permissions or team membership permissions
-
-The same `forbidden` error uses `error.code` to explain the concrete reason. Before 0.3.0, the same value may also appear in the compatibility field `error.subcode`:
-
-- `auth.admin_required`: administrator permission required
-- `auth.account_disabled`: account has been disabled
-- `auth.request_source_untrusted` / `auth.request_origin_untrusted` / `auth.request_referer_untrusted`: Cookie-authenticated request source is untrusted, usually related to cross-site requests, reverse proxy site-address configuration, or browser origin
-- `auth.request_source_missing`: request that requires source validation is missing source information such as `Origin` / `Referer`
-- `auth.csrf_cookie_missing` / `auth.csrf_header_missing` / `auth.csrf_token_invalid`: missing CSRF Cookie, missing `X-CSRF-Token` request header, or token validation failed; refresh the page and retry
-- `auth.registration_disabled`: public registration is disabled
-- `auth.session_user_mismatch`: current session and current account do not match; log in again
-- `team.not_member`: current account is not a member of the team
-- `team.owner_required`: team owner permission required
-- `team.admin_or_owner_required`: team administrator or owner permission required
-- `workspace.scope_denied`: resource does not belong to the current workspace
-- `share.scope_denied`: share scope does not allow access to this resource
-- `lock.not_owner`: current user is not the lock holder or resource owner
-- `external_auth.provider_disabled` / `external_auth.policy_denied`: external authentication provider is disabled, or policy does not allow the current operation
-- `wopi.app_disabled` / `wopi.request_origin_untrusted` / `wopi.request_referer_untrusted`: WOPI app is disabled, or WOPI request source is untrusted
-
-### `pending_activation` (2004)
-
-The account is not activated yet and needs email verification first.
-
-Check the activation email received during registration. If it is missing:
-
-- Check spam
-- Use the `Resend verification email` entry on the login page or under `Settings -> Security`
-- If system mail is not configured, ask an administrator to activate manually
-
-### `contact_verification_invalid` (2005) / `contact_verification_expired` (2006)
-
-The email verification link is invalid or expired.
-
-Links are time-limited, 24 hours by default. Request a new one. If `invalid` repeats, check whether the mail client truncated the link, which is common with enterprise mail systems.
-
-### Passkey-Related Suberrors
-
-Passkey problems usually still belong to main error codes such as `bad_request`, `auth_failed`, or `token_invalid`. Check `error.code` for accuracy:
-
-- `passkey.name_invalid`: passkey name contains control characters; choose a normal name
-- `passkey.name_too_long`: passkey name is too long; shorten it and retry
-- `passkey.not_discoverable`: browser or security key did not create a discoverable credential; use a device/browser that supports passkeys, or add the passkey again
-
-If the login page says the current browser does not support passkeys, the browser, system, or current access origin usually does not meet WebAuthn requirements. HTTPS is recommended for production deployments.
-
-### MFA-Related Suberrors
-
-MFA problems usually happen during login second-factor verification, sending email codes, authenticator setup, MFA disable, or recovery-code regeneration:
-
-- `auth.mfa_flow_invalid`: MFA login or setup flow is invalid; return to the login page or restart setup
-- `auth.mfa_flow_expired`: flow expired, about 5 minutes by default; start again
-- `auth.mfa_code_invalid`: authenticator code or recovery code is incorrect; check whether authenticator time is synced, or use an unused recovery code
-- `auth.mfa_attempts_exceeded`: too many attempts; restart the login flow
-- `auth.mfa_factor_required`: account requires an enabled MFA factor but current state is incomplete; contact an administrator to reset MFA
-- `auth.mfa_factor_already_exists`: this account already has TOTP enabled; cannot add the same factor again
-- `auth.mfa_recovery_code_used`: recovery code has already been used; regenerate recovery codes after login
-- `auth.mfa_email_code_required`: email-code verification was selected, but no code has been sent yet; send one first
-- `auth.mfa_email_code_expired`: the email code has expired; send a new one
-
-Email-code MFA also depends on mail delivery and a verified email address. If the login page does not show an email-code option, the usual causes are that the administrator has not enabled it, the account email is not verified, or the site does not allow TOTP users to fall back to email.
-
-If both authenticator and recovery codes are lost and there is no usable email-code path, regular users cannot bypass MFA themselves. Contact an administrator to reset MFA from `Admin -> Users -> User Details -> Security Actions`.
-
-### External Authentication Problems
-
-External authentication failures usually show "external login failed" on the login page. Backend main error codes may be `auth_failed`, `forbidden`, `bad_request`, or `mail_delivery_failed`.
-
-Administrators should check in this order:
-
-1. Whether `Admin -> System Settings -> Site Configuration -> Public site URL` is correct
-2. Whether the provider is enabled in `Admin -> External Auth`
-3. Whether the redirect URI has been registered with the identity provider
-4. Whether Issuer URL, Client ID, Client Secret, scope, and claim mapping are correct
-5. If email verification is involved, whether `Admin -> System Settings -> Mail Delivery` can send external-login email verification messages
-
----
-
-## Files / Uploads (3xxx)
-
-### `file_not_found` (3000)
-
-The file does not exist or has been deleted.
-
-- You or someone else just deleted it
-- The file was moved to trash -> find it in left-side `Trash`
-- The file was permanently cleaned -> it is gone; see [Backup and Restore](../deployment/backup)
-
-### `file_too_large` (3001)
-
-The file exceeds the maximum size allowed by the policy.
-
-Policy-level limits are set by administrators in `Admin -> Storage Policies`. If you are a legitimate user, ask an administrator to adjust the limit or switch policy groups.
-
-### `file_type_not_allowed` (3002)
-
-The file type is forbidden by the policy.
-
-Same as above, this is controlled by policy. Common restricted extensions include executables, usually for security.
-
-### `file_upload_failed` (3003)
-
-Generic upload failure.
+- `auth.request_source_missing`: request is missing source information such as `Origin` / `Referer`.
+- `auth.request_source_untrusted`: request source is untrusted.
+- `auth.request_origin_untrusted` / `auth.request_referer_untrusted`: `Origin` or `Referer` is not trusted.
+- `auth.csrf_cookie_missing` / `auth.csrf_header_missing` / `auth.csrf_token_invalid`: CSRF cookie, request header, or token is wrong.
+- `validation.request_origin_invalid` / `validation.request_referer_invalid`: source header format is invalid.
+- `validation.request_host_invalid` / `validation.request_scheme_invalid`: Host or scheme from the reverse proxy is wrong.
+- `validation.request_header_value_invalid`: source-related header is too long or cannot be parsed.
 
 Check in this order:
 
-1. Whether the network was interrupted
-2. Whether the browser console has a more specific error
-3. Whether server logs around that time contain a more precise `error_code`
+1. Refresh the page and log in again.
+2. Confirm the public site URL in system settings matches the actual access URL.
+3. Confirm the reverse proxy forwards `Host`, `X-Forwarded-Host`, and `X-Forwarded-Proto` correctly.
+4. For cross-origin follower uploads, WOPI, or custom scripts, confirm origin and CORS settings match.
 
-### `upload_session_not_found` (3004) / `upload_session_expired` (3005)
+### Files, Folders, And Conflicts
 
-The chunked upload session does not exist or has expired.
+File / folder codes:
 
-Most resumable upload sessions are valid for 24 hours. S3 / follower-node single presigned direct-upload sessions are usually valid for 1 hour. Old sessions remain valid after service restart because they are persisted in the database; the server-returned `expires_at` is authoritative. If this appears:
+- `file.not_found` / `folder.not_found`: the file or folder does not exist, was deleted, moved to trash, or permanently cleaned.
+- `file.name_conflict` / `folder.name_conflict`: another item with the same name exists in the directory. Rename or refresh and retry.
+- `file.etag_mismatch` / `file.modified_during_write` / `precondition_failed`: another client changed the file before your submission. Refresh and edit again.
+- `resource.locked`: the resource is held by a WebDAV LOCK. Wait for the lock to expire, or have an administrator unlock it.
+- `file.too_large`: file exceeds policy limit. Ask an administrator to adjust policy or policy group.
+- `file.type_not_allowed`: policy forbids this file type.
 
-- Your upload exceeded session lifetime -> start again
-- You reloaded the page -> the frontend restores the session from localStorage; if the session was cleaned on the server, this error appears
-- You are trying to resume from another device -> unsupported; continuation must happen in the same browser and same localStorage
+If the database still references an object but the storage backend cannot find the actual content, you may see `storage.object_not_found` or `storage.not_found`. This is not a normal user-fixable 404; administrators should check underlying storage and backup-restore history.
 
-Start the upload again.
+### Uploads And Large Files
 
-### `chunk_upload_failed` (3006)
+For upload failures, first identify the stage:
 
-A single chunk in a chunked upload failed.
+- `upload.session_not_found` / `upload.session_expired`: upload session does not exist or expired. Start the upload again.
+- `upload.assembling`: file is still being assembled on the server. This is not a failure; wait a few seconds and check again.
+- `upload.chunk_failed`: one chunk failed, usually related to network, disk space, or temporary directories.
+- `upload.assembly_failed`: server-side assembly failed. Administrators should inspect tasks and server logs.
+- `upload.status_conflict` / `upload.previous_failure`: upload session state has changed; usually do not reuse the old session.
+- `upload.incomplete_chunks` / `upload.incomplete_parts` / `upload.missing_part`: some chunks or S3 parts are missing.
+- `upload.chunk_number_out_of_range` / `upload.part_number_out_of_range` / `upload.part_numbers_too_many`: submitted chunk / part numbers are invalid.
+- `upload.chunk_size_mismatch` / `upload.request_size_mismatch` / `upload.final_object_size_mismatch`: declared size and actual size differ.
+- `upload.temp_dir_create_failed`, `upload.temp_file_write_failed`, `upload.local_staging_write_failed`, `upload.assembly_io_failed`: server temporary directory, staging area, or disk write failed.
 
-Most common causes:
+Users can retry once. If it repeats, administrators should check:
 
-- Disk full (administrator checks the partition containing `data/.uploads`)
-- User quota is full
-- Default policy or bound policy group is disabled
+- Whether `data/.uploads`, `data/.tmp`, or custom temp directories are on a full partition
+- Whether user / team / policy quota is exhausted
+- Whether the S3 multipart or remote presigned browser-direct URL is reachable
+- Whether the remote follower is healthy and has an applied default ingress target
 
-### `upload_assembly_failed` (3007)
+### Storage Policies, S3, And Remote Nodes
 
-Server-side chunk assembly failed.
+Storage errors are usually not solved by clicking retry repeatedly. Administrators should handle them by `error.code`:
 
-This usually means uploaded chunk data is incomplete or hash verification failed. Re-upload. If it repeats, an intermediate network component may be corrupting transfer.
+- `storage.policy_not_found`: user, team, or policy group references a missing policy.
+- `storage.quota_exceeded`: user, team, or system quota is exhausted.
+- `storage.unsupported_driver` / `storage.operation_unsupported` / `storage.unsupported`: driver or remote node does not support this operation.
+- `storage.auth_failed` / `storage.auth`: S3 / remote credential or binding authentication failed.
+- `storage.permission_denied` / `storage.permission`: credentials are valid but cannot read or write the object / prefix.
+- `storage.misconfigured`: policy is incomplete or inconsistent, or the remote follower is not ready.
+- `storage.rate_limited`: object storage, gateway, or follower rate-limited the request.
+- `storage.transient_failure` / `storage.transient`: temporary network, object storage, or follower failure. Retry later.
+- `storage.precondition_failed` / `storage.precondition`: conditional write, remote ingress state, or concurrent operation conflict.
+- `storage.driver_error` / `storage.unknown`: driver returned an unclassified error. Check server logs.
 
-### `thumbnail_failed` (3008)
+Remote-node codes:
 
-Thumbnail generation failed.
+- `remote_node.disabled`: remote node is disabled.
+- `remote_node.enrollment_required`: follower has not completed enrollment.
+- `remote_node.unique_conflict`: remote-node binding or unique field conflict.
+- `managed_ingress.required`, `managed_ingress.default_missing`, `managed_ingress.default_not_applied`: follower has no usable default ingress target.
+- `managed_ingress.local_path_invalid`: follower local ingress path is invalid, commonly because it escapes the allowed root.
+- `managed_ingress.driver_unsupported`: current ingress target driver is unsupported.
+- `managed_ingress.single_primary_required`: this follower must be bound to only one primary.
+- `master_binding.disabled`: master / follower binding is disabled.
 
-This does not affect the file itself. Common causes:
+If a remote policy uses browser-direct upload, also confirm browsers can reach the follower `base_url` and the follower CORS policy allows required upload headers.
 
-- File is damaged
-- File type is not in the thumbnail support list
-- Thumbnail worker failed (administrators check `Admin -> Tasks`)
-- Media processor is not enabled, or `vips` / `ffmpeg` command is unavailable
+### Shares
 
-### `resource_locked` (3009)
+Share errors:
 
-The resource is held by a WebDAV LOCK.
+- `share.not_found`: share does not exist, token is wrong, share was deleted, or source file was deleted.
+- `share.expired`: share expired. Ask the creator to generate a new one.
+- `share.password_required`: share password must be verified first, or the verification cookie was lost / expired.
+- `share.download_limit_reached`: download limit has been reached.
+- `share.scope_denied`: share scope does not allow access to the target file or folder.
 
-- Wait for the lock to expire; locks have a timeout by default
-- Manually unlock in `Admin -> Locks` with administrator permission
-- Ask the occupying client to exit normally; ideally the client sends UNLOCK
+Note: share password verification is cached. After changing a share password, already verified visitors may keep access until the cache expires.
 
-### `precondition_failed` (3010)
+### Thumbnails, Avatars, And Archive Preview
 
-A precondition is not satisfied, often from multiple clients editing the same file at the same time.
+These errors usually do not mean the original file is gone. They mean a processing pipeline failed.
 
-Refresh the page to get the latest version, then submit again.
+Thumbnails:
 
-If the error message contains `managed_ingress.*`, the follower node's ingress target is usually not ready. Administrators should check this follower in `Admin -> Follower Nodes`:
+- `thumbnail.failed`: generic thumbnail failure.
+- `thumbnail.source_too_large`: source file exceeds thumbnail processing limit.
+- `thumbnail.processor_unavailable`: media processor is unavailable; check `vips` / `ffmpeg` or the relevant config.
+- `thumbnail.format_guess_failed` / `thumbnail.decode_failed` / `thumbnail.encode_failed`: format detection, decoding, or encoding failed.
+- `thumbnail.source_open_failed` / `thumbnail.source_stream_failed`: reading the source failed, possibly involving underlying storage.
+- `thumbnail.task_panicked`: thumbnail task panicked; administrators should check tasks and logs.
 
-- Whether it has a default ingress target
-- Whether the default ingress target has been applied
-- Whether the local ingress path escapes `server.follower.managed_ingress_local_root`
-- Whether this follower is bound to only one primary
+Avatars:
 
-### `upload_assembling` (3011)
+- `avatar.file_required`: no avatar file was submitted.
+- `avatar.upload_read_failed`: reading uploaded avatar failed.
+- `avatar.processor_unavailable`: avatar processor is unavailable.
+- `avatar.empty_image`: image is empty or has no valid dimensions.
+- `avatar.render_failed` / `avatar.output_invalid`: rendering or output failed.
 
-The file is still being assembled from chunks on the server. **This is not an error**.
+Archive preview:
 
-Wait a few seconds and retry complete. Large files take longer to assemble because the server merges chunks and calculates SHA256. Do not retry repeatedly right away.
+- `archive_preview.disabled`: global archive preview switch is off.
+- `archive_preview.user_disabled` / `archive_preview.share_disabled`: user-space or share-page archive preview is disabled.
+- `archive_preview.unsupported_type`: unsupported archive type.
+- `archive_preview.source_too_large`: source archive is too large.
+- `archive_preview.invalid_archive`: archive is damaged or invalid.
+- `archive_preview.manifest_too_large`: generated listing exceeds the limit.
+- `archive_preview.source_size_mismatch`: source size differs from the record during scanning.
+- `archive_preview.rejected`: background task rejected execution, usually due to permission, file state, or runtime-condition changes.
 
-### Archive Preview Suberrors
+If first open only shows "generating", wait for the archive preview task in Task Center to finish, then open again.
 
-archive preview errors usually hang under `bad_request` or `forbidden`. Check `error.code`:
-
-- `archive_preview.disabled`: global archive preview switch is not enabled
-- `archive_preview.user_disabled`: archive preview for logged-in users is not enabled
-- `archive_preview.share_disabled`: archive preview for share pages is not enabled
-- `archive_preview.unsupported_type`: current file is not a supported archive format
-- `archive_preview.source_too_large`: source archive exceeds preview size limit
-- `archive_preview.invalid_archive`: archive is damaged or invalid
-- `archive_preview.manifest_too_large`: generated listing exceeds manifest size limit
-- `archive_preview.source_size_mismatch`: source file size differs from the record during scanning; usually re-upload or check underlying storage
-- `archive_preview.rejected`: background task refused to run, probably because the file changed, permission changed, or runtime limits are no longer satisfied
-
-If the first open only shows "generating", that is not an error. Wait for `archive preview generation` in `Admin -> Tasks` / `Task Center` to finish, then open again.  
-If the UI says the current filename encoding cannot parse this ZIP, switch `Filename encoding` in the archive preview toolbar and retry. This kind of prompt may not have a separate backend error code.
-
----
-
-## Storage Policies (4xxx)
-
-### `storage_policy_not_found` (4000)
-
-The policy does not exist.
-
-Usually a policy bound to a user was deleted, or a policy group rule references a deleted policy. Administrators should check `Admin -> Storage Policies` / `Policy Groups`.
-
-### `storage_driver_error` (4001)
-
-The storage backend returned an error.
-
-Check by driver type:
-
-- `local`: check directory permissions and disk space
-- `s3`: check endpoint, credentials, and whether the bucket exists; if the S3 side is slow or down, AsterDrive's configured timeout may trigger
-- `remote`: check whether the bound remote node is enabled, whether the current transport mode passes connection testing, and whether the follower has completed enrollment and is healthy; also confirm the follower has an applied default ingress target
-- Other: read the concrete error
-
-If the remote policy uses `presigned`, also check whether the remote node uses direct transport, whether browsers can reach the follower `base_url`, and whether the remote node capability summary supports internal protocol `v2` and `browser_presigned_cors`. When the browser connects directly to the follower, CORS must allow `content-type` / `range` and expose response headers such as `ETag`, `Accept-Ranges`, `Content-Range`, and `Content-Length`.
-
-### `storage_quota_exceeded` (4002)
-
-Storage space is insufficient.
-
-- User quota full -> clean trash, delete large files, or ask an administrator to increase quota
-- Team space full -> same, handled by a team administrator
-- System total quota full -> administrator increases policy capacity
-
-### `unsupported_driver` (4003)
-
-The driver type configured by the policy is not supported in the current version.
-
-This usually happens after downgrading from a higher version, or after manually editing the DB incorrectly. Re-select a supported driver in `Admin -> Storage Policies`.
-
-### `storage_auth_failed` (4004)
-
-Storage backend authentication failed.
-
-- S3 / MinIO: check Access Key, Secret Key, session token, signature version, and endpoint
-- remote: check whether the remote node binding is still valid, and whether binding information on the primary and follower was deleted
-- Local driver usually does not return this unless the upper layer configured the storage type incorrectly
-
-This kind of error is not solved by user retry. Administrators must fix credentials first.
-
-### `storage_permission_denied` (4005)
-
-Credentials are valid, but they do not have permission for the current operation.
-
-Common causes:
-
-- S3 credentials are read-only and cannot write
-- Bucket policy does not allow access to the current prefix
-- Local directory permissions do not allow the current process to write
-- Remote follower ingress path or internal API permission is wrong
-
-Fix storage backend permissions first, then retry upload.
-
-### `storage_misconfigured` (4006)
-
-The storage policy configuration itself is incomplete or inconsistent.
-
-Check:
-
-- endpoint, bucket, region, base path
-- Whether the local storage root exists and is in the expected place
-- Whether the remote follower completed enroll and has an applied default ingress target
-- Whether the remote follower internal protocol version and capability summary are compatible with the current primary; currently `v2` is required
-- Whether the remote ingress path escapes the follower's allowed root directory
-
-This is usually a deployment or policy configuration problem, not a browser problem.
-
-### `storage_object_not_found` (4007)
-
-The database still references an object, but the storage backend cannot find the actual content.
-
-This is more serious than a regular 404: it means metadata and real storage are inconsistent. Administrators should first run:
-
-```bash
-./aster_drive doctor \
-  --database-url "sqlite:///var/lib/asterdrive/data/asterdrive.db?mode=rwc" \
-  --deep \
-  --scope storage-objects
-```
-
-If you recently performed manual migration, backup restore, bucket cleanup, or local directory moves, start from those operations.
-
-### `storage_rate_limited` (4008)
-
-The storage backend rate-limited AsterDrive.
-
-This commonly happens when object storage receives too many requests, an S3-compatible service is under heavy load, or a gateway behind the follower is rate-limiting. Waiting may recover it. If it repeats, administrators should check storage provider or follower logs.
-
-### `storage_transient_failure` (4009)
-
-Temporary storage backend failure.
-
-Typical causes are network jitter, temporary object storage outage, or follower connection interruption. Users can retry later. Administrators should check network, S3 / MinIO, or follower logs for the same time period.
-
-### `storage_precondition_failed` (4010)
-
-A storage backend precondition was not satisfied.
-
-Common cases include object-storage conditional-write conflicts, remote ingress state changes, and concurrent operations on the same object. Refresh and retry first. If it keeps appearing, administrators should check the corresponding storage policy and remote node status.
-
-### `storage_operation_unsupported` (4011)
-
-The current storage driver does not support this operation.
-
-For example, some backends cannot generate presigned URLs, cannot use a certain streaming read/write path, or the remote follower version does not match the capability expected by the primary. Administrators need to change policy configuration, upgrade nodes, or disable the upload / download mode that depends on this capability.
-
----
-
-## Folders (5xxx)
-
-### `folder_not_found` (5000)
-
-The folder does not exist or has been deleted.
-
-Same as `file_not_found`: deleted, moved to trash, or permanently cleaned.
-
----
-
-## Shares (6xxx)
-
-### `share_not_found` (6000)
-
-The share link does not exist or has become invalid.
-
-Most likely causes:
-
-1. Token was mistyped or truncated by chat software
-2. The creator deleted the share
-3. The source file for the share was deleted
-
-### `share_expired` (6001)
-
-The share has passed `expires_at`.
-
-Ask the share creator to generate a new one. The new link has a new token.
-
-### `share_password_required` (6002)
-
-The share requires a password, but the current request has no valid share password verification cookie.
-
-This usually means verification has not happened, the cookie is lost, or verification has expired. When actually submitting a password, if the password is wrong, the server handles it as authentication failure; the common error code is `auth_failed`.
-
-Note: the server has a 1-hour password verification cache. **After changing the password, the other side may still access with the old password for up to 1 hour**. This is intentional design, not a bug.
-
-### `share_download_limit_reached` (6003)
-
-The share has reached its download limit.
-
-- The creator can increase the download count limit in left-side `My Shares`
-- Or recreate the share
-
----
-
-## Messages Outside the Ranges Above
-
-### Frontend `unexpected_error`
-
-Frontend fallback message, not a backend error code. It means the frontend received a response it does not recognize.
-
-Common causes:
-
-- Backend returned a new error code not mapped by the frontend, usually from version mismatch after upgrade
-- Network layer failed, and the frontend did not even receive `error_code`
-
-Force-refresh the page once. If it remains, check the concrete browser console error.
-
-### WebDAV Client Shows Strange HTTP Status Codes
-
-WebDAV clients usually do not show `error_code`; they only show HTTP status codes:
-
-- `401`: authentication failed; use a dedicated WebDAV account, not the normal login account
-- `403`: account is valid but has no permission to access the path; it may also mean the administrator enabled WebDAV system-file blocking and the client is trying to create metadata files such as `.DS_Store`, `Thumbs.db`, or `desktop.ini`
-- `404`: path does not exist
-- `423`: resource is locked; corresponds to `resource_locked`
-- `412`: precondition failed; corresponds to `precondition_failed`
-- `503`: WebDAV global switch is off; administrator enables it in `Admin -> System Settings -> WebDAV`
-
----
+### Background Tasks
+
+Background tasks can return stable error codes too:
+
+- `task.lease_lost`: task lease was lost, usually because another worker took over or the task was reclaimed.
+- `task.lease_renewal_timed_out`: task lease renewal timed out, possibly due to database, worker, or system load.
+- `task.worker_shutdown_requested`: worker received shutdown request, commonly during service restart or task dispatcher shutdown.
+
+Administrators should inspect `Admin -> Tasks` for status, failure reason, retry count, and same-time logs.
+
+### Mail, External Auth, And Offline Download
+
+Mail:
+
+- `mail.not_configured`: SMTP is not configured. Administrators configure it under `Admin -> System Settings -> Mail Delivery`.
+- `mail.delivery_failed`: SMTP delivery failed. Send a test mail first, then inspect SMTP response and mail outbox logs.
+
+External auth:
+
+- `external_auth.provider_disabled`: provider is disabled.
+- `external_auth.policy_denied`: policy does not allow the external login, link, or account creation.
+
+Offline download:
+
+- `offline_download.aria2_rpc_auth_failed`: aria2 RPC secret is wrong.
+- `offline_download.aria2_rpc_probe_failed`: aria2 probe failed. Check RPC URL, network, timeout, and aria2 process status.
+
+### WOPI And WebDAV
+
+WOPI:
+
+- `wopi.public_site_url_required`: public site URL is required for WOPI.
+- `wopi.app_disabled`: target WOPI app is disabled.
+- `wopi.request_origin_untrusted` / `wopi.request_referer_untrusted`: WOPI request source is untrusted.
+- `wopi.max_expected_size_exceeded`: file exceeds the WOPI app or AsterDrive edit-size limit.
+
+WebDAV:
+
+- `webdav.username_exists`: WebDAV username already exists.
+- `resource.locked`: WebDAV LOCK conflict, corresponding to HTTP `423`.
+- `precondition_failed`: conditional request failed, corresponding to HTTP `412`.
+
+Many WebDAV clients show only HTTP status, not JSON errors:
+
+| HTTP Status | Common meaning |
+| --- | --- |
+| `401` | Authentication failed. Use a dedicated WebDAV account, not the normal login password. |
+| `403` | Account is valid but lacks permission; system-file blocking may also reject `.DS_Store`, `Thumbs.db`, or `desktop.ini`. |
+| `404` | Path does not exist. |
+| `412` | Precondition failed, usually `precondition_failed`. |
+| `423` | Resource is locked, usually `resource.locked`. |
+| `503` | WebDAV global switch is off. |
+
+## Stable String Code Reference
+
+The following table groups current public `ApiErrorCode` values by handling path. `*` is only used here to group related codes for readability; clients should still match complete strings and should not infer behavior from prefixes alone.
+
+### Common And Runtime
+
+| Code | Meaning |
+| --- | --- |
+| `success` | Success response, not an error. |
+| `bad_request` | Request parameters or body are invalid. |
+| `not_found` | Resource does not exist. |
+| `endpoint.not_found` | API route does not exist. |
+| `internal_server_error` | Internal server error. |
+| `database.error` | Database connection or operation failed. |
+| `config.error` | Static or runtime configuration error. |
+| `rate_limited` | Request was rate-limited. |
+| `conflict` | Resource conflict; often accompanied by a more specific conflict code. |
+| `mail.not_configured` / `mail.delivery_failed` | Mail is not configured or delivery failed. |
+
+### Auth, Security, And Accounts
+
+| Code | Meaning |
+| --- | --- |
+| `auth.failed` / `auth.credentials_failed` | Authentication failed or credentials are wrong. |
+| `auth.token_missing` / `auth.token_invalid` / `auth.token_expired` | Token is missing, invalid, or expired. |
+| `auth.refresh_token_stale` / `auth.refresh_token_reuse_detected` | Refresh token is stale or replay was detected. |
+| `auth.pending_activation` | Account is pending activation. |
+| `auth.contact_verification_invalid` / `auth.contact_verification_expired` | Contact verification is invalid or expired. |
+| `forbidden` | Permission denied, usually with a more specific permission code. |
+| `auth.admin_required` / `auth.account_disabled` | Admin permission required, or account is disabled. |
+| `auth.username_exists` / `auth.email_exists` / `auth.identifier_exists` | Login identifier conflict. |
+| `auth.registration_disabled` | Public registration is disabled. |
+| `auth.session_user_mismatch` | Session and account do not match. |
+| `auth.request_source_missing` / `auth.request_source_untrusted` | Request source is missing or untrusted. |
+| `auth.request_origin_untrusted` / `auth.request_referer_untrusted` | Origin or Referer is untrusted. |
+| `auth.csrf_cookie_missing` / `auth.csrf_header_missing` / `auth.csrf_token_invalid` | CSRF validation failed. |
+| `auth.mfa_failed`, `auth.mfa_*` | MFA flow, code, recovery code, or factor state error. |
+| `passkey.name_invalid` / `passkey.name_too_long` / `passkey.not_discoverable` | Passkey name or credential capability issue. |
+| `external_auth.provider_disabled` / `external_auth.policy_denied` | External-auth provider or policy denied the operation. |
+
+### Files, Uploads, Folders, And Locks
+
+| Code | Meaning |
+| --- | --- |
+| `file.not_found` / `folder.not_found` | File or folder does not exist. |
+| `file.too_large` / `file.type_not_allowed` | File exceeds size limit or type is forbidden. |
+| `file.upload_failed` | Generic file upload failure. |
+| `file.name_conflict` / `folder.name_conflict` | File or folder name conflict. |
+| `file.etag_mismatch` / `file.modified_during_write` | File changed before write; precondition failed. |
+| `resource.locked` / `lock.not_owner` | Resource is locked, or current user is not the lock owner. |
+| `precondition_failed` | Conditional request failed. |
+| `upload.session_not_found` / `upload.session_expired` | Upload session does not exist or expired. |
+| `upload.chunk_failed` / `upload.assembly_failed` | Chunk upload or assembly failed. |
+| `upload.assembling` | File is still being assembled. |
+| `upload.temp_*` / `upload.local_staging_*` / `upload.assembly_io_failed` | Server temp directory, staging, or assembly I/O failed. |
+| `upload.request_*` / `upload.body_size_overflow` / `upload.declared_size_invalid` | Request body, size, or declared value is invalid. |
+| `upload.chunk_*` / `upload.part_*` | Chunk / part number, size, count, or transport mode is invalid. |
+| `upload.incomplete_*` / `upload.missing_part` | Chunks or parts are incomplete. |
+| `upload.temp_object_*` / `upload.final_object_size_mismatch` | Temporary object or final object size mismatch. |
+| `upload.status_conflict` / `upload.previous_failure` / `upload.session_corrupted` | Upload session state conflict, previous failure, or corruption. |
+
+### Storage, Remote Nodes, And Ingress
+
+| Code | Meaning |
+| --- | --- |
+| `storage.policy_not_found` | Storage policy does not exist. |
+| `storage.driver_error` / `storage.unknown` | Storage driver returned an unknown error. |
+| `storage.quota_exceeded` | Quota exceeded. |
+| `storage.unsupported_driver` / `storage.unsupported` | Driver or capability is unsupported. |
+| `storage.auth_failed` / `storage.auth` | Storage authentication failed. |
+| `storage.permission_denied` / `storage.permission` | Storage permission denied. |
+| `storage.misconfigured` | Storage configuration is wrong. |
+| `storage.object_not_found` / `storage.not_found` | Storage object does not exist. |
+| `storage.rate_limited` | Storage backend rate-limited the request. |
+| `storage.transient_failure` / `storage.transient` | Temporary storage failure. |
+| `storage.precondition_failed` / `storage.precondition` | Storage precondition failed. |
+| `storage.operation_unsupported` | Storage operation is unsupported. |
+| `remote_node.disabled` / `remote_node.enrollment_required` / `remote_node.unique_conflict` | Remote node is disabled, not enrolled, or conflicts with a unique field. |
+| `managed_ingress.*` | Follower ingress target is missing, not applied, invalid, unsupported, or inconsistent. |
+| `master_binding.disabled` | Master / follower binding is disabled. |
+
+### Shares, Teams, And Workspaces
+
+| Code | Meaning |
+| --- | --- |
+| `share.not_found` / `share.expired` | Share does not exist or expired. |
+| `share.password_required` | Share password verification is required. |
+| `share.download_limit_reached` | Share download limit reached. |
+| `share.scope_denied` | Share scope denies access to the target resource. |
+| `team.not_member` | Current account is not a team member. |
+| `team.owner_required` / `team.admin_or_owner_required` | Team owner or administrator permission required. |
+| `team.member_exists` | Team member already exists. |
+| `workspace.scope_denied` | Current workspace cannot access target resource. |
+| `policy.upload_sessions_exist` | Policy still has related upload sessions, so the change cannot proceed. |
+
+### Preview, Media Processing, WOPI, WebDAV, And Others
+
+| Code | Meaning |
+| --- | --- |
+| `thumbnail.failed` / `thumbnail.*` | Thumbnail generation, read, decode, encode, temp-file, or processor failure. |
+| `avatar.*` | Avatar upload, read, processing, rendering, or output failure. |
+| `archive_preview.*` | Archive preview switch, format, size, manifest, or task rejection issue. |
+| `wopi.public_site_url_required` | WOPI requires a public site URL. |
+| `wopi.app_disabled` | WOPI app is disabled. |
+| `wopi.request_origin_untrusted` / `wopi.request_referer_untrusted` | WOPI request source is untrusted. |
+| `wopi.max_expected_size_exceeded` | File exceeds WOPI size limit. |
+| `webdav.username_exists` | WebDAV username already exists. |
+| `offline_download.aria2_rpc_auth_failed` / `offline_download.aria2_rpc_probe_failed` | aria2 RPC authentication or probe failed. |
+| `task.lease_lost` / `task.lease_renewal_timed_out` / `task.worker_shutdown_requested` | Background task lease, renewal, or worker shutdown issue. |
+| `validation.*` | Request source, Host, scheme, header, or initialization-state validation failed. |
 
 ## Still Not Solved
 
-Submit the issue in this order:
+Regular users can report the problem like this:
 
-1. Record the error code, both number and string name
-2. Record the steps that produced the error
-3. Run `aster_drive doctor` once as administrator
-4. Open an issue in [GitHub Issues](https://github.com/AptS-1547/AsterDrive/issues)
+```text
+At 2026-06-03 21:10, uploading test.zip failed.
+error.code: upload.assembly_failed
+code: 3007
+msg: ...
+```
 
-`error.code` and the numeric `code` are the fastest clues for locating the problem. When reporting an issue, paste the error code first. It is more useful than pasting an English error message.
+Administrators can continue with:
+
+1. Check server logs for the same time range.
+2. If the problem involves uploads, storage, thumbnails, archive preview, or offline downloads, inspect `Admin -> Tasks`.
+3. If storage metadata may not match underlying objects, run `doctor` from [Operations CLI](/en/deployment/ops-cli).
+4. If it is likely an AsterDrive bug, open a [GitHub Issue](https://github.com/AptS-1547/AsterDrive/issues) with reproduction steps and the error response.
+
+Error codes are the fastest entry point for diagnosis. Paste `error.code` first, not only the UI message.

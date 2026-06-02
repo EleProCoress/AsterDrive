@@ -14,24 +14,20 @@
 
 ## 上传路径怎么决定
 
-```text
-用户选择文件
-  |
-  +-- 当前工作空间属于谁？
-  |     +-- 个人用户
-  |     +-- 团队空间
-  |
-  +-- 命中用户或团队绑定的策略组
-  |
-  +-- 按文件大小匹配策略组规则
-  |
-  +-- 命中具体存储策略
-        |
-        +-- local：写入本地存储
-        +-- s3 + relay_stream：服务端转发到对象存储
-        +-- s3 + presigned：浏览器直传对象存储
-        +-- remote + relay_stream：主控节点转发到从节点
-        +-- remote + presigned：浏览器直连从节点的 `base_url`
+```mermaid
+flowchart TD
+  Select["用户选择文件"] --> Owner{"当前工作空间属于谁？"}
+  Owner --> Personal["个人用户"]
+  Owner --> Team["团队空间"]
+  Personal --> Group["命中用户或团队绑定的策略组"]
+  Team --> Group
+  Group --> SizeRule["按文件大小匹配策略组规则"]
+  SizeRule --> Policy["命中具体存储策略"]
+  Policy --> Local["local：写入本地存储"]
+  Policy --> S3Relay["s3 + relay_stream：服务端转发到对象存储"]
+  Policy --> S3Presigned["s3 + presigned：浏览器直传对象存储"]
+  Policy --> RemoteRelay["remote + relay_stream：主控节点转发到从节点"]
+  Policy --> RemotePresigned["remote + presigned：浏览器直连从节点 base_url"]
 ```
 
 ::: tip 排查上传失败时从策略组开始

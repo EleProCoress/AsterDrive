@@ -8,6 +8,8 @@ The protocol layer is currently split under `src/webdav/**`: `mod.rs` handles Ac
 
 The following paths are relative to `/api/v1` and require authentication.
 
+### Personal accounts
+
 | Method | Path | Description |
 | --- | --- | --- |
 | `GET` | `/webdav-accounts` | List the current user's WebDAV accounts |
@@ -17,17 +19,30 @@ The following paths are relative to `/api/v1` and require authentication.
 | `GET` | `/webdav-accounts/settings` | Read the active mount prefix and client endpoint |
 | `POST` | `/webdav-accounts/test` | Test a set of WebDAV credentials |
 
+### Team accounts
+
+| Method | Path | Description |
+| --- | --- | --- |
+| `GET` | `/teams/{team_id}/webdav-accounts` | List team WebDAV accounts |
+| `POST` | `/teams/{team_id}/webdav-accounts` | Create a team WebDAV account |
+| `DELETE` | `/teams/{team_id}/webdav-accounts/{account_id}` | Delete a team WebDAV account |
+| `POST` | `/teams/{team_id}/webdav-accounts/{account_id}/toggle` | Enable or disable a team WebDAV account |
+
 Common details:
 
 - if `password` is empty when creating an account, the server generates a random password
 - plaintext password is returned only once at creation time
-- `root_folder_id = null` means the account can access the whole user space
+- for personal accounts, `root_folder_id = null` means the account can access the whole user space; for team accounts, it means the account can access the whole team space
+- when `root_folder_id` is provided, the server verifies that the folder belongs to the personal or team workspace for that account
 - `/toggle` has no request body; each call switches enabled / disabled state
 - `/settings` returns:
   - `prefix`: the active server mount prefix
   - `endpoint`: a client-usable URL; if `public_site_url` is configured, this is absolute, otherwise it is relative. With multiple public origins, the server matches the current request origin exactly and falls back to the first configured origin when no match is found.
 - `/test` validates credentials without requiring a real client mount
 - `GET /webdav-accounts` is paginated with `limit` and `offset`
+- `GET /teams/{team_id}/webdav-accounts` is also paginated with `limit` and `offset`
+- team members can create team WebDAV accounts; ordinary members can list, delete, and toggle only accounts they created, while team `owner` / `admin` users can list and manage all WebDAV accounts in the team
+- team WebDAV accounts must be managed through `/teams/{team_id}/webdav-accounts/*`; the personal `/webdav-accounts/{id}` endpoints reject team accounts
 
 Create request:
 

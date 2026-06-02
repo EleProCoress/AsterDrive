@@ -16,18 +16,13 @@ The most common use of WOPI is opening files such as `docx`, `xlsx`, and `pptx` 
 
 ## Recommended Integration Order
 
-```text
-Prepare a real HTTPS entry point
-  |
-  +-- Set the public site URL
-  |
-  +-- Deploy or confirm the WOPI service
-  |
-  +-- Import WOPI Discovery in preview apps
-  |
-  +-- Enable open methods for the corresponding file types
-  |
-  +-- Test open and save with real Office files
+```mermaid
+flowchart TD
+  Https["Prepare a real HTTPS entry point"] --> PublicUrl["Set the public site URL"]
+  PublicUrl --> WopiService["Deploy or confirm the WOPI service"]
+  WopiService --> Discovery["Import WOPI Discovery in preview apps"]
+  Discovery --> OpenMethods["Enable open methods for file types"]
+  OpenMethods --> Test["Test open and save with real Office files"]
 ```
 
 ## Where to Configure It

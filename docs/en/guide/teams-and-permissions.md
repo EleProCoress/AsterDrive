@@ -87,14 +87,11 @@ A team does not bind directly to one storage policy. It binds to a **policy grou
 
 This means team uploads follow this chain:
 
-```text
-Team space
-  |
-  +-- Team-bound policy group
-      |
-      +-- Match policy group rules by file size
-          |
-          +-- Hit a concrete storage policy
+```mermaid
+flowchart TD
+  Team["Team space"] --> Group["Team-bound policy group"]
+  Group --> Rule["Match policy group rules by file size"]
+  Rule --> Policy["Hit a concrete storage policy"]
 ```
 
 Common patterns:

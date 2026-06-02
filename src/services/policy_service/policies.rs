@@ -34,6 +34,13 @@ fn driver_type_name(driver_type: DriverType) -> &'static str {
     }
 }
 
+fn storage_policy_credential_label(driver_type: DriverType) -> &'static str {
+    match driver_type {
+        DriverType::S3 => "S3-compatible",
+        _ => driver_type_name(driver_type),
+    }
+}
+
 fn ensure_storage_native_thumbnail_supported(
     driver_type: DriverType,
     options: &StoragePolicyOptions,
@@ -68,7 +75,7 @@ fn validate_connection_credentials(
 ) -> Result<()> {
     match driver_type {
         DriverType::S3 | DriverType::TencentCos => {
-            let driver = driver_type_name(driver_type);
+            let driver = storage_policy_credential_label(driver_type);
             validate_connection_secret(access_key, "access_key", driver)?;
             validate_connection_secret(secret_key, "secret_key", driver)?;
         }

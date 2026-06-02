@@ -30,16 +30,12 @@ If the follower is behind NAT, CGNAT, or a private-only network and can only rea
 
 ## First, Separate the Three Layers
 
-```text
-Follower node record
-  |
-  +-- Ingress target
-      |
-      +-- remote storage policy
-          |
-          +-- Policy group rule
-              |
-              +-- User or team bound to the policy group
+```mermaid
+flowchart TD
+  Node["Follower node record"] --> Ingress["Ingress target"]
+  Ingress --> Policy["remote storage policy"]
+  Policy --> Rule["Policy group rule"]
+  Rule --> Binding["User or team bound to the policy group"]
 ```
 
 Each layer is responsible for something different:
@@ -166,14 +162,16 @@ Save it first, then run a connection test.
 
 Upload path:
 
-```text
-Browser -> Primary node -> Follower node -> Ingress target
+```mermaid
+flowchart LR
+  Browser["Browser"] --> Primary["Primary node"] --> Follower["Follower node"] --> Ingress["Ingress target"]
 ```
 
 Download path:
 
-```text
-Ingress target -> Follower node -> Primary node -> Browser
+```mermaid
+flowchart LR
+  Ingress["Ingress target"] --> Follower["Follower node"] --> Primary["Primary node"] --> Browser["Browser"]
 ```
 
 Advantages:
@@ -288,9 +286,10 @@ If all of these pass, then consider moving real users or teams to the remote pol
 
 A common pattern:
 
-```text
-Small files -> Primary local storage or S3
-Large files -> Follower node
+```mermaid
+flowchart TD
+  Small["Small files"] --> PrimaryStorage["Primary local storage or S3"]
+  Large["Large files"] --> Remote["Follower node"]
 ```
 
 Configure multiple rules in the policy group, for example:

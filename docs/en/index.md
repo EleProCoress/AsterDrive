@@ -24,6 +24,9 @@ features:
   - title: Daily Use
     details: Files, workspaces, uploads, sharing, trash, WebDAV, and online editing, organized around real usage paths.
     link: /en/guide/
+  - title: Feature Map
+    details: Organizes identity, files, uploads, preview, and operations by backend capability for administration, troubleshooting, and extension work.
+    link: /en/features/
   - title: Administrator Configuration
     details: Separate the responsibilities of config.toml, admin-console system settings, storage policies, policy groups, storage backends, mail, and follower nodes.
     link: /en/config/
@@ -55,6 +58,10 @@ Start from [User Guides](/en/guide/). Regular users should first read the [User 
 Read [Admin Console](/en/guide/admin-console) first, then [Configuration Overview](/en/config/). AsterDrive configuration is split into startup configuration, admin-console runtime settings, storage policies, policy groups, storage policy backends, and the external network environment. It is much clearer when viewed by layer.
 
 If you are connecting S3 / MinIO / R2 / Tencent COS, see [Storage Policy Backends](/en/storage/).
+
+### I Want to Find Documentation by Feature Module
+
+Read the [Feature Map](/en/features/). It connects identity, files, uploads, preview, and operations by backend capability, which is better for administration, troubleshooting, and extension work.
 
 ### I Need to Go Live or Troubleshoot
 

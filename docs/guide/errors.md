@@ -1,514 +1,490 @@
 # 错误码处理
 
-这一篇覆盖普通用户和管理员在前端、API 和 WebDAV 客户端可能遇到的错误码：什么意思、自己能做什么、什么时候该找管理员。  
-按你看到的错误码或界面提示往下翻即可，不必通读。
+这一页帮你看懂 AsterDrive 返回的错误：先看哪个字段、用户能不能自己处理、管理员应该去哪里查。
 
-如果是 5xx 级别的服务端错误（`internal_server_error` / `database_error` / `config_error`），按 [故障排查](/deployment/troubleshooting) 处理。
+如果你只是普通用户，不需要记住所有错误码。把界面上看到的错误、操作时间和你刚才做了什么发给管理员，通常就够了。
+如果你在写脚本、接 API、排查 WebDAV / WOPI / 远程节点问题，请优先看响应里的 `error.code`。
 
-## 错误码分段
+::: warning 0.3.0 错误码迁移
+issue 211 的方向是把公开错误契约收敛成一套：`ApiErrorCode`，也就是响应里的 `error.code`。
 
-后端错误码按千位分域：
+当前过渡期，后端会同时保留顶层数字 `code` 和兼容字段 `error.subcode`，避免旧前端、旧脚本和第三方客户端立刻坏掉。新代码应该直接使用 `error.code`；`error.subcode` 只给旧客户端 fallback。
 
-| 段     | 用途                |
-| ------ | ------------------- |
-| `0`    | 成功                |
-| `1xxx` | 通用 / 服务端       |
-| `2xxx` | 认证与会话          |
-| `3xxx` | 文件 / 上传 / 下载  |
-| `4xxx` | 存储策略            |
-| `5xxx` | 文件夹              |
-| `6xxx` | 分享                |
+到 0.3.0，`error.subcode` 会停止作为公开 API 字段暴露，`ApiSubcode` 不再作为新的公开错误码来源，旧的 subcode 兼容构造和从消息里编码 / 解析 subcode 的路径会清理掉。客户端文案和业务判断会只以 `error.code` 为 key。
 
-知道分段后，看到一个新错误码时大致能猜到是哪类问题。
+更长期的方向是让 `ApiErrorCode` 替代现在的顶层数字 `code`。在替代完成前，顶层数字 `code` 只应该被当作旧客户端兼容层或粗粒度分类，不要用它区分具体业务原因。
+:::
 
-很多错误还会带更细的 `error.code`。这是新的稳定字符串错误码，前端和第三方客户端都应该优先判断它，不要解析英文 `msg`。`msg` 只适合作为兜底说明或排障线索。
+## 先看哪个字段
 
-在 0.3.0 之前，部分响应还会同时带 `error.subcode`。它只是兼容旧客户端的过渡字段；新脚本、新集成和新前端逻辑都应该使用 `error.code`。如果你在排障或提交 issue，优先记录 `error.code`，再附上数字 `code`。
+AsterDrive 的失败响应一般长这样：
 
----
-
-## 通用 (1xxx)
-
-### `bad_request` (1000)
-
-请求参数不合法。
-
-普通用户碰到通常是表单字段没填对（比如名字含非法字符、日期格式不对）。检查表单提示，按要求修正。
-
-如果你确认参数没问题，可能是前后端版本不一致，刷新页面强制更新。
-
-请求来源校验相关的格式问题会带更具体的子错误：
-
-- `validation.request_origin_invalid`：`Origin` 请求头格式无效
-- `validation.request_referer_invalid`：`Referer` 请求头格式无效
-- `validation.request_host_invalid`：请求 Host 无效，常见于反向代理转发头配置错误
-- `validation.request_scheme_invalid`：请求 scheme 无效，常见于 HTTPS 反代没有正确传递 `X-Forwarded-Proto`
-- `validation.request_header_value_invalid`：请求来源相关 header 过长或无法处理
-
-### `not_found` (1001) / `endpoint_not_found` (1005)
-
-请求的资源或接口不存在。
-
-- `not_found`：你访问的具体对象（用户、配置项等）不存在
-- `endpoint_not_found`：URL 路由本身不存在；通常是你手动改了 URL 或前端版本不匹配
-
-### `internal_server_error` (1002) / `database_error` (1003) / `config_error` (1004)
-
-服务端异常。
-
-普通用户：稍后重试一次；如果反复失败，把错误码和大致时间反馈给管理员。  
-管理员：去看 [故障排查](/deployment/troubleshooting)。
-
-### `rate_limited` (1006)
-
-请求过于频繁，被限流挡了。
-
-- 普通用户：等几秒再操作
-- 管理员：如果合法用户经常碰到，去 [访问限流](/config/rate-limit) 调 `[rate_limit]` 或前面反向代理的限流规则
-
-### `mail_not_configured` (1007)
-
-邮件系统没配置，无法发激活邮件、密码重置邮件等。
-
-如果你是普通用户，找管理员配 SMTP；如果你是管理员，去 `管理 -> 系统设置 -> 邮件投递` 填 SMTP 信息并发测试邮件验证。
-
-### `mail_delivery_failed` (1008)
-
-邮件投递失败。
-
-先去 `管理 -> 系统设置 -> 邮件投递` 发一封测试邮件，再看服务端日志里 SMTP / mail outbox 相关报错。常见原因：
-
-- SMTP 配置不对（端口、TLS 模式、认证）
-- 收件人域名拒收
-- 服务端被收件人邮件服务商拉黑
-
-### `conflict` (1009)
-
-资源冲突。最常见的是你要创建或修改的东西已经存在：
-
-- 用户名、邮箱或登录标识重复
-- 同一目录下已有同名文件 / 文件夹
-- 团队成员已经存在
-- WebDAV 用户名已经被占用
-- 远程节点绑定碰到唯一性冲突
-
-普通用户按页面提示换一个名字或刷新后重试。
-管理员如果是在批量导入、脚本调用或远程节点接入时遇到，优先看响应里的 `error.code`，它会比 `conflict` 本身更具体。旧版本响应里可能还有 `error.subcode`，仅作为兼容参考。
-
----
-
-## 认证 (2xxx)
-
-### `auth_failed` (2000)
-
-用户名或密码错误。
-
-如果你确认密码对，可能是被锁定（账号被管理员禁用）；这种情况错误码会是 `forbidden`。
-
-### `token_expired` (2001) / `token_invalid` (2002)
-
-登录已过期或无效。
-
-正常情况前端会自动 refresh，无感继续。如果反复出现，原因通常是：
-
-- 浏览器禁用了 Cookie 或第三方 Cookie
-- 你或管理员手动撤销了会话（`管理 -> 用户` 里"撤销所有会话"）
-- 服务端时钟严重偏差
-
-清浏览器 Cookie 重新登录。
-
-### `forbidden` (2003)
-
-没有权限执行此操作。
-
-- 普通用户操作管理功能：换有权限的账号
-- 管理员被禁用：联系其他管理员
-- 操作另一个用户的资源：检查分享权限或团队成员权限
-
-同样是 `forbidden`，`error.code` 会说明具体原因。0.3.0 之前，同一个值也可能出现在兼容字段 `error.subcode`：
-
-- `auth.admin_required`：需要管理员权限
-- `auth.account_disabled`：账号已被禁用
-- `auth.request_source_untrusted` / `auth.request_origin_untrusted` / `auth.request_referer_untrusted`：Cookie 认证请求来源不可信，通常和跨站请求、反向代理站点地址配置或浏览器来源有关
-- `auth.request_source_missing`：要求来源校验的请求缺少 `Origin` / `Referer` 等来源信息
-- `auth.csrf_cookie_missing` / `auth.csrf_header_missing` / `auth.csrf_token_invalid`：CSRF Cookie、`X-CSRF-Token` 请求头缺失或 token 校验失败，刷新页面后重试
-- `auth.registration_disabled`：系统关闭了公开注册
-- `auth.session_user_mismatch`：当前会话和当前账号不一致，重新登录
-- `team.not_member`：当前账号不是该团队成员
-- `team.owner_required`：需要团队所有者权限
-- `team.admin_or_owner_required`：需要团队管理员或所有者权限
-- `workspace.scope_denied`：资源不属于当前工作空间
-- `share.scope_denied`：分享范围不允许访问该资源
-- `lock.not_owner`：当前用户不是锁定者或资源所有者
-- `external_auth.provider_disabled` / `external_auth.policy_denied`：外部认证提供方被禁用，或策略不允许当前操作
-- `wopi.app_disabled` / `wopi.request_origin_untrusted` / `wopi.request_referer_untrusted`：WOPI 应用禁用或 WOPI 请求来源不可信
-
-### `pending_activation` (2004)
-
-账号还没激活，需要先完成邮箱验证。
-
-去看注册时收到的激活邮件；如果没收到：
-
-- 检查垃圾邮件
-- 用 `重新发送验证邮件` 入口（在登录页或 `设置 -> 安全`）
-- 如果系统邮件未配置，找管理员手动激活
-
-### `contact_verification_invalid` (2005) / `contact_verification_expired` (2006)
-
-邮箱验证链接无效或已过期。
-
-链接有时效（默认 24 小时）。重新申请一封即可。如果反复 `invalid`，检查链接是否被邮件客户端截断（特别是企业邮箱常见）。
-
-### Passkey 相关子错误
-
-Passkey 相关问题通常仍归在 `bad_request`、`auth_failed` 或 `token_invalid` 这类主错误码下，看响应里的 `error.code` 更准：
-
-- `passkey.name_invalid`：Passkey 名称含控制字符，换一个普通名称
-- `passkey.name_too_long`：Passkey 名称太长，缩短后重试
-- `passkey.not_discoverable`：浏览器或安全密钥没有创建可发现凭据，换支持 Passkey 的设备/浏览器，或重新添加
-
-如果登录页提示当前浏览器不支持 Passkey，通常是浏览器、系统或当前访问来源不满足 WebAuthn 要求。正式部署建议使用 HTTPS。
-
-### MFA 相关子错误
-
-MFA 相关问题通常发生在登录二次验证、发送邮箱验证码、启用认证器、禁用 MFA 或重新生成恢复码时：
-
-- `auth.mfa_flow_invalid`：MFA 登录或设置流程无效，返回登录页或重新开始设置
-- `auth.mfa_flow_expired`：流程已过期，默认大约 5 分钟，重新开始即可
-- `auth.mfa_code_invalid`：验证码或恢复码不正确，检查认证器时间是否同步，或换一个未使用的恢复码
-- `auth.mfa_attempts_exceeded`：尝试次数过多，重新开始登录流程
-- `auth.mfa_factor_required`：账号需要已启用的 MFA 因子，但当前状态不完整，联系管理员重置 MFA
-- `auth.mfa_factor_already_exists`：当前账号已经启用 TOTP，不能重复添加同类因子
-- `auth.mfa_recovery_code_used`：恢复码已经用过，登录后重新生成恢复码
-- `auth.mfa_email_code_required`：选择了邮箱验证码方式，但还没有先发送验证码，先点发送
-- `auth.mfa_email_code_expired`：邮箱验证码已过期，重新发送一封
-
-邮箱验证码 MFA 还依赖邮件投递配置和已验证邮箱。如果登录页没有邮箱验证码入口，通常是管理员没有开启、当前账号邮箱未验证，或者站点不允许 TOTP 用户用邮箱兜底。
-
-如果认证器和恢复码都丢了，且当前没有可用的邮箱验证码方式，普通用户无法自行绕过 MFA。联系管理员到 `管理 -> 用户 -> 用户详情 -> 安全操作` 重置 MFA。
-
-### 外部认证相关问题
-
-外部认证失败通常会在登录页展示“外部登录失败”，后端主错误码可能是 `auth_failed`、`forbidden`、`bad_request` 或 `mail_delivery_failed`。
-
-管理员按这个顺序查：
-
-1. `管理 -> 系统设置 -> 站点配置 -> 公开站点地址` 是否正确
-2. `管理 -> 外部认证` 里提供商是否启用
-3. 重定向 URI 是否已经登记到身份提供商侧
-4. Issuer URL、Client ID、Client Secret、scope 和 claim 映射是否正确
-5. 如果走邮箱验证，`管理 -> 系统设置 -> 邮件投递` 是否能发外部登录邮箱验证邮件
-
----
-
-## 文件 / 上传 (3xxx)
-
-### `file_not_found` (3000)
-
-文件不存在或已被删除。
-
-- 你或别人刚删了这个文件
-- 文件被移到了回收站 → 左侧 `回收站` 找
-- 文件被永久清理了 → 没救了，看 [备份与恢复](../deployment/backup)
-
-### `file_too_large` (3001)
-
-文件超过策略允许的最大大小。
-
-策略层面的上限由管理员在 `管理 -> 存储策略` 里设定。如果你是合法用户，找管理员调整或换策略组。
-
-### `file_type_not_allowed` (3002)
-
-文件类型被策略禁止上传。
-
-同上，由策略管控。常见限制扩展名包括可执行文件等，出于安全考虑。
-
-### `file_upload_failed` (3003)
-
-通用上传失败。
-
-按这个顺序看：
-
-1. 网络是否中断
-2. 浏览器控制台是否有更具体的报错
-3. 服务端日志里这个时间点是否有 `error_code` 更精确的报错
-
-### `upload_session_not_found` (3004) / `upload_session_expired` (3005)
-
-分块上传会话不存在或已过期。
-
-大多数可恢复上传会话是 24 小时；S3 / 远程节点的单次 Presigned 直传短会话通常是 1 小时。服务重启后旧 session 仍然有效（持久化在数据库），具体以服务端返回的 `expires_at` 为准。如果出现：
-
-- 你的上传超过会话有效期 → 重新发起
-- 你 reload 了页面 → 前端会从 localStorage 恢复 session；如果 session 已被服务端清理，会报这个错
-- 跨设备恢复上传 → 不支持，必须在同一浏览器同一 localStorage 下继续
-
-重新发起上传即可。
-
-### `chunk_upload_failed` (3006)
-
-分块上传单个 chunk 失败。
-
-最常见原因：
-
-- 磁盘满（管理员检查 `data/.uploads` 所在分区）
-- 用户配额已满（看个人配额）
-- 默认策略或绑定的策略组被禁用
-
-### `upload_assembly_failed` (3007)
-
-服务端合并 chunk 失败。
-
-通常意味着上传的 chunk 数据不完整或哈希校验失败。重新上传即可；如果反复失败，可能是网络中间有传输错误。
-
-### `thumbnail_failed` (3008)
-
-缩略图生成失败。
-
-不影响文件本身使用。常见原因：
-
-- 文件损坏
-- 文件类型不在缩略图支持列表
-- 缩略图 worker 出错（管理员看 `管理 -> 任务`）
-- 媒体处理器没有启用，或者 `vips` / `ffmpeg` 命令不可用
-
-### `resource_locked` (3009)
-
-资源被 WebDAV LOCK 占住。
-
-- 等锁过期（默认锁有 timeout）
-- 在 `管理 -> 锁` 里手动解锁（管理员权限）
-- 让占用的客户端正常退出（理想情况下客户端会发 UNLOCK）
-
-### `precondition_failed` (3010)
-
-前置条件不满足，多见于多端同时编辑同一个文件。
-
-刷新页面拿到最新版本，再重新提交。
-
-如果错误消息里带 `managed_ingress.*`，通常是远程节点的接收落点还没准备好。管理员去 `管理 -> 远程节点` 检查这台 follower：
-
-- 有没有默认接收落点
-- 默认接收落点是否已经应用
-- 本地接收路径有没有逃出 `server.follower.managed_ingress_local_root`
-- 这台 follower 是否只绑定了一个 primary
-
-### `upload_assembling` (3011)
-
-文件还在服务端合并 chunk，**不是错误**。
-
-等几秒重试 complete 即可。大文件合并时间会长一些（合并 + 算 SHA256），不要立即多次重试。
-
-### 压缩包预览相关子错误
-
-压缩包预览错误通常会挂在 `bad_request` 或 `forbidden` 下，具体看 `error.code`：
-
-- `archive_preview.disabled`：压缩包预览总开关未开启
-- `archive_preview.user_disabled`：登录用户侧压缩包预览未开启
-- `archive_preview.share_disabled`：分享页压缩包预览未开启
-- `archive_preview.unsupported_type`：当前文件不是支持的压缩包格式
-- `archive_preview.source_too_large`：源压缩包超过预览大小上限
-- `archive_preview.invalid_archive`：压缩包损坏或格式不合法
-- `archive_preview.manifest_too_large`：生成的清单超过 manifest 大小上限
-- `archive_preview.source_size_mismatch`：扫描时发现源文件大小和记录不一致，通常要重新上传或检查底层存储
-- `archive_preview.rejected`：后台任务拒绝执行，多半是文件已变化、权限变化或运行时限制不再满足
-
-第一次打开压缩包时如果只是“生成中”，那不是错误。等 `管理 -> 任务` / `任务中心` 里的 `压缩包预览生成` 完成后再打开。
-如果界面提示当前文件名编码无法解析这个 ZIP，切换压缩包预览工具栏里的 `文件名编码` 后重试；这类提示不一定有单独的后端错误码。
-
----
-
-## 存储策略 (4xxx)
-
-### `storage_policy_not_found` (4000)
-
-策略不存在。
-
-通常是用户绑定的策略被删了，或策略组里某条规则引用的策略被删了。管理员去 `管理 -> 存储策略` / `策略组` 检查。
-
-### `storage_driver_error` (4001)
-
-存储后端报错。
-
-按驱动类型看：
-
-- `local`：检查目录权限、磁盘空间
-- `s3`：检查 endpoint、credentials、bucket 是否存在；如果 S3 端慢或宕机，会触发我们配置的 timeout
-- `remote`：检查绑定的远程节点是否启用、当前传输方式是否测试通过、从节点是否已经完成接入并处于健康状态；还要确认 follower 有已应用的默认接收落点
-- 其他：看具体报错
-
-如果 remote 策略使用 `presigned`，还要检查远程节点是否使用直连传输、浏览器是否能访问 follower 的 `base_url`，以及远程节点能力摘要是否支持内部协议 `v2` 和 `browser_presigned_cors`。浏览器直连 follower 时，CORS 需要允许 `content-type` / `range`，并暴露 `ETag`、`Accept-Ranges`、`Content-Range`、`Content-Length` 等响应头。
-
-### `storage_quota_exceeded` (4002)
-
-存储空间不足。
-
-- 用户配额满 → 清理回收站、删大文件、找管理员加配额
-- 团队空间满 → 同上，团队管理员处理
-- 系统总配额满 → 管理员加策略容量
-
-### `unsupported_driver` (4003)
-
-策略配的驱动类型当前版本不支持。
-
-通常是从更高版本配置降级回来时碰到，或手动改 DB 配错了。`管理 -> 存储策略` 重新选支持的驱动。
-
-### `storage_auth_failed` (4004)
-
-存储后端认证失败。
-
-- S3 / MinIO：检查 Access Key、Secret Key、session token、签名版本和 endpoint
-- remote：检查远程节点绑定是否仍然有效，主控和 follower 的绑定信息有没有被删
-- 本地驱动通常不会报这个，除非上层把存储类型配错了
-
-这类错误不是让用户重试能解决的，管理员要先修凭据。
-
-### `storage_permission_denied` (4005)
-
-凭据有效，但没有权限做当前操作。
-
-常见原因：
-
-- S3 凭据只能读不能写
-- bucket policy 不允许访问当前前缀
-- 本地目录权限不允许当前进程写入
-- remote follower 的接收路径或内部接口权限不对
-
-建议先修复存储后端权限，再重试上传。
-
-### `storage_misconfigured` (4006)
-
-存储策略配置本身不完整或不一致。
-
-重点检查：
-
-- endpoint、bucket、region、base path
-- 本地存储根目录是否存在、是否在预期位置
-- remote follower 是否完成 enroll、是否有已应用的默认接收落点
-- remote follower 内部协议版本和能力摘要是否兼容当前主控；当前要求 `v2`
-- 远程接收路径有没有逃出 follower 允许的根目录
-
-这种错误通常是部署或策略配置问题，不是浏览器问题。
-
-### `storage_object_not_found` (4007)
-
-数据库里还引用着对象，但存储后端找不到实际内容。
-
-这比普通 404 更麻烦：说明元数据和真实存储已经不一致。管理员先跑：
-
-```bash
-./aster_drive doctor \
-  --database-url "sqlite:///var/lib/asterdrive/data/asterdrive.db?mode=rwc" \
-  --deep \
-  --scope storage-objects
+```json
+{
+  "code": 2003,
+  "msg": "untrusted request origin for cookie-authenticated action",
+  "error": {
+    "code": "auth.request_origin_untrusted",
+    "internal_code": "E013",
+    "subcode": "auth.request_origin_untrusted",
+    "retryable": false
+  }
+}
 ```
 
-如果最近做过手工迁移、恢复备份、清理 bucket 或移动本地目录，从这些操作开始查。
+字段含义如下：
 
-### `storage_rate_limited` (4008)
+| 字段 | 应该怎么用 |
+| --- | --- |
+| `error.code` | **新的稳定字符串错误码**。前端、SDK、脚本和第三方客户端都应该优先用它做业务判断。 |
+| `error.retryable` | 是否建议自动重试。`true` 不代表一定成功，只表示这个错误更像临时失败。 |
+| 顶层 `code` | 旧的数字分类码。当前仍然保留，主要给旧客户端兼容，也方便快速判断大类；最终会被 `ApiErrorCode` 替代。 |
+| `msg` | 给人看的诊断说明。不要用它做代码分支，也不要当翻译 key。 |
+| `error.internal_code` | 后端内部错误来源码，主要给日志和开发排障用。普通客户端不要依赖它。 |
+| `error.subcode` | 0.3.0 之前的兼容字段。新代码不要依赖它。 |
 
-存储后端限流了 AsterDrive。
+报 issue 或向管理员反馈时，优先贴：
 
-常见于对象存储请求太密、S3 兼容服务压力过高、远程 follower 后面还有一层网关限速。等一会儿可能会恢复；如果反复出现，管理员要看存储服务商或 follower 日志。
+1. `error.code`
+2. 顶层数字 `code`
+3. `msg`
+4. 出错时间和你正在做的操作
 
-### `storage_transient_failure` (4009)
+如果只贴一句英文报错，定位会慢很多。
 
-存储后端临时失败。
+## 数字码只看大类
 
-典型原因是网络抖动、对象存储短暂不可用、远程 follower 连接中断。用户可以稍后重试；管理员看同一时间段的网络、S3 / MinIO 或 follower 日志。
+顶层数字 `code` 现在仍然有用，但它更像“错误大类”，不是最精确的业务原因。新客户端不要把它当成长期稳定的主判断字段；最终主字段会是 `ApiErrorCode`。
 
-### `storage_precondition_failed` (4010)
+| 数字段 | 大类 | 常见稳定字符串码 |
+| --- | --- | --- |
+| `0` | 成功 | `success` |
+| `1xxx` | 通用、服务端、邮件、限流 | `bad_request`、`not_found`、`database.error`、`mail.delivery_failed` |
+| `2xxx` | 登录、会话、权限、MFA | `auth.credentials_failed`、`auth.token_expired`、`forbidden`、`auth.mfa_failed` |
+| `3xxx` | 文件、上传、缩略图、锁 | `file.not_found`、`upload.session_expired`、`thumbnail.failed`、`resource.locked` |
+| `4xxx` | 存储策略、驱动、配额、远程存储 | `storage.quota_exceeded`、`storage.auth_failed`、`storage.transient_failure` |
+| `5xxx` | 文件夹 | `folder.not_found` |
+| `6xxx` | 分享 | `share.expired`、`share.password_required` |
 
-存储后端前置条件不满足。
+看到一个新错误时，可以先用数字段判断方向，再用 `error.code` 决定具体处理。
 
-常见于对象存储条件写入冲突、远程接收状态变化、同一对象被并发操作。先刷新页面重试；如果一直出现，管理员检查对应存储策略和远程节点状态。
+如果你的客户端只显示数字码，可以用下面这张表先换算到对应的稳定字符串码：
 
-### `storage_operation_unsupported` (4011)
+| 数字 `code` | 对应 `error.code` |
+| --- | --- |
+| `0` | `success` |
+| `1000` | `bad_request` |
+| `1001` | `not_found` |
+| `1002` | `internal_server_error` |
+| `1003` | `database.error` |
+| `1004` | `config.error` |
+| `1005` | `endpoint.not_found` |
+| `1006` | `rate_limited` |
+| `1007` | `mail.not_configured` |
+| `1008` | `mail.delivery_failed` |
+| `1009` | `conflict` |
+| `2000` | `auth.failed` |
+| `2001` | `auth.token_expired` |
+| `2002` | `auth.token_invalid` |
+| `2003` | `forbidden` |
+| `2004` | `auth.pending_activation` |
+| `2005` | `auth.contact_verification_invalid` |
+| `2006` | `auth.contact_verification_expired` |
+| `2007` | `auth.token_missing` |
+| `2008` | `auth.credentials_failed` |
+| `2009` | `auth.mfa_failed` |
+| `2010` | `auth.refresh_token_stale` |
+| `2011` | `auth.refresh_token_reuse_detected` |
+| `3000` | `file.not_found` |
+| `3001` | `file.too_large` |
+| `3002` | `file.type_not_allowed` |
+| `3003` | `file.upload_failed` |
+| `3004` | `upload.session_not_found` |
+| `3005` | `upload.session_expired` |
+| `3006` | `upload.chunk_failed` |
+| `3007` | `upload.assembly_failed` |
+| `3008` | `thumbnail.failed` |
+| `3009` | `resource.locked` |
+| `3010` | `precondition_failed` |
+| `3011` | `upload.assembling` |
+| `4000` | `storage.policy_not_found` |
+| `4001` | `storage.driver_error` |
+| `4002` | `storage.quota_exceeded` |
+| `4003` | `storage.unsupported_driver` |
+| `4004` | `storage.auth_failed` |
+| `4005` | `storage.permission_denied` |
+| `4006` | `storage.misconfigured` |
+| `4007` | `storage.object_not_found` |
+| `4008` | `storage.rate_limited` |
+| `4009` | `storage.transient_failure` |
+| `4010` | `storage.precondition_failed` |
+| `4011` | `storage.operation_unsupported` |
+| `5000` | `folder.not_found` |
+| `6000` | `share.not_found` |
+| `6001` | `share.expired` |
+| `6002` | `share.password_required` |
+| `6003` | `share.download_limit_reached` |
 
-当前存储驱动不支持这个操作。
+## 常见处理入口
 
-比如某些后端不能生成预签名 URL、不能走某种流式读写路径，或者 remote follower 版本和主控期望能力不一致。管理员需要换策略配置、升级节点，或者关闭依赖该能力的上传 / 下载模式。
+### 登录、会话和账号
 
----
+如果登录失败，先看这些码：
 
-## 文件夹 (5xxx)
+- `auth.credentials_failed` / `auth.failed`：用户名、邮箱、密码或登录凭据不对。重新输入；如果确认无误，让管理员检查账号状态。
+- `auth.pending_activation`：账号还没激活。去邮箱完成验证，或让管理员手动激活。
+- `auth.contact_verification_invalid` / `auth.contact_verification_expired`：邮箱验证链接无效或过期。重新发送验证邮件。
+- `auth.token_missing` / `auth.token_invalid` / `auth.token_expired`：登录态缺失、无效或过期。刷新页面；如果反复出现，清 Cookie 后重新登录。
+- `auth.refresh_token_stale`：刷新 token 太旧，通常是多端登录、旧页面或旧会话导致。重新登录。
+- `auth.refresh_token_reuse_detected`：检测到 refresh token 重放。系统会拒绝这条会话，建议撤销其他会话并重新登录。
+- `auth.account_disabled`：账号被禁用。普通用户只能联系管理员。
+- `auth.registration_disabled`：站点关闭公开注册。让管理员创建账号，或开启注册。
 
-### `folder_not_found` (5000)
+如果普通登录、Passkey、外部认证和 MFA 混在一起失败，仍然优先看 `error.code`，不要只看页面上的一句“登录失败”。
 
-文件夹不存在或已被删除。
+### MFA 和 Passkey
 
-跟 `file_not_found` 同理：被删、被移到回收站、被永久清理三种情况。
+MFA 相关错误一般发生在二次验证、启用认证器、邮箱验证码或恢复码流程里：
 
----
+- `auth.mfa_failed`：MFA 总体失败，看同一响应里是否有更具体的码。
+- `auth.mfa_flow_invalid` / `auth.mfa_flow_expired`：验证流程无效或过期，回登录页重新开始。
+- `auth.mfa_code_invalid`：验证码或恢复码不正确。检查认证器时间，或换一个未使用的恢复码。
+- `auth.mfa_attempts_exceeded`：尝试次数太多。重新开始登录流程。
+- `auth.mfa_factor_required`：账号要求 MFA，但当前因子状态不完整。联系管理员重置 MFA。
+- `auth.mfa_factor_already_exists`：已经有同类 MFA 因子，不能重复添加。
+- `auth.mfa_recovery_code_used`：恢复码已用过。登录后重新生成恢复码。
+- `auth.mfa_email_code_required` / `auth.mfa_email_code_expired`：需要先发送邮箱验证码，或验证码已过期。
 
-## 分享 (6xxx)
+Passkey 相关错误：
 
-### `share_not_found` (6000)
+- `passkey.name_invalid` / `passkey.name_too_long`：Passkey 名称不合法或太长，改名后重试。
+- `passkey.not_discoverable`：浏览器或安全密钥没有创建可发现凭据。换支持 Passkey 的设备 / 浏览器，或重新添加。
 
-分享链接不存在或已失效。
+生产部署建议使用 HTTPS。很多 WebAuthn / Passkey 行为在不安全来源下不会按预期工作。
 
-按概率排序：
+### 权限、团队和工作空间
 
-1. token 拼错或被聊天软件截断（特别是从微信、企业 IM 复制时）
-2. 分享被创建者删了
-3. 分享对应的源文件被删了
+顶层 `code = 2003` 或 `error.code = forbidden` 只说明“不能做”，真正原因看更细的 `error.code`：
 
-### `share_expired` (6001)
+- `auth.admin_required`：需要管理员权限。
+- `team.not_member`：当前账号不是团队成员。
+- `team.owner_required`：需要团队所有者权限。
+- `team.admin_or_owner_required`：需要团队管理员或所有者权限。
+- `workspace.scope_denied`：资源不属于当前工作空间。
+- `share.scope_denied`：分享范围不允许访问这个资源。
+- `lock.not_owner`：当前用户不是锁定者或资源所有者。
+- `external_auth.provider_disabled` / `external_auth.policy_denied`：外部认证提供方被禁用，或策略不允许当前操作。
 
-分享已过 `expires_at`。
+普通用户：确认自己是否在正确团队、正确工作空间里。
+管理员：检查团队成员、角色、分享范围和外部认证策略。
 
-让分享创建者重新生成一份；新链接的 token 会变。
+### CSRF、来源校验和反向代理
 
-### `share_password_required` (6002)
+如果 Cookie 登录后调用管理接口、WOPI 或 WebDAV 相关接口时失败，常见码是：
 
-分享需要密码，但当前请求没有有效的分享密码验证 cookie。
+- `auth.request_source_missing`：请求缺少 `Origin` / `Referer` 等来源信息。
+- `auth.request_source_untrusted`：请求来源不可信。
+- `auth.request_origin_untrusted` / `auth.request_referer_untrusted`：`Origin` 或 `Referer` 不在允许范围内。
+- `auth.csrf_cookie_missing` / `auth.csrf_header_missing` / `auth.csrf_token_invalid`：CSRF Cookie、请求头或 token 不正确。
+- `validation.request_origin_invalid` / `validation.request_referer_invalid`：来源 header 格式无效。
+- `validation.request_host_invalid` / `validation.request_scheme_invalid`：反向代理传来的 Host 或 scheme 不对。
+- `validation.request_header_value_invalid`：来源相关 header 太长或无法解析。
 
-它通常表示还没验证、cookie 丢了或验证已过期。真正提交密码时如果密码不对，服务端会按认证失败处理，常见错误码是 `auth_failed`。
+处理顺序：
 
-注意：服务端有 1 小时密码验证缓存，**改完密码后对方在 1 小时内可能仍然用旧密码访问**。这是有意设计，不是 bug。
+1. 刷新页面，重新登录一次。
+2. 确认后台系统设置里的公开站点地址和当前访问地址一致。
+3. 检查反向代理是否正确传递 `Host`、`X-Forwarded-Host`、`X-Forwarded-Proto`。
+4. 如果是跨域直连 follower、WOPI 或自写脚本，确认来源和 CORS 配置匹配。
 
-### `share_download_limit_reached` (6003)
+### 文件、文件夹和冲突
 
-分享的下载次数已达上限。
+文件 / 文件夹相关：
 
-- 创建者可以在左侧 `我的分享` 里调高下载次数限制
-- 或者直接重新创建一份分享
+- `file.not_found` / `folder.not_found`：文件或文件夹不存在、被删除、被移入回收站，或已永久清理。
+- `file.name_conflict` / `folder.name_conflict`：同一目录下已有同名项目。换名，或刷新目录后重试。
+- `file.etag_mismatch` / `file.modified_during_write` / `precondition_failed`：文件在你提交前被别的客户端改过。刷新后重新编辑。
+- `resource.locked`：资源被 WebDAV LOCK 占用。等锁过期，或管理员在锁管理里解除。
+- `file.too_large`：超过策略允许大小。联系管理员调整策略或换策略组。
+- `file.type_not_allowed`：策略不允许这种文件类型。
 
----
+如果数据库里有记录但存储后端找不到实际对象，会出现 `storage.object_not_found` 或 `storage.not_found`。这不是普通用户能修的 404，管理员应检查底层存储和备份恢复记录。
 
-## 不在以上分段的提示
+### 上传和大文件
 
-### 前端 `unexpected_error`
+上传失败时先看是哪一段：
 
-前端兜底文案，不是后端错误码。表示前端拿到了无法识别的响应。
+- `upload.session_not_found` / `upload.session_expired`：上传会话不存在或过期。重新发起上传。
+- `upload.assembling`：文件还在服务端合并，不是失败。等几秒再查状态。
+- `upload.chunk_failed`：某个分片上传失败，通常和网络、磁盘空间或临时目录有关。
+- `upload.assembly_failed`：服务端合并失败。管理员看任务和服务端日志。
+- `upload.status_conflict` / `upload.previous_failure`：上传会话状态已经变化，通常不要继续复用旧会话。
+- `upload.incomplete_chunks` / `upload.incomplete_parts` / `upload.missing_part`：还有分片或 S3 part 没传完整。
+- `upload.chunk_number_out_of_range` / `upload.part_number_out_of_range` / `upload.part_numbers_too_many`：客户端提交的分片编号不符合规则。
+- `upload.chunk_size_mismatch` / `upload.request_size_mismatch` / `upload.final_object_size_mismatch`：声明大小和实际大小不一致。
+- `upload.temp_dir_create_failed`、`upload.temp_file_write_failed`、`upload.local_staging_write_failed`、`upload.assembly_io_failed`：服务器临时目录、暂存区或磁盘写入失败。
 
-通常是：
+用户可以先重试一次。反复失败时，管理员重点查：
 
-- 后端返回了前端没映射的新错误码（升级版本不一致）
-- 网络层就出错了，前端连 `error_code` 都没拿到
+- `data/.uploads`、`data/.tmp` 或自定义临时目录所在分区是否满了
+- 当前用户 / 团队 / 策略配额是否满了
+- S3 multipart 或 remote presigned 上传的浏览器直连地址是否可访问
+- 远程 follower 是否健康，默认接收落点是否已经应用
 
-刷新页面强制更新一次前端；如果还有，看浏览器控制台具体报错。
+### 存储策略、S3 和远程节点
 
-### WebDAV 客户端报奇怪的 HTTP 码
+存储类错误通常不是让普通用户多点几次就能解决的。管理员按 `error.code` 处理：
 
-WebDAV 客户端通常不会显示 `error_code`，只会显示 HTTP 状态码：
+- `storage.policy_not_found`：用户、团队或策略组引用了不存在的策略。
+- `storage.quota_exceeded`：用户、团队或系统配额已满。
+- `storage.unsupported_driver` / `storage.operation_unsupported` / `storage.unsupported`：当前驱动或远程节点不支持这个操作。
+- `storage.auth_failed` / `storage.auth`：S3 / remote 凭据或绑定认证失败。
+- `storage.permission_denied` / `storage.permission`：凭据有效，但没有读写当前对象或前缀的权限。
+- `storage.misconfigured`：策略配置不完整、不一致，或 remote follower 没准备好。
+- `storage.rate_limited`：对象存储、网关或 follower 限流。
+- `storage.transient_failure` / `storage.transient`：网络、对象存储或 follower 临时失败，可以稍后重试。
+- `storage.precondition_failed` / `storage.precondition`：条件写入、远程接收状态或并发操作冲突。
+- `storage.driver_error` / `storage.unknown`：驱动返回了无法归类的错误，查服务端日志。
 
-- `401`：鉴权失败；用 WebDAV 专用账号，不是普通登录账号
-- `403`：账号有效但没权限访问该路径；也可能是管理员开启了 WebDAV 系统文件拦截，客户端正在创建 `.DS_Store`、`Thumbs.db`、`desktop.ini` 这类系统元数据文件
-- `404`：路径不存在
-- `423`：资源被锁；对应 `resource_locked`
-- `412`：前置条件失败；对应 `precondition_failed`
-- `503`：WebDAV 总开关被关；管理员去 `管理 -> 系统设置 -> WebDAV` 打开
+远程节点相关：
 
----
+- `remote_node.disabled`：远程节点被禁用。
+- `remote_node.enrollment_required`：follower 还没有完成接入。
+- `remote_node.unique_conflict`：远程节点绑定或唯一字段冲突。
+- `managed_ingress.required`、`managed_ingress.default_missing`、`managed_ingress.default_not_applied`：follower 缺少可用的默认接收落点。
+- `managed_ingress.local_path_invalid`：follower 本地接收路径不合法，常见于路径逃出允许根目录。
+- `managed_ingress.driver_unsupported`：当前接收落点驱动不支持。
+- `managed_ingress.single_primary_required`：这台 follower 需要只绑定一个 primary。
+- `master_binding.disabled`：主从绑定被禁用。
+
+如果 remote 策略使用浏览器直传，还要确认浏览器能访问 follower 的 `base_url`，并且 follower CORS 允许上传请求需要的 header。
+
+### 分享
+
+分享错误：
+
+- `share.not_found`：分享不存在、token 错了、分享被删除，或源文件已删除。
+- `share.expired`：分享已过期。让创建者重新生成。
+- `share.password_required`：需要先输入分享密码，或密码验证 cookie 已丢失 / 过期。
+- `share.download_limit_reached`：下载次数达到上限。
+- `share.scope_denied`：分享范围不允许访问目标文件或文件夹。
+
+注意：分享密码验证有缓存。改完分享密码后，已验证的访问者可能在缓存过期前仍能访问一段时间。
+
+### 缩略图、头像和压缩包预览
+
+这些错误通常不代表原文件丢了，而是处理链路失败。
+
+缩略图：
+
+- `thumbnail.failed`：缩略图通用失败。
+- `thumbnail.source_too_large`：源文件超过缩略图处理上限。
+- `thumbnail.processor_unavailable`：媒体处理器不可用，检查 `vips` / `ffmpeg` 或对应配置。
+- `thumbnail.format_guess_failed` / `thumbnail.decode_failed` / `thumbnail.encode_failed`：格式识别、解码或编码失败。
+- `thumbnail.source_open_failed` / `thumbnail.source_stream_failed`：读取源文件失败，可能牵涉底层存储。
+- `thumbnail.task_panicked`：缩略图任务 panic，管理员看任务和日志。
+
+头像：
+
+- `avatar.file_required`：没有提交头像文件。
+- `avatar.upload_read_failed`：读取上传头像失败。
+- `avatar.processor_unavailable`：头像处理器不可用。
+- `avatar.empty_image`：图片为空或无法得到有效尺寸。
+- `avatar.render_failed` / `avatar.output_invalid`：渲染或输出失败。
+
+压缩包预览：
+
+- `archive_preview.disabled`：压缩包预览总开关关闭。
+- `archive_preview.user_disabled` / `archive_preview.share_disabled`：用户空间或分享页未启用。
+- `archive_preview.unsupported_type`：不是支持的压缩包类型。
+- `archive_preview.source_too_large`：源压缩包太大。
+- `archive_preview.invalid_archive`：压缩包损坏或格式不合法。
+- `archive_preview.manifest_too_large`：生成的文件清单超过上限。
+- `archive_preview.source_size_mismatch`：扫描时发现源文件大小和记录不一致。
+- `archive_preview.rejected`：后台任务拒绝执行，通常是权限、文件状态或运行条件变化。
+
+第一次打开压缩包只显示“生成中”时，等任务中心里的压缩包预览任务完成后再打开。
+
+### 后台任务
+
+后台任务本身也可能返回稳定错误码：
+
+- `task.lease_lost`：任务租约丢失，通常说明别的 worker 接管了或任务已经被回收。
+- `task.lease_renewal_timed_out`：任务续租超时，可能是数据库、worker 或系统负载问题。
+- `task.worker_shutdown_requested`：worker 收到关闭请求，常见于服务重启或任务调度停止。
+
+管理员应去 `管理 -> 任务` 看任务状态、失败原因、重试次数和同一时间段日志。
+
+### 邮件、外部认证和离线下载
+
+邮件：
+
+- `mail.not_configured`：还没配置 SMTP。管理员去 `管理 -> 系统设置 -> 邮件投递`。
+- `mail.delivery_failed`：SMTP 投递失败。先发测试邮件，再查 SMTP 返回和 mail outbox 日志。
+
+外部认证：
+
+- `external_auth.provider_disabled`：提供方被禁用。
+- `external_auth.policy_denied`：策略不允许当前外部登录、绑定或创建账号。
+
+离线下载：
+
+- `offline_download.aria2_rpc_auth_failed`：aria2 RPC secret 不对。
+- `offline_download.aria2_rpc_probe_failed`：aria2 探测失败，检查 RPC URL、网络、超时和 aria2 运行状态。
+
+### WOPI 和 WebDAV
+
+WOPI：
+
+- `wopi.public_site_url_required`：没有配置公开站点地址。
+- `wopi.app_disabled`：目标 WOPI 应用被禁用。
+- `wopi.request_origin_untrusted` / `wopi.request_referer_untrusted`：WOPI 请求来源不可信。
+- `wopi.max_expected_size_exceeded`：文件超过 WOPI 应用声明或 AsterDrive 允许的最大编辑大小。
+
+WebDAV：
+
+- `webdav.username_exists`：WebDAV 用户名已存在。
+- `resource.locked`：WebDAV LOCK 占用，对应 HTTP `423`。
+- `precondition_failed`：条件请求失败，对应 HTTP `412`。
+
+很多 WebDAV 客户端只显示 HTTP 状态码，不显示 JSON 错误：
+
+| HTTP 状态 | 常见含义 |
+| --- | --- |
+| `401` | 鉴权失败。使用 WebDAV 专用账号，不是普通登录密码。 |
+| `403` | 账号有效但无权限；也可能是系统文件拦截挡住了 `.DS_Store`、`Thumbs.db`、`desktop.ini`。 |
+| `404` | 路径不存在。 |
+| `412` | 前置条件失败，通常对应 `precondition_failed`。 |
+| `423` | 资源被锁，对应 `resource.locked`。 |
+| `503` | WebDAV 总开关关闭。 |
+
+## 稳定字符串错误码速查
+
+下面按处理方式整理当前公开的 `ApiErrorCode`。表里的 `*` 只是为了把同类错误合并展示；客户端仍然应该匹配完整字符串，不要用前缀猜行为。
+
+### 通用和运行时
+
+| 错误码 | 含义 |
+| --- | --- |
+| `success` | 成功响应，不是错误。 |
+| `bad_request` | 请求参数或请求体不合法。 |
+| `not_found` | 资源不存在。 |
+| `endpoint.not_found` | API 路由不存在。 |
+| `internal_server_error` | 服务端内部错误。 |
+| `database.error` | 数据库连接或操作失败。 |
+| `config.error` | 静态配置或运行时配置错误。 |
+| `rate_limited` | 请求被限流。 |
+| `conflict` | 资源冲突；通常还有更具体的冲突码。 |
+| `mail.not_configured` / `mail.delivery_failed` | 邮件未配置或投递失败。 |
+
+### 认证、安全和账号
+
+| 错误码 | 含义 |
+| --- | --- |
+| `auth.failed` / `auth.credentials_failed` | 鉴权失败或凭据错误。 |
+| `auth.token_missing` / `auth.token_invalid` / `auth.token_expired` | token 缺失、无效或过期。 |
+| `auth.refresh_token_stale` / `auth.refresh_token_reuse_detected` | refresh token 过旧或疑似重放。 |
+| `auth.pending_activation` | 账号待激活。 |
+| `auth.contact_verification_invalid` / `auth.contact_verification_expired` | 联系方式验证无效或过期。 |
+| `forbidden` | 无权限，通常会有更具体的权限码。 |
+| `auth.admin_required` / `auth.account_disabled` | 需要管理员，或账号被禁用。 |
+| `auth.username_exists` / `auth.email_exists` / `auth.identifier_exists` | 登录标识冲突。 |
+| `auth.registration_disabled` | 公开注册关闭。 |
+| `auth.session_user_mismatch` | 会话和账号不一致。 |
+| `auth.request_source_missing` / `auth.request_source_untrusted` | 请求来源缺失或不可信。 |
+| `auth.request_origin_untrusted` / `auth.request_referer_untrusted` | Origin 或 Referer 不可信。 |
+| `auth.csrf_cookie_missing` / `auth.csrf_header_missing` / `auth.csrf_token_invalid` | CSRF 校验失败。 |
+| `auth.mfa_failed`、`auth.mfa_*` | MFA 流程、验证码、恢复码或因子状态错误。 |
+| `passkey.name_invalid` / `passkey.name_too_long` / `passkey.not_discoverable` | Passkey 名称或凭据能力问题。 |
+| `external_auth.provider_disabled` / `external_auth.policy_denied` | 外部认证提供方或策略拒绝。 |
+
+### 文件、上传、文件夹和锁
+
+| 错误码 | 含义 |
+| --- | --- |
+| `file.not_found` / `folder.not_found` | 文件或文件夹不存在。 |
+| `file.too_large` / `file.type_not_allowed` | 文件超过大小限制或类型被禁止。 |
+| `file.upload_failed` | 文件上传通用失败。 |
+| `file.name_conflict` / `folder.name_conflict` | 文件或文件夹同名冲突。 |
+| `file.etag_mismatch` / `file.modified_during_write` | 文件版本变化，提交前置条件失败。 |
+| `resource.locked` / `lock.not_owner` | 资源被锁，或当前用户不是锁所有者。 |
+| `precondition_failed` | 条件请求失败。 |
+| `upload.session_not_found` / `upload.session_expired` | 上传会话不存在或过期。 |
+| `upload.chunk_failed` / `upload.assembly_failed` | 分片上传或合并失败。 |
+| `upload.assembling` | 文件仍在合并中。 |
+| `upload.temp_*` / `upload.local_staging_*` / `upload.assembly_io_failed` | 服务器临时目录、暂存或合并 I/O 失败。 |
+| `upload.request_*` / `upload.body_size_overflow` / `upload.declared_size_invalid` | 请求体读取、大小或声明值不合法。 |
+| `upload.chunk_*` / `upload.part_*` | 分片编号、大小、数量或传输模式不合法。 |
+| `upload.incomplete_*` / `upload.missing_part` | 分片或 part 没传完整。 |
+| `upload.temp_object_*` / `upload.final_object_size_mismatch` | 临时对象或最终对象大小不一致。 |
+| `upload.status_conflict` / `upload.previous_failure` / `upload.session_corrupted` | 上传会话状态冲突、已有失败或会话损坏。 |
+
+### 存储、远程节点和接收落点
+
+| 错误码 | 含义 |
+| --- | --- |
+| `storage.policy_not_found` | 存储策略不存在。 |
+| `storage.driver_error` / `storage.unknown` | 存储驱动返回未知错误。 |
+| `storage.quota_exceeded` | 配额不足。 |
+| `storage.unsupported_driver` / `storage.unsupported` | 驱动或能力不支持。 |
+| `storage.auth_failed` / `storage.auth` | 存储认证失败。 |
+| `storage.permission_denied` / `storage.permission` | 存储权限不足。 |
+| `storage.misconfigured` | 存储配置错误。 |
+| `storage.object_not_found` / `storage.not_found` | 存储对象不存在。 |
+| `storage.rate_limited` | 存储后端限流。 |
+| `storage.transient_failure` / `storage.transient` | 临时存储失败。 |
+| `storage.precondition_failed` / `storage.precondition` | 存储前置条件失败。 |
+| `storage.operation_unsupported` | 当前存储操作不支持。 |
+| `remote_node.disabled` / `remote_node.enrollment_required` / `remote_node.unique_conflict` | 远程节点禁用、未接入或唯一性冲突。 |
+| `managed_ingress.*` | follower 接收落点缺失、未应用、路径不合法、驱动不支持或绑定状态不一致。 |
+| `master_binding.disabled` | 主从绑定被禁用。 |
+
+### 分享、团队和工作空间
+
+| 错误码 | 含义 |
+| --- | --- |
+| `share.not_found` / `share.expired` | 分享不存在或已过期。 |
+| `share.password_required` | 分享需要密码验证。 |
+| `share.download_limit_reached` | 分享下载次数到达上限。 |
+| `share.scope_denied` | 分享范围不允许访问目标资源。 |
+| `team.not_member` | 当前账号不是团队成员。 |
+| `team.owner_required` / `team.admin_or_owner_required` | 需要团队所有者或管理员权限。 |
+| `team.member_exists` | 团队成员已存在。 |
+| `workspace.scope_denied` | 当前工作空间不能访问目标资源。 |
+| `policy.upload_sessions_exist` | 策略仍有关联上传会话，不能执行当前变更。 |
+
+### 预览、媒体处理、WOPI、WebDAV 和其他
+
+| 错误码 | 含义 |
+| --- | --- |
+| `thumbnail.failed` / `thumbnail.*` | 缩略图生成、读取、解码、编码、临时文件或处理器失败。 |
+| `avatar.*` | 头像上传、读取、处理、渲染或输出失败。 |
+| `archive_preview.*` | 压缩包预览开关、格式、大小、清单或任务拒绝问题。 |
+| `wopi.public_site_url_required` | WOPI 需要公开站点地址。 |
+| `wopi.app_disabled` | WOPI 应用被禁用。 |
+| `wopi.request_origin_untrusted` / `wopi.request_referer_untrusted` | WOPI 请求来源不可信。 |
+| `wopi.max_expected_size_exceeded` | 文件超过 WOPI 允许大小。 |
+| `webdav.username_exists` | WebDAV 用户名已存在。 |
+| `offline_download.aria2_rpc_auth_failed` / `offline_download.aria2_rpc_probe_failed` | aria2 RPC 认证或探测失败。 |
+| `task.lease_lost` / `task.lease_renewal_timed_out` / `task.worker_shutdown_requested` | 后台任务租约、续租或 worker 关闭。 |
+| `validation.*` | 请求来源、Host、scheme、header 或初始化状态校验失败。 |
 
 ## 还是没解决
 
-按这个顺序提交问题：
+普通用户按这个格式反馈给管理员：
 
-1. 把错误码（数字 + 字符串名）记下来
-2. 把出现错误时的操作步骤记下来
-3. 跑一次 `aster_drive doctor`（管理员）
-4. 在 [GitHub Issues](https://github.com/AptS-1547/AsterDrive/issues) 开 issue
+```text
+我在 2026-06-03 21:10 上传 test.zip 时失败。
+error.code: upload.assembly_failed
+code: 3007
+msg: ...
+```
 
-`error.code` 和数字 `code` 是定位问题最快的线索。报 issue 时优先贴错误码，比贴英文报错有用得多。
+管理员继续排查：
+
+1. 在同一时间段查服务端日志。
+2. 如果牵涉上传、存储、缩略图、压缩包预览或离线下载，去 `管理 -> 任务` 看任务失败原因。
+3. 如果怀疑存储元数据和底层对象不一致，运行 [运维 CLI](/deployment/ops-cli) 里的 `doctor`。
+4. 如果确认是 AsterDrive 问题，在 [GitHub Issues](https://github.com/AptS-1547/AsterDrive/issues) 提交复现步骤和错误响应。
+
+错误码是定位问题最快的入口。优先贴 `error.code`，别只贴一句界面文案。

@@ -29,6 +29,12 @@ After the service opens normally, regular users should start here:
 - [Online Preview and WOPI](./preview-and-wopi): OnlyOffice, Collabora, and WOPI open-method integration
 - [Uploads and Large Files](./upload-modes): resumable uploads, direct-to-object-storage uploads, and failure diagnosis
 
+## Feature Map
+
+If you are not looking by task, but by backend capability and ownership boundary, read the [Feature Map](/en/features/).
+
+It connects identity and access, files and workspaces, uploads and storage, preview and processing, and system operations. It is useful for administrators, troubleshooting, and extension work.
+
 ## Administrators
 
 Administrators should separate three entry points first: the admin UI, runtime system settings, and the startup configuration file.
@@ -56,5 +62,7 @@ After launch, stable operation matters more than whether the page can open. Prep
 ## The Project Itself
 
 To understand why AsterDrive is designed this way, who it is for, and who it is not for, read [About AsterDrive](./about).
+
+To build the system mental model first, read [Architecture Overview](./architecture). It covers primary / follower nodes, component relationships, upload and download data flows, and troubleshooting entry points.
 
 If a concept is unclear, start with the [Glossary](./glossary). When you hit a problem, check the [FAQ Triage](./faq) first. If you have an error code, read [Error Code Handling](./errors). If the problem happens during deployment, reverse proxying, WebDAV, or WOPI, use it together with [Troubleshooting](/en/deployment/troubleshooting).
