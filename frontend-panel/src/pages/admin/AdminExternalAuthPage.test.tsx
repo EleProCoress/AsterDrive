@@ -4,6 +4,7 @@ import { useState } from "react";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import AdminExternalAuthPage from "@/pages/admin/AdminExternalAuthPage";
+import type { AdminExternalAuthProviderKindInfo } from "@/types/api";
 
 const mockState = vi.hoisted(() => ({
 	create: vi.fn(),
@@ -331,6 +332,27 @@ function savedProvider(overrides: Record<string, unknown> = {}) {
 	};
 }
 
+function providerKind(
+	overrides: Partial<AdminExternalAuthProviderKindInfo> = {},
+): AdminExternalAuthProviderKindInfo {
+	return {
+		authorization_url_required: false,
+		default_scopes: "openid email profile",
+		description: "OpenID Connect authorization-code sign-in.",
+		display_name: "OpenID Connect",
+		issuer_url_required: true,
+		kind: "oidc",
+		manual_endpoint_configuration_supported: false,
+		protocol: "oidc",
+		supports_discovery: true,
+		supports_email_verified_claim: true,
+		supports_pkce: true,
+		token_url_required: false,
+		userinfo_url_required: false,
+		...overrides,
+	};
+}
+
 describe("AdminExternalAuthPage", () => {
 	beforeEach(() => {
 		mockState.create.mockReset();
@@ -345,23 +367,7 @@ describe("AdminExternalAuthPage", () => {
 		mockState.writeTextToClipboard.mockReset();
 
 		mockState.writeTextToClipboard.mockResolvedValue(undefined);
-		mockState.listKinds.mockResolvedValue([
-			{
-				authorization_url_required: false,
-				default_scopes: "openid email profile",
-				description: "OpenID Connect authorization-code sign-in.",
-				display_name: "OpenID Connect",
-				issuer_url_required: true,
-				kind: "oidc",
-				manual_endpoint_configuration_supported: false,
-				protocol: "oidc",
-				supports_discovery: true,
-				supports_email_verified_claim: true,
-				supports_pkce: true,
-				token_url_required: false,
-				userinfo_url_required: false,
-			},
-		]);
+		mockState.listKinds.mockResolvedValue([providerKind()]);
 		mockState.list.mockResolvedValue({
 			items: [],
 			limit: 20,
@@ -510,36 +516,14 @@ describe("AdminExternalAuthPage", () => {
 
 	it("applies Google create-dialog defaults and hides manual OIDC fields", async () => {
 		mockState.listKinds.mockResolvedValue([
-			{
-				authorization_url_required: false,
-				default_scopes: "openid email profile",
-				description: "OpenID Connect authorization-code sign-in.",
-				display_name: "OpenID Connect",
-				issuer_url_required: true,
-				kind: "oidc",
-				manual_endpoint_configuration_supported: false,
-				protocol: "oidc",
-				supports_discovery: true,
-				supports_email_verified_claim: true,
-				supports_pkce: true,
-				token_url_required: false,
-				userinfo_url_required: false,
-			},
-			{
-				authorization_url_required: false,
+			providerKind(),
+			providerKind({
 				default_scopes: "openid profile email",
 				description: "Google OpenID Connect sign-in.",
 				display_name: "Google",
 				issuer_url_required: false,
 				kind: "google",
-				manual_endpoint_configuration_supported: false,
-				protocol: "oidc",
-				supports_discovery: true,
-				supports_email_verified_claim: true,
-				supports_pkce: true,
-				token_url_required: false,
-				userinfo_url_required: false,
-			},
+			}),
 		]);
 		mockState.create.mockResolvedValue(
 			savedProvider({
@@ -623,36 +607,15 @@ describe("AdminExternalAuthPage", () => {
 
 	it("applies Microsoft create-dialog defaults and derives issuer from tenant", async () => {
 		mockState.listKinds.mockResolvedValue([
-			{
-				authorization_url_required: false,
-				default_scopes: "openid email profile",
-				description: "OpenID Connect authorization-code sign-in.",
-				display_name: "OpenID Connect",
-				issuer_url_required: true,
-				kind: "oidc",
-				manual_endpoint_configuration_supported: false,
-				protocol: "oidc",
-				supports_discovery: true,
-				supports_email_verified_claim: true,
-				supports_pkce: true,
-				token_url_required: false,
-				userinfo_url_required: false,
-			},
-			{
-				authorization_url_required: false,
+			providerKind(),
+			providerKind({
 				default_scopes: "openid profile email",
 				description: "Microsoft OpenID Connect sign-in.",
 				display_name: "Microsoft",
 				issuer_url_required: false,
 				kind: "microsoft",
-				manual_endpoint_configuration_supported: false,
-				protocol: "oidc",
-				supports_discovery: true,
 				supports_email_verified_claim: false,
-				supports_pkce: true,
-				token_url_required: false,
-				userinfo_url_required: false,
-			},
+			}),
 		]);
 		mockState.create.mockResolvedValue(
 			savedProvider({
@@ -750,36 +713,17 @@ describe("AdminExternalAuthPage", () => {
 
 	it("applies QQ create-dialog defaults and submits only app credentials", async () => {
 		mockState.listKinds.mockResolvedValue([
-			{
-				authorization_url_required: false,
-				default_scopes: "openid email profile",
-				description: "OpenID Connect authorization-code sign-in.",
-				display_name: "OpenID Connect",
-				issuer_url_required: true,
-				kind: "oidc",
-				manual_endpoint_configuration_supported: false,
-				protocol: "oidc",
-				supports_discovery: true,
-				supports_email_verified_claim: true,
-				supports_pkce: true,
-				token_url_required: false,
-				userinfo_url_required: false,
-			},
-			{
-				authorization_url_required: false,
+			providerKind(),
+			providerKind({
 				default_scopes: "get_user_info",
 				description: "QQ Connect OAuth2 sign-in.",
 				display_name: "QQ",
 				issuer_url_required: false,
 				kind: "qq",
-				manual_endpoint_configuration_supported: false,
 				protocol: "oauth2",
 				supports_discovery: false,
 				supports_email_verified_claim: false,
-				supports_pkce: true,
-				token_url_required: false,
-				userinfo_url_required: false,
-			},
+			}),
 		]);
 		mockState.create.mockResolvedValue(
 			savedProvider({
@@ -912,21 +856,16 @@ describe("AdminExternalAuthPage", () => {
 
 	it("applies provider kind defaults loaded after opening the create dialog", async () => {
 		mockState.listKinds.mockResolvedValueOnce([]).mockResolvedValueOnce([
-			{
-				authorization_url_required: false,
+			providerKind({
 				default_scopes: "get_user_info",
 				description: "QQ Connect OAuth2 sign-in.",
 				display_name: "QQ",
 				issuer_url_required: false,
 				kind: "qq",
-				manual_endpoint_configuration_supported: false,
 				protocol: "oauth2",
 				supports_discovery: false,
 				supports_email_verified_claim: false,
-				supports_pkce: true,
-				token_url_required: false,
-				userinfo_url_required: false,
-			},
+			}),
 		]);
 
 		render(
@@ -965,9 +904,8 @@ describe("AdminExternalAuthPage", () => {
 					}),
 			)
 			.mockResolvedValueOnce([
-				{
+				providerKind({
 					authorization_url_required: true,
-					default_scopes: "openid email profile",
 					description: "Generic OAuth2 authorization-code sign-in.",
 					display_name: "Generic OAuth2",
 					issuer_url_required: false,
@@ -975,11 +913,9 @@ describe("AdminExternalAuthPage", () => {
 					manual_endpoint_configuration_supported: true,
 					protocol: "oauth2",
 					supports_discovery: false,
-					supports_email_verified_claim: true,
-					supports_pkce: true,
 					token_url_required: true,
 					userinfo_url_required: true,
-				},
+				}),
 			]);
 
 		render(
@@ -996,23 +932,7 @@ describe("AdminExternalAuthPage", () => {
 		await waitFor(() => expect(mockState.listKinds).toHaveBeenCalledTimes(2));
 		fireEvent.click(screen.getByRole("button", { name: "core:cancel" }));
 
-		resolveStaleKinds?.([
-			{
-				authorization_url_required: false,
-				default_scopes: "openid email profile",
-				description: "OpenID Connect authorization-code sign-in.",
-				display_name: "OpenID Connect",
-				issuer_url_required: true,
-				kind: "oidc",
-				manual_endpoint_configuration_supported: false,
-				protocol: "oidc",
-				supports_discovery: true,
-				supports_email_verified_claim: true,
-				supports_pkce: true,
-				token_url_required: false,
-				userinfo_url_required: false,
-			},
-		]);
+		resolveStaleKinds?.([providerKind()]);
 		await Promise.resolve();
 
 		fireEvent.click(createButtons[createButtons.length - 1]);
@@ -1124,36 +1044,15 @@ describe("AdminExternalAuthPage", () => {
 
 	it("hides derived issuer URL when editing a Microsoft provider", async () => {
 		mockState.listKinds.mockResolvedValue([
-			{
-				authorization_url_required: false,
-				default_scopes: "openid email profile",
-				description: "OpenID Connect authorization-code sign-in.",
-				display_name: "OpenID Connect",
-				issuer_url_required: true,
-				kind: "oidc",
-				manual_endpoint_configuration_supported: false,
-				protocol: "oidc",
-				supports_discovery: true,
-				supports_email_verified_claim: true,
-				supports_pkce: true,
-				token_url_required: false,
-				userinfo_url_required: false,
-			},
-			{
-				authorization_url_required: false,
+			providerKind(),
+			providerKind({
 				default_scopes: "openid profile email",
 				description: "Microsoft OpenID Connect sign-in.",
 				display_name: "Microsoft",
 				issuer_url_required: false,
 				kind: "microsoft",
-				manual_endpoint_configuration_supported: false,
-				protocol: "oidc",
-				supports_discovery: true,
 				supports_email_verified_claim: false,
-				supports_pkce: true,
-				token_url_required: false,
-				userinfo_url_required: false,
-			},
+			}),
 		]);
 		mockState.list.mockResolvedValue({
 			items: [
