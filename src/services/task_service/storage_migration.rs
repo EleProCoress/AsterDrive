@@ -791,7 +791,13 @@ async fn copy_blob_streaming(
         .put_reader(target_path, Box::new(hashing_reader), blob.size)
         .await;
     if let Err(error) = upload_result {
+        // A streaming PUT can fail after the remote side has already accepted
+        // bytes, especially when the client times out waiting for the response.
+        // The blob row has not moved yet, so best-effort cleanup prevents
+        // repeated migration retries from leaving orphan target objects behind.
         context.ensure_active()?;
+        cleanup_failed_target_object(state, context, target_driver, target_policy_id, target_path)
+            .await;
         return Err(error);
     }
     context.ensure_active()?;
@@ -808,7 +814,8 @@ async fn copy_blob_streaming(
     .await;
 
     if let Err(error) = verify_result {
-        cleanup_failed_target_object(state, target_driver, target_policy_id, target_path).await;
+        cleanup_failed_target_object(state, context, target_driver, target_policy_id, target_path)
+            .await;
         return Err(error);
     }
 
@@ -817,11 +824,28 @@ async fn copy_blob_streaming(
 
 async fn cleanup_failed_target_object(
     state: &PrimaryAppState,
+    context: &TaskExecutionContext,
     target_driver: &dyn StorageDriver,
     target_policy_id: i64,
     target_path: &str,
 ) {
+    if let Err(error) = context.ensure_active() {
+        tracing::warn!(
+            target_path,
+            target_policy_id,
+            "skip target object cleanup because task lease is no longer active: {error}"
+        );
+        return;
+    }
     if target_object_is_referenced(state, target_policy_id, target_path).await {
+        return;
+    }
+    if let Err(error) = context.ensure_active() {
+        tracing::warn!(
+            target_path,
+            target_policy_id,
+            "skip target object cleanup after reference check because task lease is no longer active: {error}"
+        );
         return;
     }
     if let Err(cleanup_error) = target_driver.delete(target_path).await {

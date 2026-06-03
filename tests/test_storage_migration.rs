@@ -3,22 +3,32 @@
 #[macro_use]
 mod common;
 
+use std::collections::HashMap;
+use std::io::Cursor;
+use std::sync::Arc;
+
 use actix_web::test;
+use async_trait::async_trait;
 use chrono::Utc;
+use parking_lot::Mutex;
 use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, Set};
 use serde_json::Value;
 use testcontainers::{GenericImage, ImageExt, runners::AsyncRunner};
+use tokio::io::{AsyncRead, AsyncReadExt};
 
 use aster_drive::db::repository::{
     background_task_repo, file_repo, policy_repo, storage_migration_checkpoint_repo,
 };
 use aster_drive::entities::{file, file_blob, file_version, storage_policy};
+use aster_drive::errors::{AsterError, MapAsterErr, Result};
 use aster_drive::runtime::PrimaryAppState;
 use aster_drive::services::task_service;
+use aster_drive::storage::{BlobMetadata, StorageDriver, StreamUploadDriver};
 use aster_drive::types::{
     BackgroundTaskStatus, DriverType, FileCategory, StoredStoragePolicyAllowedTypes,
     StoredStoragePolicyOptions,
 };
+use aster_drive::utils::numbers::usize_to_u64;
 
 const RUSTFS_TEST_IMAGE_TAG: &str = "1.0.0-alpha.90";
 
@@ -26,6 +36,127 @@ struct RustFsTestContext {
     _container: testcontainers::ContainerAsync<GenericImage>,
     endpoint: String,
     bucket: String,
+}
+
+#[derive(Clone, Copy, Default)]
+enum StreamUploadFailureMode {
+    #[default]
+    AfterWrite,
+    BeforeWrite,
+}
+
+#[derive(Clone, Default)]
+struct FailingStreamUploadDriver {
+    objects: Arc<Mutex<HashMap<String, Vec<u8>>>>,
+    failure_mode: StreamUploadFailureMode,
+    fail_delete: bool,
+}
+
+impl FailingStreamUploadDriver {
+    fn before_write() -> Self {
+        Self {
+            failure_mode: StreamUploadFailureMode::BeforeWrite,
+            ..Default::default()
+        }
+    }
+
+    fn delete_fails() -> Self {
+        Self {
+            fail_delete: true,
+            ..Default::default()
+        }
+    }
+
+    fn contains(&self, path: &str) -> bool {
+        self.objects.lock().contains_key(path)
+    }
+
+    fn bytes(&self, path: &str) -> Option<Vec<u8>> {
+        self.objects.lock().get(path).cloned()
+    }
+}
+
+#[async_trait]
+impl StorageDriver for FailingStreamUploadDriver {
+    async fn put(&self, path: &str, data: &[u8]) -> Result<String> {
+        self.objects.lock().insert(path.to_string(), data.to_vec());
+        Ok(path.to_string())
+    }
+
+    async fn get(&self, path: &str) -> Result<Vec<u8>> {
+        self.objects
+            .lock()
+            .get(path)
+            .cloned()
+            .ok_or_else(|| AsterError::storage_driver_error(format!("missing object {path}")))
+    }
+
+    async fn get_stream(&self, path: &str) -> Result<Box<dyn AsyncRead + Unpin + Send>> {
+        Ok(Box::new(Cursor::new(self.get(path).await?)))
+    }
+
+    async fn delete(&self, path: &str) -> Result<()> {
+        if self.fail_delete && !path.starts_with("_aster_migration_preflight-") {
+            return Err(AsterError::storage_driver_error(
+                "simulated cleanup delete failure",
+            ));
+        }
+        self.objects.lock().remove(path);
+        Ok(())
+    }
+
+    async fn exists(&self, path: &str) -> Result<bool> {
+        Ok(self.contains(path))
+    }
+
+    async fn metadata(&self, path: &str) -> Result<BlobMetadata> {
+        let size =
+            self.objects.lock().get(path).map(Vec::len).ok_or_else(|| {
+                AsterError::storage_driver_error(format!("missing object {path}"))
+            })?;
+        Ok(BlobMetadata {
+            size: usize_to_u64(size, "test object size")?,
+            content_type: None,
+        })
+    }
+
+    fn as_stream_upload(&self) -> Option<&dyn StreamUploadDriver> {
+        Some(self)
+    }
+}
+
+#[async_trait]
+impl StreamUploadDriver for FailingStreamUploadDriver {
+    async fn put_reader(
+        &self,
+        storage_path: &str,
+        mut reader: Box<dyn AsyncRead + Unpin + Send + Sync>,
+        _size: i64,
+    ) -> Result<String> {
+        let mut bytes = Vec::new();
+        reader
+            .read_to_end(&mut bytes)
+            .await
+            .map_aster_err_ctx("read test upload stream", AsterError::storage_driver_error)?;
+        if matches!(self.failure_mode, StreamUploadFailureMode::AfterWrite) {
+            self.objects.lock().insert(storage_path.to_string(), bytes);
+        }
+        Err(AsterError::storage_driver_error(
+            "simulated timeout after remote write",
+        ))
+    }
+
+    async fn put_file(&self, storage_path: &str, local_path: &str) -> Result<String> {
+        let bytes = tokio::fs::read(local_path)
+            .await
+            .map_aster_err(AsterError::storage_driver_error)?;
+        if matches!(self.failure_mode, StreamUploadFailureMode::AfterWrite) {
+            self.objects.lock().insert(storage_path.to_string(), bytes);
+        }
+        Err(AsterError::storage_driver_error(
+            "simulated timeout after remote write",
+        ))
+    }
 }
 
 async fn start_rustfs_context(bucket_prefix: &str) -> RustFsTestContext {
@@ -239,6 +370,33 @@ async fn create_blob_with_object(
     .insert(state.writer_db())
     .await
     .expect("blob row should insert")
+}
+
+async fn create_blob_record_with_storage_path(
+    state: &PrimaryAppState,
+    policy: &storage_policy::Model,
+    hash: &str,
+    storage_path: &str,
+    bytes: &[u8],
+    ref_count: i32,
+) -> file_blob::Model {
+    let now = Utc::now();
+    file_blob::ActiveModel {
+        hash: Set(hash.to_string()),
+        size: Set(i64::try_from(bytes.len()).expect("test bytes len should fit i64")),
+        policy_id: Set(policy.id),
+        storage_path: Set(storage_path.to_string()),
+        thumbnail_path: Set(None),
+        thumbnail_processor: Set(None),
+        thumbnail_version: Set(None),
+        ref_count: Set(ref_count),
+        created_at: Set(now),
+        updated_at: Set(now),
+        ..Default::default()
+    }
+    .insert(state.writer_db())
+    .await
+    .expect("blob row with explicit storage path should insert")
 }
 
 async fn create_opaque_blob_with_object(
@@ -1387,6 +1545,192 @@ async fn test_storage_migration_cleans_target_object_when_verification_fails() {
     assert_eq!(checkpoint.last_processed_blob_id, 0);
     assert_eq!(checkpoint.scanned_blobs, 0);
     assert_eq!(checkpoint.migrated_blobs, 0);
+}
+
+#[actix_web::test]
+async fn test_storage_migration_cleans_target_object_when_stream_upload_returns_error() {
+    let state = common::setup().await;
+    let app = create_test_app!(state.clone());
+    let (token, _) = register_and_login!(app);
+    let source = create_local_policy(&state, "source-upload-error-cleanup").await;
+    let target = create_local_policy(&state, "target-upload-error-cleanup").await;
+    let target_driver = FailingStreamUploadDriver::default();
+    state
+        .driver_registry
+        .insert_for_test(target.id, Arc::new(target_driver.clone()));
+    let blob = create_blob_with_object(&state, &source, b"cleanup-after-upload-error", 1).await;
+    create_file_for_blob(&state, blob.id, "upload-error-cleanup.txt").await;
+
+    let body = create_migration_task_via_api(&app, &token, source.id, target.id, false).await;
+    let task_id = body["data"]["id"].as_i64().expect("task id should exist");
+    let target_path = aster_drive::utils::storage_path_from_blob_key(&blob.hash);
+
+    let stats = task_service::drain(&state)
+        .await
+        .expect("failed migration task should drain");
+    assert_eq!(stats.failed, 1);
+
+    let task = background_task_repo::find_by_id(state.writer_db(), task_id)
+        .await
+        .expect("task should exist");
+    assert_eq!(task.status, BackgroundTaskStatus::Failed);
+    assert!(
+        task.last_error
+            .as_deref()
+            .expect("failed task should store last_error")
+            .contains("simulated timeout after remote write")
+    );
+    assert!(
+        !target_driver.contains(&target_path),
+        "failed stream upload should cleanup the target object left before the error"
+    );
+
+    let source_blob = file_repo::find_blob_by_id(state.writer_db(), blob.id)
+        .await
+        .expect("source blob row should remain");
+    assert_eq!(source_blob.policy_id, source.id);
+}
+
+#[actix_web::test]
+async fn test_storage_migration_stream_upload_error_without_target_object_stays_failed() {
+    let state = common::setup().await;
+    let app = create_test_app!(state.clone());
+    let (token, _) = register_and_login!(app);
+    let source = create_local_policy(&state, "source-upload-error-no-object").await;
+    let target = create_local_policy(&state, "target-upload-error-no-object").await;
+    let target_driver = FailingStreamUploadDriver::before_write();
+    state
+        .driver_registry
+        .insert_for_test(target.id, Arc::new(target_driver.clone()));
+    let blob = create_blob_with_object(&state, &source, b"upload-error-before-write", 1).await;
+    create_file_for_blob(&state, blob.id, "upload-error-before-write.txt").await;
+
+    let body = create_migration_task_via_api(&app, &token, source.id, target.id, false).await;
+    let task_id = body["data"]["id"].as_i64().expect("task id should exist");
+    let target_path = aster_drive::utils::storage_path_from_blob_key(&blob.hash);
+
+    let stats = task_service::drain(&state)
+        .await
+        .expect("failed migration task should drain");
+    assert_eq!(stats.failed, 1);
+
+    let task = background_task_repo::find_by_id(state.writer_db(), task_id)
+        .await
+        .expect("task should exist");
+    assert_eq!(task.status, BackgroundTaskStatus::Failed);
+    assert!(
+        task.last_error
+            .as_deref()
+            .expect("failed task should store last_error")
+            .contains("simulated timeout after remote write")
+    );
+    assert!(
+        !target_driver.contains(&target_path),
+        "cleanup should tolerate upload errors that left no target object"
+    );
+}
+
+#[actix_web::test]
+async fn test_storage_migration_stream_upload_cleanup_error_preserves_upload_error() {
+    let state = common::setup().await;
+    let app = create_test_app!(state.clone());
+    let (token, _) = register_and_login!(app);
+    let source = create_local_policy(&state, "source-upload-cleanup-delete-error").await;
+    let target = create_local_policy(&state, "target-upload-cleanup-delete-error").await;
+    let target_driver = FailingStreamUploadDriver::delete_fails();
+    state
+        .driver_registry
+        .insert_for_test(target.id, Arc::new(target_driver.clone()));
+    let blob = create_blob_with_object(&state, &source, b"cleanup-delete-error", 1).await;
+    create_file_for_blob(&state, blob.id, "cleanup-delete-error.txt").await;
+
+    let body = create_migration_task_via_api(&app, &token, source.id, target.id, false).await;
+    let task_id = body["data"]["id"].as_i64().expect("task id should exist");
+    let target_path = aster_drive::utils::storage_path_from_blob_key(&blob.hash);
+
+    let stats = task_service::drain(&state)
+        .await
+        .expect("failed migration task should drain");
+    assert_eq!(stats.failed, 1);
+
+    let task = background_task_repo::find_by_id(state.writer_db(), task_id)
+        .await
+        .expect("task should exist");
+    assert_eq!(task.status, BackgroundTaskStatus::Failed);
+    let last_error = task
+        .last_error
+        .as_deref()
+        .expect("failed task should store last_error");
+    assert!(
+        last_error.contains("simulated timeout after remote write"),
+        "cleanup failure should not replace the original upload error"
+    );
+    assert!(
+        !last_error.contains("simulated cleanup delete failure"),
+        "cleanup failure should stay a warning, not the task failure reason"
+    );
+    assert!(
+        target_driver.contains(&target_path),
+        "object remains when best-effort cleanup itself fails"
+    );
+}
+
+#[actix_web::test]
+async fn test_storage_migration_stream_upload_error_does_not_delete_referenced_target_object() {
+    let state = common::setup().await;
+    let app = create_test_app!(state.clone());
+    let (token, _) = register_and_login!(app);
+    let source = create_local_policy(&state, "source-upload-cleanup-referenced").await;
+    let target = create_local_policy(&state, "target-upload-cleanup-referenced").await;
+    let target_driver = FailingStreamUploadDriver::default();
+    state
+        .driver_registry
+        .insert_for_test(target.id, Arc::new(target_driver.clone()));
+    let bytes = b"referenced-target-object";
+    let blob = create_blob_with_object(&state, &source, bytes, 1).await;
+    create_file_for_blob(&state, blob.id, "cleanup-referenced.txt").await;
+    let target_path = aster_drive::utils::storage_path_from_blob_key(&blob.hash);
+    target_driver
+        .put(&target_path, bytes)
+        .await
+        .expect("referenced target object should be seeded");
+    let referenced_hash = aster_drive::utils::hash::sha256_hex(b"separate referenced blob row");
+    let referenced = create_blob_record_with_storage_path(
+        &state,
+        &target,
+        &referenced_hash,
+        &target_path,
+        bytes,
+        1,
+    )
+    .await;
+
+    let body = create_migration_task_via_api(&app, &token, source.id, target.id, false).await;
+    let task_id = body["data"]["id"].as_i64().expect("task id should exist");
+
+    let stats = task_service::drain(&state)
+        .await
+        .expect("failed migration task should drain");
+    assert_eq!(stats.failed, 1);
+
+    let task = background_task_repo::find_by_id(state.writer_db(), task_id)
+        .await
+        .expect("task should exist");
+    assert_eq!(task.status, BackgroundTaskStatus::Failed);
+    assert!(
+        target_driver.contains(&target_path),
+        "cleanup must not delete a target object while a blob row still references its path"
+    );
+    assert_eq!(
+        target_driver.bytes(&target_path).as_deref(),
+        Some(bytes.as_slice()),
+        "referenced target object bytes should remain intact"
+    );
+    let referenced_after = file_repo::find_blob_by_id(state.writer_db(), referenced.id)
+        .await
+        .expect("referenced target blob row should remain");
+    assert_eq!(referenced_after.policy_id, target.id);
+    assert_eq!(referenced_after.storage_path, target_path);
 }
 
 #[actix_web::test]
