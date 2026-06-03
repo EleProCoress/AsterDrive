@@ -9,6 +9,7 @@ use super::providers::google::GoogleProviderDriver;
 use super::providers::microsoft::MicrosoftProviderDriver;
 use super::providers::oauth2::OAuth2ProviderDriver;
 use super::providers::oidc::OidcProviderDriver;
+use super::providers::qq::QqProviderDriver;
 use crate::errors::{AsterError, Result};
 use crate::types::ExternalAuthProviderKind;
 
@@ -26,6 +27,7 @@ impl ExternalAuthProviderRegistry {
         registry.register(GitHubProviderDriver::new());
         registry.register(GoogleProviderDriver::new());
         registry.register(MicrosoftProviderDriver::new());
+        registry.register(QqProviderDriver::new());
         registry
     }
 
@@ -166,6 +168,7 @@ mod tests {
         assert!(registry.contains(ExternalAuthProviderKind::GitHub));
         assert!(registry.contains(ExternalAuthProviderKind::Google));
         assert!(registry.contains(ExternalAuthProviderKind::Microsoft));
+        assert!(registry.contains(ExternalAuthProviderKind::Qq));
     }
 
     #[test]

@@ -111,7 +111,7 @@ async fn admin_provider_kind_api_drives_create_contract() {
     let kinds = body["data"]
         .as_array()
         .expect("provider kind list should be an array");
-    assert_eq!(kinds.len(), 5);
+    assert_eq!(kinds.len(), 6);
     let oidc = kinds
         .iter()
         .find(|kind| kind["kind"] == "oidc")

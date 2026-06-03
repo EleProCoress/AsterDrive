@@ -47,6 +47,17 @@ export const GITHUB_CLAIMS = {
 	subjectClaim: "id",
 	usernameClaim: "login",
 } as const;
+export const QQ_FIXED_ENDPOINTS = {
+	authorizationUrl: "https://graph.qq.com/oauth2.0/authorize",
+	openidUrl: "https://graph.qq.com/oauth2.0/me",
+	tokenUrl: "https://graph.qq.com/oauth2.0/token",
+	userinfoUrl: "https://graph.qq.com/user/get_user_info",
+} as const;
+export const QQ_CLAIMS = {
+	displayNameClaim: "nickname",
+	emailClaim: "not returned",
+	subjectClaim: "openid",
+} as const;
 export const GOOGLE_ISSUER_URL = "https://accounts.google.com";
 export const GOOGLE_DISCOVERY_URL =
 	"https://accounts.google.com/.well-known/openid-configuration";
@@ -191,6 +202,8 @@ function kindFallbackLabel(kind: ExternalAuthProviderKind) {
 			return "Google";
 		case "microsoft":
 			return "Microsoft";
+		case "qq":
+			return "QQ";
 		case "oidc":
 			return "OpenID Connect";
 	}
@@ -224,6 +237,16 @@ export function isMicrosoftProviderKind(
 		| undefined,
 ) {
 	return (typeof kind === "string" ? kind : kind?.kind) === "microsoft";
+}
+
+export function isQqProviderKind(
+	kind:
+		| AdminExternalAuthProviderKindInfo
+		| ExternalAuthProviderKind
+		| null
+		| undefined,
+) {
+	return (typeof kind === "string" ? kind : kind?.kind) === "qq";
 }
 
 function localizedProviderKindText(
@@ -685,6 +708,9 @@ export function shouldShowIssuerUrl(
 	if (isMicrosoftProviderKind(kind)) {
 		return false;
 	}
+	if (isQqProviderKind(kind)) {
+		return false;
+	}
 	return Boolean(kind?.supports_discovery || kind?.issuer_url_required);
 }
 
@@ -742,8 +768,10 @@ export function formConnectionSummary(
 	}
 	if (isMicrosoftProviderKind(selectedKind ?? form.providerKind)) {
 		const tenant = formMicrosoftTenantValue(form) || MICROSOFT_DEFAULT_TENANT;
-		const issuer = microsoftIssuerUrlForTenant(tenant);
-		return `tenant: ${tenant} · issuer: ${issuer}`;
+		return `tenant: ${tenant} · OIDC discovery`;
+	}
+	if (isQqProviderKind(selectedKind ?? form.providerKind)) {
+		return `authorization: ${QQ_FIXED_ENDPOINTS.authorizationUrl} · token: ${QQ_FIXED_ENDPOINTS.tokenUrl} · openid: ${QQ_FIXED_ENDPOINTS.openidUrl} · userinfo: ${QQ_FIXED_ENDPOINTS.userinfoUrl}`;
 	}
 	const items = [
 		form.issuerUrl.trim() ? `issuer: ${form.issuerUrl.trim()}` : null,
@@ -777,6 +805,9 @@ export function formClaimSummary(
 	}
 	if (isMicrosoftProviderKind(selectedKind ?? form.providerKind)) {
 		return `subject=${MICROSOFT_CLAIMS.subjectClaim} · display=${MICROSOFT_CLAIMS.displayNameClaim} · email=${MICROSOFT_CLAIMS.emailClaim}`;
+	}
+	if (isQqProviderKind(selectedKind ?? form.providerKind)) {
+		return `subject=${QQ_CLAIMS.subjectClaim} · display=${QQ_CLAIMS.displayNameClaim} · email=${QQ_CLAIMS.emailClaim}`;
 	}
 	const claims = [
 		`subject=${effectiveClaim(form.subjectClaim, STANDARD_CLAIMS.subjectClaim)}`,

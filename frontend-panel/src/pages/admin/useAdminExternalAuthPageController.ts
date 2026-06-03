@@ -27,6 +27,7 @@ import {
 	isGitHubProviderKind,
 	isGoogleProviderKind,
 	isMicrosoftProviderKind,
+	isQqProviderKind,
 	MICROSOFT_DEFAULT_TENANT,
 	mergeManagedExternalAuthSearchParams,
 	normalizeOffset,
@@ -157,6 +158,20 @@ function resetDialogFields(state: AdminExternalAuthUiState) {
 	};
 }
 
+function initialProviderKindPatch(
+	kind: AdminExternalAuthProviderKindInfo | undefined,
+): Partial<ExternalAuthProviderFormData> {
+	if (!kind) {
+		return {};
+	}
+	if (isMicrosoftProviderKind(kind) || isQqProviderKind(kind)) {
+		return {
+			requireEmailVerified: false,
+		};
+	}
+	return {};
+}
+
 function adminExternalAuthUiReducer(
 	state: AdminExternalAuthUiState,
 	action: AdminExternalAuthUiAction,
@@ -178,6 +193,7 @@ function adminExternalAuthUiReducer(
 				form: nextKind
 					? {
 							...state.form,
+							...initialProviderKindPatch(nextKind),
 							providerKind: nextKind.kind,
 							scopes: defaultScopesForKind(nextKind),
 						}
@@ -310,11 +326,6 @@ export function useAdminExternalAuthPageController() {
 			normalizeOffset(typeof value === "function" ? value(current) : value),
 		);
 	}, []);
-	const enabledCount = useMemo(
-		() => providers.filter((provider) => provider.enabled).length,
-		[providers],
-	);
-	const providerKindCount = providerKinds.length;
 	const selectedKind = useMemo(
 		() =>
 			providerKinds.find((kind) => kind.kind === form.providerKind) ??
@@ -537,7 +548,24 @@ export function useAdminExternalAuthPageController() {
 							userinfoUrl: "",
 							usernameClaim: "",
 						}
-					: {};
+					: isQqProviderKind(selectedProviderKind)
+						? {
+								authorizationUrl: "",
+								avatarUrlClaim: "",
+								displayName: form.displayName.trim() ? form.displayName : "QQ",
+								displayNameClaim: "",
+								emailClaim: "",
+								emailVerifiedClaim: "",
+								groupsClaim: "",
+								iconUrl: "",
+								issuerUrl: "",
+								requireEmailVerified: false,
+								subjectClaim: "",
+								tokenUrl: "",
+								userinfoUrl: "",
+								usernameClaim: "",
+							}
+						: {};
 		dispatchUi({
 			kind,
 			patch,
@@ -562,6 +590,7 @@ export function useAdminExternalAuthPageController() {
 		dispatchUi({
 			form: {
 				...emptyForm,
+				...initialProviderKindPatch(firstKind),
 				providerKind: firstKind?.kind ?? "oidc",
 				scopes: defaultScopesForKind(firstKind),
 			},
@@ -767,7 +796,6 @@ export function useAdminExternalAuthPageController() {
 		dialogOpen,
 		dialogProps,
 		editingProvider,
-		enabledCount,
 		form,
 		goCreateBack,
 		goCreateNext,
@@ -782,7 +810,6 @@ export function useAdminExternalAuthPageController() {
 		pageSize,
 		pageSizeOptions,
 		prevPageDisabled,
-		providerKindCount,
 		providerKinds,
 		providers,
 		requestConfirm,

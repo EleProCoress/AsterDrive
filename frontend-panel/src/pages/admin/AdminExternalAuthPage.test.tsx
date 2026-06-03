@@ -116,16 +116,6 @@ vi.mock("@/components/layout/AdminPageShell", () => ({
 	),
 }));
 
-vi.mock("@/components/layout/AdminSurface", () => ({
-	AdminSurface: ({
-		children,
-		className,
-	}: {
-		children: React.ReactNode;
-		className?: string;
-	}) => <section className={className}>{children}</section>,
-}));
-
 vi.mock("@/components/ui/badge", () => ({
 	Badge: ({ children }: { children: React.ReactNode }) => (
 		<span>{children}</span>
@@ -586,8 +576,8 @@ describe("AdminExternalAuthPage", () => {
 			screen.queryByLabelText("external_auth_provider_authorization_url"),
 		).not.toBeInTheDocument();
 		expect(
-			screen.getByText("external_auth_provider_google_fixed_title"),
-		).toBeInTheDocument();
+			screen.queryByText("external_auth_provider_google_fixed_title"),
+		).not.toBeInTheDocument();
 
 		fireEvent.change(
 			screen.getByLabelText("external_auth_provider_client_id"),
@@ -703,8 +693,8 @@ describe("AdminExternalAuthPage", () => {
 			screen.queryByLabelText("external_auth_provider_authorization_url"),
 		).not.toBeInTheDocument();
 		expect(
-			screen.getByText("external_auth_provider_microsoft_fixed_title"),
-		).toBeInTheDocument();
+			screen.queryByText("external_auth_provider_microsoft_fixed_title"),
+		).not.toBeInTheDocument();
 
 		fireEvent.change(
 			screen.getByLabelText("external_auth_provider_microsoft_tenant"),
@@ -726,9 +716,7 @@ describe("AdminExternalAuthPage", () => {
 			screen.getByText("external_auth_provider_microsoft_claims_title"),
 		).toBeInTheDocument();
 		expect(
-			screen.getByText(
-				"tenant: organizations · issuer: https://login.microsoftonline.com/organizations/v2.0",
-			),
+			screen.getByText("tenant: organizations · OIDC discovery"),
 		).toBeInTheDocument();
 
 		const submitButtons = screen.getAllByRole("button", {
@@ -757,6 +745,137 @@ describe("AdminExternalAuthPage", () => {
 			screen.getByText(
 				/\/api\/v1\/auth\/external-auth\/microsoft\/microsoft\/callback/,
 			),
+		).toBeInTheDocument();
+	});
+
+	it("applies QQ create-dialog defaults and submits only app credentials", async () => {
+		mockState.listKinds.mockResolvedValue([
+			{
+				authorization_url_required: false,
+				default_scopes: "openid email profile",
+				description: "OpenID Connect authorization-code sign-in.",
+				display_name: "OpenID Connect",
+				issuer_url_required: true,
+				kind: "oidc",
+				manual_endpoint_configuration_supported: false,
+				protocol: "oidc",
+				supports_discovery: true,
+				supports_email_verified_claim: true,
+				supports_pkce: true,
+				token_url_required: false,
+				userinfo_url_required: false,
+			},
+			{
+				authorization_url_required: false,
+				default_scopes: "get_user_info",
+				description: "QQ Connect OAuth2 sign-in.",
+				display_name: "QQ",
+				issuer_url_required: false,
+				kind: "qq",
+				manual_endpoint_configuration_supported: false,
+				protocol: "oauth2",
+				supports_discovery: false,
+				supports_email_verified_claim: false,
+				supports_pkce: true,
+				token_url_required: false,
+				userinfo_url_required: false,
+			},
+		]);
+		mockState.create.mockResolvedValue(
+			savedProvider({
+				display_name: "QQ",
+				issuer_url: "qq:100000001",
+				key: "qq",
+				provider_kind: "qq",
+				require_email_verified: false,
+				scopes: "get_user_info",
+			}),
+		);
+
+		render(
+			<MemoryRouter initialEntries={["/admin/external-auth"]}>
+				<AdminExternalAuthPage />
+			</MemoryRouter>,
+		);
+
+		await waitFor(() => expect(mockState.listKinds).toHaveBeenCalled());
+		const createButtons = screen.getAllByRole("button", {
+			name: /external_auth_provider_create/,
+		});
+		fireEvent.click(createButtons[createButtons.length - 1]);
+		fireEvent.click(screen.getByRole("button", { name: /QQ/ }));
+		fireEvent.click(screen.getByRole("button", { name: "policy_wizard_next" }));
+
+		expect(screen.getByDisplayValue("QQ")).toHaveAttribute(
+			"id",
+			"external-auth-provider-display-name",
+		);
+		expect(
+			screen.queryByLabelText("external_auth_provider_issuer_url"),
+		).not.toBeInTheDocument();
+		expect(
+			screen.queryByLabelText("external_auth_provider_authorization_url"),
+		).not.toBeInTheDocument();
+		expect(
+			screen.queryByLabelText("external_auth_provider_email_claim"),
+		).not.toBeInTheDocument();
+		expect(
+			screen.queryByText("external_auth_provider_qq_fixed_title"),
+		).not.toBeInTheDocument();
+		expect(
+			screen.getByText("external_auth_provider_qq_email_title"),
+		).toBeInTheDocument();
+
+		fireEvent.change(
+			screen.getByLabelText("external_auth_provider_client_id"),
+			{
+				target: { value: "100000001" },
+			},
+		);
+		fireEvent.change(
+			screen.getByLabelText("external_auth_provider_client_secret"),
+			{
+				target: { value: "qq-app-key" },
+			},
+		);
+		fireEvent.click(
+			screen.getByRole("button", { name: "policy_wizard_review" }),
+		);
+		expect(screen.getByText("get_user_info")).toBeInTheDocument();
+		expect(
+			screen.getByText("external_auth_provider_qq_claims_title"),
+		).toBeInTheDocument();
+		expect(
+			screen.getByText(
+				"subject=openid · display=nickname · email=not returned",
+			),
+		).toBeInTheDocument();
+
+		const submitButtons = screen.getAllByRole("button", {
+			name: /external_auth_provider_create/,
+		});
+		fireEvent.click(submitButtons[submitButtons.length - 1]);
+
+		await waitFor(() => expect(mockState.create).toHaveBeenCalledTimes(1));
+		expect(mockState.create).toHaveBeenCalledWith(
+			expect.objectContaining({
+				authorization_url: null,
+				client_id: "100000001",
+				client_secret: "qq-app-key",
+				display_name: "QQ",
+				issuer_url: null,
+				provider_kind: "qq",
+				require_email_verified: false,
+				scopes: "get_user_info",
+				token_url: null,
+				userinfo_url: null,
+			}),
+		);
+		expect(
+			await screen.findByText("external_auth_provider_created_callback_title"),
+		).toBeInTheDocument();
+		expect(
+			screen.getByText(/\/api\/v1\/auth\/external-auth\/qq\/qq\/callback/),
 		).toBeInTheDocument();
 	});
 
@@ -931,6 +1050,77 @@ describe("AdminExternalAuthPage", () => {
 
 		await waitFor(() => expect(mockState.test).toHaveBeenCalledWith(1));
 		expect(mockState.testParams).not.toHaveBeenCalled();
+	});
+
+	it("hides derived issuer URL when editing a Microsoft provider", async () => {
+		mockState.listKinds.mockResolvedValue([
+			{
+				authorization_url_required: false,
+				default_scopes: "openid email profile",
+				description: "OpenID Connect authorization-code sign-in.",
+				display_name: "OpenID Connect",
+				issuer_url_required: true,
+				kind: "oidc",
+				manual_endpoint_configuration_supported: false,
+				protocol: "oidc",
+				supports_discovery: true,
+				supports_email_verified_claim: true,
+				supports_pkce: true,
+				token_url_required: false,
+				userinfo_url_required: false,
+			},
+			{
+				authorization_url_required: false,
+				default_scopes: "openid profile email",
+				description: "Microsoft OpenID Connect sign-in.",
+				display_name: "Microsoft",
+				issuer_url_required: false,
+				kind: "microsoft",
+				manual_endpoint_configuration_supported: false,
+				protocol: "oidc",
+				supports_discovery: true,
+				supports_email_verified_claim: false,
+				supports_pkce: true,
+				token_url_required: false,
+				userinfo_url_required: false,
+			},
+		]);
+		mockState.list.mockResolvedValue({
+			items: [
+				savedProvider({
+					display_name: "Microsoft",
+					issuer_url: "https://login.microsoftonline.com/common/v2.0",
+					key: "microsoft",
+					provider_kind: "microsoft",
+					require_email_verified: false,
+					scopes: "openid profile email",
+				}),
+			],
+			limit: 20,
+			offset: 0,
+			total: 1,
+		});
+
+		render(
+			<MemoryRouter initialEntries={["/admin/external-auth"]}>
+				<AdminExternalAuthPage />
+			</MemoryRouter>,
+		);
+
+		const microsoftLabels = await screen.findAllByText("Microsoft");
+		fireEvent.click(microsoftLabels[0]);
+
+		expect(
+			screen.getByLabelText("external_auth_provider_microsoft_tenant"),
+		).toHaveValue("common");
+		expect(
+			screen.queryByLabelText("external_auth_provider_issuer_url"),
+		).not.toBeInTheDocument();
+		expect(
+			screen.queryByDisplayValue(
+				"https://login.microsoftonline.com/common/v2.0",
+			),
+		).not.toBeInTheDocument();
 	});
 
 	it("tests draft parameters while editing when connection fields changed", async () => {

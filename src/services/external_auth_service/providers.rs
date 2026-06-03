@@ -203,7 +203,10 @@ fn normalize_provider_issuer_url_input(
 }
 
 fn default_require_email_verified(provider_kind: ExternalAuthProviderKind) -> bool {
-    provider_kind != ExternalAuthProviderKind::Microsoft
+    !matches!(
+        provider_kind,
+        ExternalAuthProviderKind::Microsoft | ExternalAuthProviderKind::Qq
+    )
 }
 
 pub async fn list_public_providers(

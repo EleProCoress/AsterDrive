@@ -51,6 +51,9 @@ pub enum ExternalAuthProviderKind {
     #[serde(rename = "microsoft")]
     #[sea_orm(string_value = "microsoft")]
     Microsoft,
+    #[serde(rename = "qq")]
+    #[sea_orm(string_value = "qq")]
+    Qq,
 }
 
 impl ExternalAuthProviderKind {
@@ -61,6 +64,7 @@ impl ExternalAuthProviderKind {
             Self::GitHub => "github",
             Self::Google => "google",
             Self::Microsoft => "microsoft",
+            Self::Qq => "qq",
         }
     }
 
@@ -71,6 +75,7 @@ impl ExternalAuthProviderKind {
             "github" => Some(Self::GitHub),
             "google" => Some(Self::Google),
             "microsoft" => Some(Self::Microsoft),
+            "qq" => Some(Self::Qq),
             _ => None,
         }
     }
@@ -106,6 +111,7 @@ impl ExternalAuthProviderKind {
             Self::GitHub => ExternalAuthProtocol::OAuth2,
             Self::Google => ExternalAuthProtocol::Oidc,
             Self::Microsoft => ExternalAuthProtocol::Oidc,
+            Self::Qq => ExternalAuthProtocol::OAuth2,
         }
     }
 }

@@ -227,6 +227,26 @@ function microsoftKind(
 	});
 }
 
+function qqKind(
+	overrides: Partial<AdminExternalAuthProviderKindInfo> = {},
+): AdminExternalAuthProviderKindInfo {
+	return kind({
+		authorization_url_required: false,
+		default_scopes: "get_user_info",
+		description: "QQ sign-in.",
+		display_name: "QQ",
+		issuer_url_required: false,
+		kind: "qq",
+		manual_endpoint_configuration_supported: false,
+		protocol: "oauth2",
+		supports_discovery: false,
+		supports_email_verified_claim: false,
+		token_url_required: false,
+		userinfo_url_required: false,
+		...overrides,
+	});
+}
+
 describe("admin external auth shared helpers", () => {
 	it("normalizes domains and payload text fields", () => {
 		expect(parseAllowedDomains(" @Example.COM, example.com\nTeam.io ")).toEqual(
@@ -431,7 +451,7 @@ describe("admin external auth shared helpers", () => {
 		});
 		expect(shouldShowIssuerUrl(descriptor)).toBe(false);
 		expect(formConnectionSummary(form, descriptor)).toBe(
-			"tenant: organizations · issuer: https://login.microsoftonline.com/organizations/v2.0",
+			"tenant: organizations · OIDC discovery",
 		);
 		expect(formClaimSummary(form, descriptor)).toBe(
 			"subject=sub · display=name · email=email",
@@ -462,6 +482,40 @@ describe("admin external auth shared helpers", () => {
 		});
 		expect(callbackUrl("microsoft", "microsoft")).toBe(
 			"https://app.example.com/api/v1/auth/external-auth/microsoft/microsoft/callback",
+		);
+	});
+
+	it("uses QQ descriptor defaults and fixed OAuth2 summaries", () => {
+		const descriptor = qqKind();
+		const form = {
+			...emptyForm,
+			clientId: "100000001",
+			displayName: "QQ",
+			providerKind: "qq" as const,
+			requireEmailVerified: false,
+			scopes: " ",
+		};
+
+		expect(defaultScopesForKind(descriptor)).toBe("get_user_info");
+		expect(createPayload(form, descriptor)).toMatchObject({
+			authorization_url: null,
+			issuer_url: null,
+			provider_kind: "qq",
+			require_email_verified: false,
+			scopes: "get_user_info",
+			token_url: null,
+			userinfo_url: null,
+		});
+		expect(connectionRequirementsMissing(form, descriptor)).toBe(false);
+		expect(shouldShowIssuerUrl(descriptor)).toBe(false);
+		expect(formConnectionSummary(form, descriptor)).toContain(
+			"https://graph.qq.com/oauth2.0/me",
+		);
+		expect(formClaimSummary(form, descriptor)).toBe(
+			"subject=openid · display=nickname · email=not returned",
+		);
+		expect(callbackUrl("qq", "qq")).toBe(
+			"https://app.example.com/api/v1/auth/external-auth/qq/qq/callback",
 		);
 	});
 

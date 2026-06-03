@@ -15,10 +15,11 @@
 | 邮箱补验 | `src/services/external_auth_service/verification.rs` | 临时 flow、邮件发送、确认后继续登录 |
 | 密码绑定 | `src/services/external_auth_service/password_link.rs` | 用户输入本地密码后绑定外部身份 |
 | Driver trait | `src/external_auth/driver.rs` | provider driver 统一接口和 descriptor |
-| Driver 注册表 | `src/external_auth/registry.rs` | 注册 `oidc`、`generic_oauth2`、`github`、`google` 和 `microsoft` |
+| Driver 注册表 | `src/external_auth/registry.rs` | 注册 `oidc`、`generic_oauth2`、`github`、`qq`、`google` 和 `microsoft` |
 | OIDC driver | `src/external_auth/providers/oidc.rs` | discovery、PKCE、nonce、ID Token 校验 |
 | Generic OAuth2 driver | `src/external_auth/providers/oauth2.rs` | 手动 endpoint、PKCE、token exchange、UserInfo claim 映射 |
 | GitHub driver | `src/external_auth/providers/github.rs` | 复用 OAuth2 driver，固定 GitHub endpoint，并从 `/user/emails` 读取已验证主邮箱 |
+| QQ driver | `src/external_auth/providers/qq.rs` | QQ 互联 OAuth2 专用流程：GET token、获取 openid、再调用 get_user_info |
 | Google driver | `src/external_auth/providers/google.rs` | 复用 OIDC driver，固定 Google Accounts issuer、默认 scope 和 claim 语义 |
 | Microsoft driver | `src/external_auth/providers/microsoft.rs` | 复用 OIDC driver，支持 Microsoft tenant / issuer 规范化和多租户 issuer 校验 |
 
@@ -42,6 +43,7 @@
 | `oidc` | `oidc` | `openid email profile` | `issuer_url` discovery |
 | `generic_oauth2` | `oauth2` | `openid email profile` | 管理员手动填写 authorization / token / userinfo URL |
 | `github` | `oauth2` | `read:user user:email` | GitHub 固定 authorization / token / user / user emails URL |
+| `qq` | `oauth2` | `get_user_info` | QQ 固定 authorization / token / openid / get_user_info URL |
 | `google` | `oidc` | `openid profile email` | Google Accounts 固定 issuer / discovery |
 | `microsoft` | `oidc` | `openid profile email` | Microsoft tenant 派生 issuer / discovery |
 
@@ -186,6 +188,35 @@ Microsoft 的邮箱 claim 可能缺失，且不应默认视为已验证邮箱。
 - 默认图标使用 `/static/external-auth/microsoft-logo.svg`
 - 登录入口、后台列表和 `settings/security` 外部身份列表都会优先显示后台配置的 icon，失败后回退到 provider kind 默认 icon
 
+## QQ driver
+
+`qq` 是 QQ 互联 OAuth2 专用 provider kind，wire value 固定为 `qq`。它不能复用 Generic OAuth2 的“POST token -> Bearer UserInfo -> 直接读 subject/email”模型，因为 QQ 需要先拿 access token，再请求 `/oauth2.0/me` 获取 `openid`，最后用 `access_token`、`oauth_consumer_key` 和 `openid` 请求 `get_user_info`。
+
+固定行为：
+
+- protocol 是 `oauth2`
+- authorization URL 固定为 `https://graph.qq.com/oauth2.0/authorize`
+- token URL 固定为 `https://graph.qq.com/oauth2.0/token`
+- openid URL 固定为 `https://graph.qq.com/oauth2.0/me`
+- userinfo URL 固定为 `https://graph.qq.com/user/get_user_info`
+- 默认 scope 是 `get_user_info`
+- token exchange 按 QQ 文档使用 GET，并显式带 `fmt=json`
+- openid 请求显式带 `fmt=json`，避免 QQ 默认 JSONP
+- subject 固定使用 `openid`
+- identity namespace 使用 `qq:{client_id}`，避免不同 QQ App ID 的 openid 混用
+- display name 使用 `get_user_info.nickname`
+- 不返回 email，也不声明 `email_verified`
+- `require_email_verified` 默认关闭
+
+QQ 回调缺邮箱时走现有缺邮箱分支：先尝试已有外部身份绑定；未绑定时进入邮箱补验 / 密码绑定流程。QQ provider 不应该触发 verified-email auto-link。
+
+前端后台对 QQ 做了特异性 UI：
+
+- 创建 / 编辑时展示固定授权、Token、OpenID 和 get_user_info endpoint，不展示可编辑 endpoint 字段
+- 规则面板展示固定 claim，不展示可编辑 claim mapping
+- 默认图标使用 `/static/external-auth/qq-logo.svg`
+- 登录入口、后台列表和 `settings/security` 外部身份列表都会优先显示后台配置的 icon，失败后回退到 provider kind 默认 icon
+
 ## Provider 应用申请入口
 
 面向部署者的配置文档需要说明每类 provider 在哪里申请应用 / Client ID：
@@ -193,6 +224,7 @@ Microsoft 的邮箱 claim 可能缺失，且不应默认视为已验证邮箱。
 - OIDC / Generic OAuth2：对应 IdP 管理后台的 Applications / Clients 页面，例如 Logto、Authentik、Keycloak、Zitadel。
 - Logto 示例：Logto Cloud Console <https://cloud.logto.io/>；自托管为 `https://<logto-host>/console`。
 - GitHub：个人账号 <https://github.com/settings/developers>；组织为 `https://github.com/organizations/{org}/settings/applications`。
+- QQ：QQ 互联管理中心 <https://connect.qq.com/manage.html>，创建网站应用后登记 AsterDrive callback URL。
 - Google：Google Cloud Console Credentials <https://console.cloud.google.com/apis/credentials>。
 - Microsoft：Microsoft Entra admin center <https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade> 或 Azure portal <https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade>，Authentication 页面添加 Web redirect URI，并在 Certificates & secrets 创建 client secret 后复制 `Value`。
 
