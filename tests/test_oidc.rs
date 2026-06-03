@@ -111,7 +111,7 @@ async fn admin_provider_kind_api_drives_create_contract() {
     let kinds = body["data"]
         .as_array()
         .expect("provider kind list should be an array");
-    assert_eq!(kinds.len(), 4);
+    assert_eq!(kinds.len(), 5);
     let oidc = kinds
         .iter()
         .find(|kind| kind["kind"] == "oidc")
@@ -135,6 +135,21 @@ async fn admin_provider_kind_api_drives_create_contract() {
     assert_eq!(google["supports_discovery"], true);
     assert_eq!(google["supports_pkce"], true);
     assert_eq!(google["supports_email_verified_claim"], true);
+
+    let microsoft = kinds
+        .iter()
+        .find(|kind| kind["kind"] == "microsoft")
+        .expect("Microsoft kind should be listed");
+    assert_eq!(microsoft["protocol"], "oidc");
+    assert_eq!(microsoft["default_scopes"], "openid profile email");
+    assert_eq!(microsoft["issuer_url_required"], false);
+    assert_eq!(microsoft["manual_endpoint_configuration_supported"], false);
+    assert_eq!(microsoft["authorization_url_required"], false);
+    assert_eq!(microsoft["token_url_required"], false);
+    assert_eq!(microsoft["userinfo_url_required"], false);
+    assert_eq!(microsoft["supports_discovery"], true);
+    assert_eq!(microsoft["supports_pkce"], true);
+    assert_eq!(microsoft["supports_email_verified_claim"], false);
 
     let req = test::TestRequest::post()
         .uri("/api/v1/admin/external-auth/providers")
@@ -230,6 +245,86 @@ async fn admin_create_and_test_google_provider_uses_oidc_defaults() {
     assert_eq!(resp.status(), 200);
     let body: Value = test::read_body_json(resp).await;
     assert_eq!(body["data"]["provider"], "Google");
+    assert_eq!(body["data"]["issuer"], mock_provider.issuer);
+    assert_eq!(
+        body["data"]["authorization_endpoint"],
+        format!("{}/authorize", mock_provider.issuer)
+    );
+    assert_eq!(
+        body["data"]["token_endpoint"],
+        format!("{}/token", mock_provider.issuer)
+    );
+    assert_eq!(body["data"]["jwks_key_count"], 1);
+    assert_eq!(body["data"]["checks"][0]["name"], "discovery");
+    assert_eq!(body["data"]["checks"][1]["name"], "jwks");
+
+    server.stop(true).await;
+}
+
+#[actix_web::test]
+async fn admin_create_and_test_microsoft_provider_uses_oidc_defaults() {
+    let (mock_provider, server) = start_mock_external_auth_provider().await;
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (admin_token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/admin/external-auth/providers")
+        .insert_header(("Cookie", common::access_cookie_header(&admin_token)))
+        .insert_header(common::csrf_header_for(&admin_token))
+        .set_json(serde_json::json!({
+            "provider_kind": "microsoft",
+            "display_name": "Microsoft",
+            "issuer_url": "organizations",
+            "authorization_url": "https://login.microsoftonline.com/common/oauth2/v2.0/authorize",
+            "client_id": TEST_CLIENT_ID,
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 400);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/admin/external-auth/providers")
+        .insert_header(("Cookie", common::access_cookie_header(&admin_token)))
+        .insert_header(common::csrf_header_for(&admin_token))
+        .set_json(serde_json::json!({
+            "provider_kind": "microsoft",
+            "display_name": "Microsoft",
+            "issuer_url": "organizations",
+            "client_id": TEST_CLIENT_ID,
+            "client_secret": "super-secret",
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["provider_kind"], "microsoft");
+    assert_eq!(body["data"]["protocol"], "oidc");
+    assert_eq!(
+        body["data"]["issuer_url"],
+        "https://login.microsoftonline.com/organizations/v2.0"
+    );
+    assert_eq!(body["data"]["authorization_url"], Value::Null);
+    assert_eq!(body["data"]["token_url"], Value::Null);
+    assert_eq!(body["data"]["userinfo_url"], Value::Null);
+    assert_eq!(body["data"]["scopes"], "openid profile email");
+    assert_eq!(body["data"]["require_email_verified"], false);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/admin/external-auth/providers/test")
+        .insert_header(("Cookie", common::access_cookie_header(&admin_token)))
+        .insert_header(common::csrf_header_for(&admin_token))
+        .set_json(serde_json::json!({
+            "provider_kind": "microsoft",
+            "issuer_url": mock_provider.issuer,
+            "client_id": TEST_CLIENT_ID,
+            "client_secret": "super-secret",
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["provider"], "Microsoft");
     assert_eq!(body["data"]["issuer"], mock_provider.issuer);
     assert_eq!(
         body["data"]["authorization_endpoint"],
@@ -669,6 +764,53 @@ async fn google_callback_rejects_unverified_missing_or_non_boolean_email_verifie
 
         server.stop(true).await;
     }
+}
+
+#[actix_web::test]
+async fn microsoft_callback_missing_email_uses_local_email_verification_flow() {
+    let (mock_provider, server) = start_mock_external_auth_provider().await;
+    mock_provider.set_subject("microsoft-subject-1");
+    mock_provider.clear_email();
+
+    let state = common::setup().await;
+    configure_oidc_public_site_url(&state);
+    let app = create_test_app!(state.clone());
+    let mut provider_model =
+        microsoft_external_auth_provider_model("microsoft-test", &mock_provider.issuer, true);
+    provider_model.auto_provision_enabled = Set(true);
+    let provider = provider_model
+        .insert(state.writer_db())
+        .await
+        .expect("Microsoft provider should insert");
+
+    let state_value = start_microsoft_login(&app, &mock_provider, &provider.key, "/files").await;
+    let authorize_request = mock_provider.last_authorize_request();
+    assert_eq!(
+        authorize_request.redirect_uri,
+        format!(
+            "http://localhost:8080/api/v1/auth/external-auth/microsoft/{}/callback",
+            provider.key
+        )
+    );
+    let scope = authorize_request
+        .scope
+        .as_deref()
+        .expect("Microsoft OIDC authorization request should include scopes");
+    assert!(scope.split_whitespace().any(|item| item == "openid"));
+    assert!(scope.split_whitespace().any(|item| item == "profile"));
+    assert!(scope.split_whitespace().any(|item| item == "email"));
+
+    let resp = finish_microsoft_callback(&app, &provider.key, &state_value).await;
+    let flow_token = oidc_email_required_flow(&resp);
+    assert!(!flow_token.is_empty());
+
+    let identities = external_auth_identity::Entity::find()
+        .all(state.writer_db())
+        .await
+        .expect("identities should query");
+    assert!(identities.is_empty());
+
+    server.stop(true).await;
 }
 
 #[actix_web::test]

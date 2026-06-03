@@ -57,6 +57,22 @@ export const GOOGLE_CLAIMS = {
 	emailVerifiedClaim: "email_verified",
 	subjectClaim: "sub",
 } as const;
+export const MICROSOFT_DEFAULT_TENANT = "common";
+export const MICROSOFT_ISSUER_BASE = "https://login.microsoftonline.com";
+export const MICROSOFT_CUSTOM_TENANT_MODE = "custom";
+export const MICROSOFT_TENANT_PRESETS = [
+	"consumers",
+	"organizations",
+	MICROSOFT_DEFAULT_TENANT,
+] as const;
+export type MicrosoftTenantMode =
+	| (typeof MICROSOFT_TENANT_PRESETS)[number]
+	| typeof MICROSOFT_CUSTOM_TENANT_MODE;
+export const MICROSOFT_CLAIMS = {
+	displayNameClaim: "name",
+	emailClaim: "email",
+	subjectClaim: "sub",
+} as const;
 export const EXTERNAL_AUTH_PAGE_SIZE_OPTIONS = [10, 20, 50] as const;
 export const DEFAULT_EXTERNAL_AUTH_PAGE_SIZE = 20 as const;
 const EXTERNAL_AUTH_MANAGED_QUERY_KEYS = ["offset", "pageSize"] as const;
@@ -78,6 +94,8 @@ export interface ExternalAuthProviderFormData {
 	iconUrl: string;
 	issuerUrl: string;
 	key: string;
+	microsoftTenantMode: MicrosoftTenantMode;
+	microsoftTenant: string;
 	providerKind: ExternalAuthProviderKind;
 	requireEmailVerified: boolean;
 	scopes: string;
@@ -116,6 +134,8 @@ export const emptyForm: ExternalAuthProviderFormData = {
 	iconUrl: "",
 	issuerUrl: "",
 	key: "",
+	microsoftTenantMode: MICROSOFT_DEFAULT_TENANT,
+	microsoftTenant: MICROSOFT_DEFAULT_TENANT,
 	providerKind: "oidc",
 	requireEmailVerified: true,
 	scopes: DEFAULT_SCOPES,
@@ -128,6 +148,10 @@ export const emptyForm: ExternalAuthProviderFormData = {
 export function formFromProvider(
 	provider: AdminExternalAuthProviderInfo,
 ): ExternalAuthProviderFormData {
+	const microsoftTenant = isMicrosoftProviderKind(provider.provider_kind)
+		? microsoftTenantFromIssuerUrl(provider.issuer_url) ||
+			MICROSOFT_DEFAULT_TENANT
+		: MICROSOFT_DEFAULT_TENANT;
 	return {
 		allowedDomains: provider.allowed_domains.join(", "),
 		authorizationUrl: provider.authorization_url ?? "",
@@ -145,6 +169,8 @@ export function formFromProvider(
 		iconUrl: provider.icon_url ?? "",
 		issuerUrl: provider.issuer_url ?? "",
 		key: provider.key,
+		microsoftTenantMode: microsoftTenantModeForValue(microsoftTenant),
+		microsoftTenant,
 		providerKind: provider.provider_kind,
 		requireEmailVerified: provider.require_email_verified,
 		scopes: provider.scopes || DEFAULT_SCOPES,
@@ -163,6 +189,8 @@ function kindFallbackLabel(kind: ExternalAuthProviderKind) {
 			return "GitHub";
 		case "google":
 			return "Google";
+		case "microsoft":
+			return "Microsoft";
 		case "oidc":
 			return "OpenID Connect";
 	}
@@ -186,6 +214,16 @@ export function isGoogleProviderKind(
 		| undefined,
 ) {
 	return (typeof kind === "string" ? kind : kind?.kind) === "google";
+}
+
+export function isMicrosoftProviderKind(
+	kind:
+		| AdminExternalAuthProviderKindInfo
+		| ExternalAuthProviderKind
+		| null
+		| undefined,
+) {
+	return (typeof kind === "string" ? kind : kind?.kind) === "microsoft";
 }
 
 function localizedProviderKindText(
@@ -281,6 +319,53 @@ function nullableSecretText(value: string) {
 	return trimmed && trimmed !== REDACTED_SECRET ? trimmed : null;
 }
 
+export function microsoftIssuerUrlForTenant(value: string) {
+	const tenant = value.trim() || MICROSOFT_DEFAULT_TENANT;
+	if (/^https?:\/\//.test(tenant)) {
+		return tenant.replace(/\/+$/, "");
+	}
+	return `${MICROSOFT_ISSUER_BASE}/${tenant}/v2.0`;
+}
+
+export function microsoftTenantFromIssuerUrl(value: string | null | undefined) {
+	const trimmed = value?.trim();
+	if (!trimmed) return "";
+	try {
+		const parsed = new URL(trimmed);
+		if (parsed.hostname !== "login.microsoftonline.com") {
+			return "";
+		}
+		const segments = parsed.pathname.split("/").filter(Boolean);
+		return segments.length === 2 && segments[1] === "v2.0" ? segments[0] : "";
+	} catch {
+		return "";
+	}
+}
+
+export function microsoftTenantModeForValue(
+	value: string,
+): MicrosoftTenantMode {
+	const trimmed = value.trim();
+	return MICROSOFT_TENANT_PRESETS.includes(
+		trimmed as (typeof MICROSOFT_TENANT_PRESETS)[number],
+	)
+		? (trimmed as (typeof MICROSOFT_TENANT_PRESETS)[number])
+		: MICROSOFT_CUSTOM_TENANT_MODE;
+}
+
+function formMicrosoftTenantValue(form: ExternalAuthProviderFormData) {
+	return form.microsoftTenantMode === MICROSOFT_CUSTOM_TENANT_MODE
+		? form.microsoftTenant.trim()
+		: form.microsoftTenantMode;
+}
+
+function formIssuerUrlForPayload(form: ExternalAuthProviderFormData) {
+	if (isMicrosoftProviderKind(form.providerKind)) {
+		return microsoftIssuerUrlForTenant(formMicrosoftTenantValue(form));
+	}
+	return nullableText(form.issuerUrl);
+}
+
 function isRedactedSecret(value: string) {
 	return value.trim() === REDACTED_SECRET;
 }
@@ -341,7 +426,7 @@ export function createPayload(
 		enabled: form.enabled,
 		groups_claim: nullableText(form.groupsClaim),
 		icon_url: nullableText(form.iconUrl),
-		issuer_url: nullableText(form.issuerUrl),
+		issuer_url: formIssuerUrlForPayload(form),
 		provider_kind: form.providerKind,
 		require_email_verified: form.requireEmailVerified,
 		scopes: form.scopes.trim() || defaultScopesForKind(selectedKind),
@@ -374,7 +459,7 @@ export function updatePayload(
 		enabled: form.enabled,
 		groups_claim: nullableText(form.groupsClaim),
 		icon_url: nullableText(form.iconUrl),
-		issuer_url: nullableText(form.issuerUrl),
+		issuer_url: formIssuerUrlForPayload(form),
 		require_email_verified: form.requireEmailVerified,
 		scopes: form.scopes.trim() || defaultScopesForKind(selectedKind),
 		subject_claim: nullableText(form.subjectClaim),
@@ -392,7 +477,7 @@ export function testParamsPayload(
 		authorization_url: nullableText(form.authorizationUrl),
 		client_id: form.clientId.trim(),
 		client_secret: nullableSecretText(form.clientSecret),
-		issuer_url: nullableText(form.issuerUrl),
+		issuer_url: formIssuerUrlForPayload(form),
 		provider_kind: form.providerKind,
 		scopes: form.scopes.trim() || defaultScopesForKind(selectedKind),
 		token_url: nullableText(form.tokenUrl),
@@ -420,9 +505,12 @@ export function formConnectionChanged(
 	selectedKind?: AdminExternalAuthProviderKindInfo | null,
 ) {
 	const defaultScopes = defaultScopesForKind(selectedKind);
+	const formIssuerUrl = isMicrosoftProviderKind(form.providerKind)
+		? microsoftIssuerUrlForTenant(formMicrosoftTenantValue(form))
+		: form.issuerUrl;
 	return (
 		form.providerKind !== provider.provider_kind ||
-		normalizeConnectionValue(form.issuerUrl) !==
+		normalizeConnectionValue(formIssuerUrl) !==
 			normalizeConnectionValue(provider.issuer_url) ||
 		normalizeConnectionValue(form.authorizationUrl) !==
 			normalizeConnectionValue(provider.authorization_url) ||
@@ -594,6 +682,9 @@ export function shouldShowIssuerUrl(
 	if (isGoogleProviderKind(kind)) {
 		return false;
 	}
+	if (isMicrosoftProviderKind(kind)) {
+		return false;
+	}
 	return Boolean(kind?.supports_discovery || kind?.issuer_url_required);
 }
 
@@ -611,6 +702,13 @@ export function connectionRequirementsMissing(
 		return true;
 	}
 	if ((kind?.issuer_url_required ?? true) && !form.issuerUrl.trim()) {
+		return true;
+	}
+	if (
+		isMicrosoftProviderKind(kind ?? form.providerKind) &&
+		form.microsoftTenantMode === MICROSOFT_CUSTOM_TENANT_MODE &&
+		!form.microsoftTenant.trim()
+	) {
 		return true;
 	}
 	if (kind?.authorization_url_required && !form.authorizationUrl.trim()) {
@@ -642,6 +740,11 @@ export function formConnectionSummary(
 	if (isGoogleProviderKind(selectedKind ?? form.providerKind)) {
 		return `issuer: ${GOOGLE_ISSUER_URL} · discovery: ${GOOGLE_DISCOVERY_URL}`;
 	}
+	if (isMicrosoftProviderKind(selectedKind ?? form.providerKind)) {
+		const tenant = formMicrosoftTenantValue(form) || MICROSOFT_DEFAULT_TENANT;
+		const issuer = microsoftIssuerUrlForTenant(tenant);
+		return `tenant: ${tenant} · issuer: ${issuer}`;
+	}
 	const items = [
 		form.issuerUrl.trim() ? `issuer: ${form.issuerUrl.trim()}` : null,
 		selectedKind?.manual_endpoint_configuration_supported &&
@@ -671,6 +774,9 @@ export function formClaimSummary(
 	}
 	if (isGoogleProviderKind(selectedKind ?? form.providerKind)) {
 		return `subject=${GOOGLE_CLAIMS.subjectClaim} · display=${GOOGLE_CLAIMS.displayNameClaim} · email=${GOOGLE_CLAIMS.emailClaim} · email_verified=${GOOGLE_CLAIMS.emailVerifiedClaim} · avatar=${GOOGLE_CLAIMS.avatarUrlClaim}`;
+	}
+	if (isMicrosoftProviderKind(selectedKind ?? form.providerKind)) {
+		return `subject=${MICROSOFT_CLAIMS.subjectClaim} · display=${MICROSOFT_CLAIMS.displayNameClaim} · email=${MICROSOFT_CLAIMS.emailClaim}`;
 	}
 	const claims = [
 		`subject=${effectiveClaim(form.subjectClaim, STANDARD_CLAIMS.subjectClaim)}`,

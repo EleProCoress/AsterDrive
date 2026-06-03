@@ -18,6 +18,9 @@ describe("external auth provider helpers", () => {
 		expect(externalAuthKindIconPath("google")).toBe(
 			"/static/external-auth/google-logo.svg",
 		);
+		expect(externalAuthKindIconPath("microsoft")).toBe(
+			"/static/external-auth/microsoft-logo.svg",
+		);
 		expect(externalAuthKindIconPath("unknown" as never)).toBe("");
 	});
 

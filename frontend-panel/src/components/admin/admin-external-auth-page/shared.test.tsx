@@ -17,6 +17,8 @@ import {
 	kindDescription,
 	kindDisplayName,
 	mergeManagedExternalAuthSearchParams,
+	microsoftIssuerUrlForTenant,
+	microsoftTenantFromIssuerUrl,
 	normalizeOffset,
 	parseAllowedDomains,
 	providerAllowedDomainSummary,
@@ -205,6 +207,26 @@ function googleKind(
 	});
 }
 
+function microsoftKind(
+	overrides: Partial<AdminExternalAuthProviderKindInfo> = {},
+): AdminExternalAuthProviderKindInfo {
+	return kind({
+		authorization_url_required: false,
+		default_scopes: "openid profile email",
+		description: "Microsoft OpenID Connect sign-in.",
+		display_name: "Microsoft",
+		issuer_url_required: false,
+		kind: "microsoft",
+		manual_endpoint_configuration_supported: false,
+		protocol: "oidc",
+		supports_discovery: true,
+		supports_email_verified_claim: false,
+		token_url_required: false,
+		userinfo_url_required: false,
+		...overrides,
+	});
+}
+
 describe("admin external auth shared helpers", () => {
 	it("normalizes domains and payload text fields", () => {
 		expect(parseAllowedDomains(" @Example.COM, example.com\nTeam.io ")).toEqual(
@@ -342,6 +364,107 @@ describe("admin external auth shared helpers", () => {
 		);
 	});
 
+	it("uses Microsoft descriptor defaults and tenant-derived OIDC summaries", () => {
+		const descriptor = microsoftKind();
+		const form = {
+			...emptyForm,
+			clientId: "client-123",
+			displayName: "Microsoft",
+			microsoftTenant: "organizations",
+			microsoftTenantMode: "organizations" as const,
+			providerKind: "microsoft" as const,
+			scopes: " ",
+		};
+
+		expect(defaultScopesForKind(descriptor)).toBe("openid profile email");
+		expect(microsoftIssuerUrlForTenant("organizations")).toBe(
+			"https://login.microsoftonline.com/organizations/v2.0",
+		);
+		expect(microsoftIssuerUrlForTenant(" ")).toBe(
+			"https://login.microsoftonline.com/common/v2.0",
+		);
+		expect(
+			microsoftIssuerUrlForTenant(
+				"https://login.microsoftonline.com/contoso/v2.0/",
+			),
+		).toBe("https://login.microsoftonline.com/contoso/v2.0");
+		expect(
+			microsoftTenantFromIssuerUrl(
+				"https://login.microsoftonline.com/consumers/v2.0",
+			),
+		).toBe("consumers");
+		expect(
+			microsoftTenantFromIssuerUrl("https://example.com/common/v2.0"),
+		).toBe("");
+		expect(createPayload(form, descriptor)).toMatchObject({
+			authorization_url: null,
+			issuer_url: "https://login.microsoftonline.com/organizations/v2.0",
+			provider_kind: "microsoft",
+			require_email_verified: true,
+			scopes: "openid profile email",
+			token_url: null,
+			userinfo_url: null,
+		});
+		expect(connectionRequirementsMissing(form, descriptor)).toBe(false);
+		expect(
+			connectionRequirementsMissing(
+				{
+					...form,
+					microsoftTenant: "",
+					microsoftTenantMode: "custom",
+				},
+				descriptor,
+			),
+		).toBe(true);
+		expect(
+			createPayload(
+				{
+					...form,
+					microsoftTenant: "11111111-2222-3333-4444-555555555555",
+					microsoftTenantMode: "custom",
+				},
+				descriptor,
+			),
+		).toMatchObject({
+			issuer_url:
+				"https://login.microsoftonline.com/11111111-2222-3333-4444-555555555555/v2.0",
+		});
+		expect(shouldShowIssuerUrl(descriptor)).toBe(false);
+		expect(formConnectionSummary(form, descriptor)).toBe(
+			"tenant: organizations · issuer: https://login.microsoftonline.com/organizations/v2.0",
+		);
+		expect(formClaimSummary(form, descriptor)).toBe(
+			"subject=sub · display=name · email=email",
+		);
+		expect(
+			formFromProvider(
+				provider({
+					issuer_url: "https://login.microsoftonline.com/common/v2.0",
+					provider_kind: "microsoft",
+				}),
+			),
+		).toMatchObject({
+			microsoftTenantMode: "common",
+			microsoftTenant: "common",
+			providerKind: "microsoft",
+		});
+		expect(
+			formFromProvider(
+				provider({
+					issuer_url:
+						"https://login.microsoftonline.com/11111111-2222-3333-4444-555555555555/v2.0",
+					provider_kind: "microsoft",
+				}),
+			),
+		).toMatchObject({
+			microsoftTenantMode: "custom",
+			microsoftTenant: "11111111-2222-3333-4444-555555555555",
+		});
+		expect(callbackUrl("microsoft", "microsoft")).toBe(
+			"https://app.example.com/api/v1/auth/external-auth/microsoft/microsoft/callback",
+		);
+	});
+
 	it("maps saved providers into editable forms and detects connection changes", () => {
 		const saved = provider();
 		const form = formFromProvider(saved);
@@ -436,6 +559,9 @@ describe("admin external auth shared helpers", () => {
 		);
 		expect(kindDisplayName(translate as never, "github", [])).toBe("GitHub");
 		expect(kindDisplayName(translate as never, "google", [])).toBe("Google");
+		expect(kindDisplayName(translate as never, "microsoft", [])).toBe(
+			"Microsoft",
+		);
 		expect(kindDescription(translate as never, kind())).toBe("OIDC sign-in.");
 		expect(securityModeLabel(translate as never, provider())).toBe(
 			"external_auth_provider_mode_manual",

@@ -26,6 +26,8 @@ import {
 	getManagedExternalAuthSearchString,
 	isGitHubProviderKind,
 	isGoogleProviderKind,
+	isMicrosoftProviderKind,
+	MICROSOFT_DEFAULT_TENANT,
 	mergeManagedExternalAuthSearchParams,
 	normalizeOffset,
 	requiredFieldsMissing,
@@ -514,7 +516,28 @@ export function useAdminExternalAuthPageController() {
 						userinfoUrl: "",
 						usernameClaim: "",
 					}
-				: {};
+				: isMicrosoftProviderKind(selectedProviderKind)
+					? {
+							authorizationUrl: "",
+							avatarUrlClaim: "",
+							displayName: form.displayName.trim()
+								? form.displayName
+								: "Microsoft",
+							displayNameClaim: "",
+							emailClaim: "",
+							emailVerifiedClaim: "",
+							groupsClaim: "",
+							iconUrl: "",
+							issuerUrl: "",
+							microsoftTenantMode: MICROSOFT_DEFAULT_TENANT,
+							microsoftTenant: MICROSOFT_DEFAULT_TENANT,
+							requireEmailVerified: false,
+							subjectClaim: "",
+							tokenUrl: "",
+							userinfoUrl: "",
+							usernameClaim: "",
+						}
+					: {};
 		dispatchUi({
 			kind,
 			patch,

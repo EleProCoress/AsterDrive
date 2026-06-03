@@ -35,6 +35,7 @@ pub struct MockOidcProvider {
     token_email_verified: Arc<Mutex<Option<serde_json::Value>>>,
     token_audience: Arc<Mutex<String>>,
     token_nonce_override: Arc<Mutex<Option<String>>>,
+    discovery_issuer_override: Arc<Mutex<Option<String>>>,
     token_issuer_override: Arc<Mutex<Option<String>>>,
 }
 
@@ -72,6 +73,7 @@ impl MockOidcProvider {
             token_email_verified: Arc::new(Mutex::new(Some(serde_json::json!(true)))),
             token_audience: Arc::new(Mutex::new(TEST_CLIENT_ID.to_string())),
             token_nonce_override: Arc::new(Mutex::new(None)),
+            discovery_issuer_override: Arc::new(Mutex::new(None)),
             token_issuer_override: Arc::new(Mutex::new(None)),
         }
     }
@@ -95,6 +97,13 @@ impl MockOidcProvider {
             .token_issuer_override
             .lock()
             .expect("issuer override lock should not be poisoned") = issuer;
+    }
+
+    pub fn set_discovery_issuer_override(&self, issuer: Option<String>) {
+        *self
+            .discovery_issuer_override
+            .lock()
+            .expect("discovery issuer override lock should not be poisoned") = issuer;
     }
 
     pub fn set_subject(&self, subject: &str) {
@@ -289,8 +298,14 @@ pub async fn start_mock_external_auth_provider() -> (MockOidcProvider, actix_web
 }
 
 async fn mock_discovery(provider: web::Data<MockOidcProvider>) -> impl Responder {
+    let issuer = provider
+        .discovery_issuer_override
+        .lock()
+        .expect("discovery issuer override lock should not be poisoned")
+        .clone()
+        .unwrap_or_else(|| provider.issuer.clone());
     HttpResponse::Ok().json(serde_json::json!({
-        "issuer": provider.issuer,
+        "issuer": issuer,
         "authorization_endpoint": format!("{}/authorize", provider.issuer),
         "token_endpoint": format!("{}/token", provider.issuer),
         "jwks_uri": format!("{}/jwks", provider.issuer),

@@ -216,6 +216,24 @@ pub fn google_external_auth_provider_model(
     }
 }
 
+pub fn microsoft_external_auth_provider_model(
+    key: &str,
+    issuer_url: &str,
+    enabled: bool,
+) -> external_auth_provider::ActiveModel {
+    external_auth_provider::ActiveModel {
+        provider_kind: Set(aster_drive::types::ExternalAuthProviderKind::Microsoft),
+        scopes: Set("openid profile email".to_string()),
+        require_email_verified: Set(false),
+        subject_claim: Set(Some("sub".to_string())),
+        display_name_claim: Set(Some("name".to_string())),
+        email_claim: Set(Some("email".to_string())),
+        email_verified_claim: Set(None),
+        avatar_url_claim: Set(None),
+        ..oidc_external_auth_provider_model(key, issuer_url, enabled, "openid profile email")
+    }
+}
+
 pub fn configure_oidc_public_site_url(state: &aster_drive::runtime::PrimaryAppState) {
     state.runtime_config.apply(common::system_config_model(
         aster_drive::config::site_url::PUBLIC_SITE_URL_KEY,
@@ -291,6 +309,40 @@ where
     mock_provider.last_authorize_request().state
 }
 
+pub async fn start_microsoft_login<S, B, E>(
+    app: &S,
+    mock_provider: &mock::MockOidcProvider,
+    provider_key: &str,
+    return_path: &str,
+) -> String
+where
+    S: actix_web::dev::Service<
+            actix_http::Request,
+            Response = actix_web::dev::ServiceResponse<B>,
+            Error = E,
+        >,
+    B: MessageBody,
+    E: std::fmt::Debug,
+{
+    let req = test::TestRequest::post()
+        .uri(&format!(
+            "/api/v1/auth/external-auth/microsoft/{provider_key}/start"
+        ))
+        .insert_header(("Origin", TEST_BROWSER_ORIGIN))
+        .set_json(serde_json::json!({ "return_path": return_path }))
+        .to_request();
+    let resp = test::call_service(app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    let auth_url = body["data"]["authorization_url"]
+        .as_str()
+        .expect("authorization url should be returned");
+    reqwest::get(auth_url)
+        .await
+        .expect("mock authorize request should succeed");
+    mock_provider.last_authorize_request().state
+}
+
 pub async fn finish_oidc_callback<S, B, E>(
     app: &S,
     provider_key: &str,
@@ -331,6 +383,30 @@ where
 {
     let callback = format!(
         "/api/v1/auth/external-auth/google/{provider_key}/callback?code=mock-code&state={state_value}"
+    );
+    let req = test::TestRequest::get()
+        .uri(&callback)
+        .peer_addr("127.0.0.1:12345".parse().unwrap())
+        .to_request();
+    test::call_service(app, req).await
+}
+
+pub async fn finish_microsoft_callback<S, B, E>(
+    app: &S,
+    provider_key: &str,
+    state_value: &str,
+) -> ServiceResponse<B>
+where
+    S: actix_web::dev::Service<
+            actix_http::Request,
+            Response = actix_web::dev::ServiceResponse<B>,
+            Error = E,
+        >,
+    B: MessageBody,
+    E: std::fmt::Debug,
+{
+    let callback = format!(
+        "/api/v1/auth/external-auth/microsoft/{provider_key}/callback?code=mock-code&state={state_value}"
     );
     let req = test::TestRequest::get()
         .uri(&callback)

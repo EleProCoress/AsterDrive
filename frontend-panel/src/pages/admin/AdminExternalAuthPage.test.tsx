@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import * as React from "react";
 import { useState } from "react";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -186,6 +187,63 @@ vi.mock("@/components/ui/dialog", () => ({
 vi.mock("@/components/ui/icon", () => ({
 	Icon: () => <span aria-hidden="true" />,
 }));
+
+vi.mock("@/components/ui/select", () => {
+	const SelectContext = React.createContext<{
+		items?: Array<{ label: string; value: string }>;
+		onValueChange?: (value: string) => void;
+		value?: string;
+	}>({});
+	return {
+		Select: ({
+			children,
+			items,
+			onValueChange,
+			value,
+		}: {
+			children: React.ReactNode;
+			items?: Array<{ label: string; value: string }>;
+			onValueChange?: (value: string) => void;
+			value?: string;
+		}) => (
+			<SelectContext.Provider value={{ items, onValueChange, value }}>
+				{children}
+			</SelectContext.Provider>
+		),
+		SelectContent: () => null,
+		SelectItem: ({
+			children,
+			value,
+		}: {
+			children: React.ReactNode;
+			value: string;
+		}) => <option value={value}>{children}</option>,
+		SelectTrigger: ({
+			children,
+			id,
+		}: {
+			children: React.ReactNode;
+			id?: string;
+		}) => {
+			const { items, onValueChange, value } = React.useContext(SelectContext);
+			return (
+				<select
+					id={id}
+					value={value}
+					onChange={(event) => onValueChange?.(event.target.value)}
+				>
+					{children}
+					{items?.map((item) => (
+						<option key={item.value} value={item.value}>
+							{item.label}
+						</option>
+					))}
+				</select>
+			);
+		},
+		SelectValue: () => null,
+	};
+});
 
 vi.mock("@/components/ui/switch", () => ({
 	Switch: ({
@@ -569,6 +627,135 @@ describe("AdminExternalAuthPage", () => {
 		expect(
 			screen.getByText(
 				/\/api\/v1\/auth\/external-auth\/google\/google\/callback/,
+			),
+		).toBeInTheDocument();
+	});
+
+	it("applies Microsoft create-dialog defaults and derives issuer from tenant", async () => {
+		mockState.listKinds.mockResolvedValue([
+			{
+				authorization_url_required: false,
+				default_scopes: "openid email profile",
+				description: "OpenID Connect authorization-code sign-in.",
+				display_name: "OpenID Connect",
+				issuer_url_required: true,
+				kind: "oidc",
+				manual_endpoint_configuration_supported: false,
+				protocol: "oidc",
+				supports_discovery: true,
+				supports_email_verified_claim: true,
+				supports_pkce: true,
+				token_url_required: false,
+				userinfo_url_required: false,
+			},
+			{
+				authorization_url_required: false,
+				default_scopes: "openid profile email",
+				description: "Microsoft OpenID Connect sign-in.",
+				display_name: "Microsoft",
+				issuer_url_required: false,
+				kind: "microsoft",
+				manual_endpoint_configuration_supported: false,
+				protocol: "oidc",
+				supports_discovery: true,
+				supports_email_verified_claim: false,
+				supports_pkce: true,
+				token_url_required: false,
+				userinfo_url_required: false,
+			},
+		]);
+		mockState.create.mockResolvedValue(
+			savedProvider({
+				display_name: "Microsoft",
+				issuer_url: "https://login.microsoftonline.com/organizations/v2.0",
+				key: "microsoft",
+				provider_kind: "microsoft",
+				require_email_verified: false,
+				scopes: "openid profile email",
+			}),
+		);
+
+		render(
+			<MemoryRouter initialEntries={["/admin/external-auth"]}>
+				<AdminExternalAuthPage />
+			</MemoryRouter>,
+		);
+
+		await waitFor(() => expect(mockState.listKinds).toHaveBeenCalled());
+		const createButtons = screen.getAllByRole("button", {
+			name: /external_auth_provider_create/,
+		});
+		fireEvent.click(createButtons[createButtons.length - 1]);
+		fireEvent.click(screen.getByRole("button", { name: /Microsoft/ }));
+		fireEvent.click(screen.getByRole("button", { name: "policy_wizard_next" }));
+
+		expect(screen.getByDisplayValue("Microsoft")).toHaveAttribute(
+			"id",
+			"external-auth-provider-display-name",
+		);
+		expect(
+			screen.getByLabelText("external_auth_provider_microsoft_tenant"),
+		).toHaveValue("common");
+		expect(
+			screen.queryByLabelText("external_auth_provider_issuer_url"),
+		).not.toBeInTheDocument();
+		expect(
+			screen.queryByLabelText("external_auth_provider_authorization_url"),
+		).not.toBeInTheDocument();
+		expect(
+			screen.getByText("external_auth_provider_microsoft_fixed_title"),
+		).toBeInTheDocument();
+
+		fireEvent.change(
+			screen.getByLabelText("external_auth_provider_microsoft_tenant"),
+			{
+				target: { value: "organizations" },
+			},
+		);
+		fireEvent.change(
+			screen.getByLabelText("external_auth_provider_client_id"),
+			{
+				target: { value: "microsoft-client" },
+			},
+		);
+		fireEvent.click(
+			screen.getByRole("button", { name: "policy_wizard_review" }),
+		);
+		expect(screen.getByText("openid profile email")).toBeInTheDocument();
+		expect(
+			screen.getByText("external_auth_provider_microsoft_claims_title"),
+		).toBeInTheDocument();
+		expect(
+			screen.getByText(
+				"tenant: organizations · issuer: https://login.microsoftonline.com/organizations/v2.0",
+			),
+		).toBeInTheDocument();
+
+		const submitButtons = screen.getAllByRole("button", {
+			name: /external_auth_provider_create/,
+		});
+		fireEvent.click(submitButtons[submitButtons.length - 1]);
+
+		await waitFor(() => expect(mockState.create).toHaveBeenCalledTimes(1));
+		expect(mockState.create).toHaveBeenCalledWith(
+			expect.objectContaining({
+				authorization_url: null,
+				client_id: "microsoft-client",
+				display_name: "Microsoft",
+				issuer_url: "https://login.microsoftonline.com/organizations/v2.0",
+				provider_kind: "microsoft",
+				require_email_verified: false,
+				scopes: "openid profile email",
+				token_url: null,
+				userinfo_url: null,
+			}),
+		);
+		expect(
+			await screen.findByText("external_auth_provider_created_callback_title"),
+		).toBeInTheDocument();
+		expect(
+			screen.getByText(
+				/\/api\/v1\/auth\/external-auth\/microsoft\/microsoft\/callback/,
 			),
 		).toBeInTheDocument();
 	});
