@@ -23,6 +23,7 @@ use webauthn_rs_proto::{AllowCredentials, Mediation, ResidentKeyRequirement};
 
 const TEST_BROWSER_ORIGIN: &str = "http://localhost:8080";
 const TEST_PUBLIC_SITE_ORIGIN: &str = "https://pan.esaps.net";
+const ONE_SECOND_WINDOW_ELAPSED: Duration = Duration::from_millis(1100);
 
 struct RefreshHookGuard {
     _hook: auth_service::test_support::RefreshRotationTestHook,
@@ -1983,7 +1984,7 @@ async fn test_register_activation_resend_ignores_allowlist_but_rejects_blocklist
     assert_eq!(resp.status(), 201);
     common::flush_mail_outbox_with(&db, &runtime_config, &mail_sender).await;
 
-    tokio::time::sleep(Duration::from_secs(1)).await;
+    tokio::time::sleep(ONE_SECOND_WINDOW_ELAPSED).await;
     configure_local_email_policy(&state, &["other.test"], &[]);
 
     let req = test::TestRequest::post()
@@ -1994,7 +1995,7 @@ async fn test_register_activation_resend_ignores_allowlist_but_rejects_blocklist
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
 
-    tokio::time::sleep(Duration::from_secs(1)).await;
+    tokio::time::sleep(ONE_SECOND_WINDOW_ELAPSED).await;
     configure_local_email_policy(&state, &["other.test"], &["pendinguser@example.com"]);
 
     let req = test::TestRequest::post()
@@ -2147,7 +2148,7 @@ async fn test_email_change_resend_ignores_allowlist_but_rejects_blocklist() {
         aster_drive::config::auth_runtime::AUTH_CONTACT_VERIFICATION_RESEND_COOLDOWN_SECS_KEY,
         "1",
     ));
-    tokio::time::sleep(Duration::from_secs(1)).await;
+    tokio::time::sleep(ONE_SECOND_WINDOW_ELAPSED).await;
     configure_local_email_policy(&state, &["other.test"], &[]);
 
     let req = test::TestRequest::post()
@@ -2159,7 +2160,7 @@ async fn test_email_change_resend_ignores_allowlist_but_rejects_blocklist() {
     assert_eq!(resp.status(), 200);
 
     configure_local_email_policy(&state, &["other.test"], &["pending@example.com"]);
-    tokio::time::sleep(Duration::from_secs(1)).await;
+    tokio::time::sleep(ONE_SECOND_WINDOW_ELAPSED).await;
 
     let req = test::TestRequest::post()
         .uri("/api/v1/auth/email/change/resend")
@@ -3245,7 +3246,7 @@ async fn test_auth_sessions_list_and_revoke_specific_device() {
         .jti
         .clone()
         .expect("current refresh token should carry jti");
-    tokio::time::sleep(Duration::from_secs(1)).await;
+    tokio::time::sleep(ONE_SECOND_WINDOW_ELAPSED).await;
 
     let req = test::TestRequest::post()
         .uri("/api/v1/auth/login")
@@ -3354,9 +3355,9 @@ async fn test_auth_sessions_can_revoke_other_devices() {
         .jti
         .clone()
         .expect("current refresh token should carry jti");
-    tokio::time::sleep(Duration::from_secs(1)).await;
+    tokio::time::sleep(ONE_SECOND_WINDOW_ELAPSED).await;
     let (_, refresh_b) = login_user_with_auth_cookies!(app, "testuser", "password123");
-    tokio::time::sleep(Duration::from_secs(1)).await;
+    tokio::time::sleep(ONE_SECOND_WINDOW_ELAPSED).await;
     let (_, refresh_c) = login_user_with_auth_cookies!(app, "testuser", "password123");
 
     let req = test::TestRequest::delete()

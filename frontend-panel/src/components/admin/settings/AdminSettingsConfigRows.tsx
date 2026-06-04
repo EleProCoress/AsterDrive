@@ -226,7 +226,7 @@ function StringArrayConfigControl({
 	const placeholder = isPublicSiteUrl
 		? "https://drive.example.com"
 		: isLocalEmailPolicy
-			? "example.com or alice@example.com"
+			? t("local_email_policy_placeholder")
 			: t("config_value");
 	const rows = draftValue.length > 0 ? draftValue : [""];
 	const nextRowIdRef = useRef(0);

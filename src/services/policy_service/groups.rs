@@ -325,7 +325,7 @@ pub async fn migrate_group_assignments(
         policy_group_repo::find_group_by_id(state.writer_db(), target_group_id).await?;
     if !target_group.is_enabled {
         return Err(AsterError::validation_error(
-            "cannot migrate users to a disabled storage policy group",
+            "cannot migrate assignments to a disabled storage policy group",
         ));
     }
     if policy_group_repo::find_group_items(state.writer_db(), target_group_id)
@@ -333,7 +333,7 @@ pub async fn migrate_group_assignments(
         .is_empty()
     {
         return Err(AsterError::validation_error(
-            "cannot migrate users to a storage policy group without policies",
+            "cannot migrate assignments to a storage policy group without policies",
         ));
     }
 

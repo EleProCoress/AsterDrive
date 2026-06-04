@@ -59,66 +59,26 @@ pub struct RuntimeEmailCodeLoginPolicy {
 
 impl RuntimeAuthPolicy {
     pub fn from_runtime_config(runtime_config: &RuntimeConfig) -> Self {
-        let cookie_secure = match runtime_config.get(AUTH_COOKIE_SECURE_KEY) {
-            Some(raw) => match parse_bool_str(&raw) {
-                Some(value) => value,
-                None => {
-                    tracing::warn!(
-                        key = AUTH_COOKIE_SECURE_KEY,
-                        value = %raw,
-                        "invalid runtime auth cookie secure config; using safe default"
-                    );
-                    DEFAULT_AUTH_COOKIE_SECURE
-                }
-            },
-            None => DEFAULT_AUTH_COOKIE_SECURE,
-        };
-
-        let allow_user_registration = match runtime_config.get(AUTH_ALLOW_USER_REGISTRATION_KEY) {
-            Some(raw) => match parse_bool_str(&raw) {
-                Some(value) => value,
-                None => {
-                    tracing::warn!(
-                        key = AUTH_ALLOW_USER_REGISTRATION_KEY,
-                        value = %raw,
-                        "invalid runtime auth registration config; using default"
-                    );
-                    DEFAULT_AUTH_ALLOW_USER_REGISTRATION
-                }
-            },
-            None => DEFAULT_AUTH_ALLOW_USER_REGISTRATION,
-        };
-
-        let register_activation_enabled =
-            match runtime_config.get(AUTH_REGISTER_ACTIVATION_ENABLED_KEY) {
-                Some(raw) => match parse_bool_str(&raw) {
-                    Some(value) => value,
-                    None => {
-                        tracing::warn!(
-                            key = AUTH_REGISTER_ACTIVATION_ENABLED_KEY,
-                            value = %raw,
-                            "invalid runtime auth register activation config; using default"
-                        );
-                        DEFAULT_AUTH_REGISTER_ACTIVATION_ENABLED
-                    }
-                },
-                None => DEFAULT_AUTH_REGISTER_ACTIVATION_ENABLED,
-            };
-
-        let passkey_login_enabled = match runtime_config.get(AUTH_PASSKEY_LOGIN_ENABLED_KEY) {
-            Some(raw) => match parse_bool_str(&raw) {
-                Some(value) => value,
-                None => {
-                    tracing::warn!(
-                        key = AUTH_PASSKEY_LOGIN_ENABLED_KEY,
-                        value = %raw,
-                        "invalid runtime auth passkey login config; using default"
-                    );
-                    DEFAULT_AUTH_PASSKEY_LOGIN_ENABLED
-                }
-            },
-            None => DEFAULT_AUTH_PASSKEY_LOGIN_ENABLED,
-        };
+        let cookie_secure = read_bool(
+            runtime_config,
+            AUTH_COOKIE_SECURE_KEY,
+            DEFAULT_AUTH_COOKIE_SECURE,
+        );
+        let allow_user_registration = read_bool(
+            runtime_config,
+            AUTH_ALLOW_USER_REGISTRATION_KEY,
+            DEFAULT_AUTH_ALLOW_USER_REGISTRATION,
+        );
+        let register_activation_enabled = read_bool(
+            runtime_config,
+            AUTH_REGISTER_ACTIVATION_ENABLED_KEY,
+            DEFAULT_AUTH_REGISTER_ACTIVATION_ENABLED,
+        );
+        let passkey_login_enabled = read_bool(
+            runtime_config,
+            AUTH_PASSKEY_LOGIN_ENABLED_KEY,
+            DEFAULT_AUTH_PASSKEY_LOGIN_ENABLED,
+        );
 
         let access_token_ttl_secs = match runtime_config.get(AUTH_ACCESS_TOKEN_TTL_SECS_KEY) {
             Some(raw) => match parse_positive_u64(&raw) {
@@ -201,35 +161,16 @@ impl RuntimeContactVerificationPolicy {
 
 impl RuntimeEmailCodeLoginPolicy {
     pub fn from_runtime_config(runtime_config: &RuntimeConfig) -> Self {
-        let enabled = match runtime_config.get(AUTH_EMAIL_CODE_LOGIN_ENABLED_KEY) {
-            Some(raw) => match parse_bool_str(&raw) {
-                Some(value) => value,
-                None => {
-                    tracing::warn!(
-                        key = AUTH_EMAIL_CODE_LOGIN_ENABLED_KEY,
-                        value = %raw,
-                        "invalid runtime email code login enabled config; using default"
-                    );
-                    DEFAULT_AUTH_EMAIL_CODE_LOGIN_ENABLED
-                }
-            },
-            None => DEFAULT_AUTH_EMAIL_CODE_LOGIN_ENABLED,
-        };
-        let allow_totp_fallback =
-            match runtime_config.get(AUTH_EMAIL_CODE_LOGIN_ALLOW_TOTP_FALLBACK_KEY) {
-                Some(raw) => match parse_bool_str(&raw) {
-                    Some(value) => value,
-                    None => {
-                        tracing::warn!(
-                            key = AUTH_EMAIL_CODE_LOGIN_ALLOW_TOTP_FALLBACK_KEY,
-                            value = %raw,
-                            "invalid runtime email code TOTP fallback config; using default"
-                        );
-                        DEFAULT_AUTH_EMAIL_CODE_LOGIN_ALLOW_TOTP_FALLBACK
-                    }
-                },
-                None => DEFAULT_AUTH_EMAIL_CODE_LOGIN_ALLOW_TOTP_FALLBACK,
-            };
+        let enabled = read_bool(
+            runtime_config,
+            AUTH_EMAIL_CODE_LOGIN_ENABLED_KEY,
+            DEFAULT_AUTH_EMAIL_CODE_LOGIN_ENABLED,
+        );
+        let allow_totp_fallback = read_bool(
+            runtime_config,
+            AUTH_EMAIL_CODE_LOGIN_ALLOW_TOTP_FALLBACK_KEY,
+            DEFAULT_AUTH_EMAIL_CODE_LOGIN_ALLOW_TOTP_FALLBACK,
+        );
         let ttl_secs = read_positive_u64(
             runtime_config,
             AUTH_EMAIL_CODE_LOGIN_TTL_SECS_KEY,
@@ -306,6 +247,19 @@ fn parse_bool_str(value: &str) -> Option<bool> {
 fn parse_positive_u64(value: &str) -> Option<u64> {
     let parsed = value.trim().parse::<u64>().ok()?;
     (parsed > 0).then_some(parsed)
+}
+
+fn read_bool(runtime_config: &RuntimeConfig, key: &str, default: bool) -> bool {
+    match runtime_config.get(key) {
+        Some(raw) => match parse_bool_str(&raw) {
+            Some(value) => value,
+            None => {
+                tracing::warn!(key, value = %raw, "invalid runtime auth bool config; using default");
+                default
+            }
+        },
+        None => default,
+    }
 }
 
 fn read_positive_u64(runtime_config: &RuntimeConfig, key: &str, default: u64) -> u64 {
@@ -408,12 +362,27 @@ mod tests {
     }
 
     #[test]
-    fn runtime_auth_policy_rejects_invalid_passkey_login_value_to_default() {
+    fn runtime_auth_policy_rejects_invalid_bool_values_to_defaults() {
         let runtime_config = RuntimeConfig::new();
+        runtime_config.apply(config_model(AUTH_COOKIE_SECURE_KEY, "maybe"));
+        runtime_config.apply(config_model(AUTH_ALLOW_USER_REGISTRATION_KEY, "unknown"));
+        runtime_config.apply(config_model(
+            AUTH_REGISTER_ACTIVATION_ENABLED_KEY,
+            "sometimes",
+        ));
         runtime_config.apply(config_model(AUTH_PASSKEY_LOGIN_ENABLED_KEY, "maybe"));
 
         let policy = RuntimeAuthPolicy::from_runtime_config(&runtime_config);
 
+        assert_eq!(policy.cookie_secure, DEFAULT_AUTH_COOKIE_SECURE);
+        assert_eq!(
+            policy.allow_user_registration,
+            DEFAULT_AUTH_ALLOW_USER_REGISTRATION
+        );
+        assert_eq!(
+            policy.register_activation_enabled,
+            DEFAULT_AUTH_REGISTER_ACTIVATION_ENABLED
+        );
         assert_eq!(
             policy.passkey_login_enabled,
             DEFAULT_AUTH_PASSKEY_LOGIN_ENABLED

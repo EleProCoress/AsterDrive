@@ -1219,7 +1219,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         requires_restart: false,
         is_sensitive: false,
         category: CONFIG_CATEGORY_USER_REGISTRATION,
-        description: "Allowed local-account email addresses and exact domains. Empty means no allowlist restriction. Applies to local registration and local email changes only",
+        description: "Allowed local-account email addresses and exact ASCII domains. Empty means no allowlist restriction. Applies to local registration and local email changes only. Internationalized domains must be entered in punycode form",
     },
     ConfigDef {
         key: AUTH_LOCAL_EMAIL_BLOCKLIST_KEY,
@@ -1230,7 +1230,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         requires_restart: false,
         is_sensitive: false,
         category: CONFIG_CATEGORY_USER_REGISTRATION,
-        description: "Blocked local-account email addresses and exact domains. Blocklist wins over allowlist. Applies to local registration and local email changes only",
+        description: "Blocked local-account email addresses and exact ASCII domains. Blocklist wins over allowlist. Applies to local registration and local email changes only. Internationalized domains must be entered in punycode form",
     },
     ConfigDef {
         key: AUTH_PASSKEY_LOGIN_ENABLED_KEY,

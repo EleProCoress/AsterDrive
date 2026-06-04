@@ -1484,7 +1484,7 @@ async fn test_cannot_migrate_policy_group_assignments_to_disabled_group() {
     let body: Value = test::read_body_json(resp).await;
     assert_eq!(
         body["msg"],
-        "cannot migrate users to a disabled storage policy group"
+        "cannot migrate assignments to a disabled storage policy group"
     );
 }
 

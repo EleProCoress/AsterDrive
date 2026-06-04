@@ -72,6 +72,7 @@
 	"local_email_policy_item_label": "Email or domain",
 	"local_email_policy_add_item": "Add email or domain",
 	"local_email_policy_remove_item": "Remove email or domain",
+	"local_email_policy_placeholder": "example.com or alice@example.com",
 	"settings_enum_set_search_placeholder": "Search actions...",
 	"settings_enum_set_select_visible": "Select visible",
 	"settings_enum_set_select_all": "Select all",

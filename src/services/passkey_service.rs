@@ -672,10 +672,8 @@ pub async fn finish_login(
         {
             return Err(AsterError::auth_invalid_credentials("passkey not found"));
         }
-    } else {
-        if !passkey_repo::touch_last_used(state.writer_db(), passkey.id, now).await? {
-            return Err(AsterError::auth_invalid_credentials("passkey not found"));
-        }
+    } else if !passkey_repo::touch_last_used(state.writer_db(), passkey.id, now).await? {
+        return Err(AsterError::auth_invalid_credentials("passkey not found"));
     }
 
     let (access, refresh) =

@@ -91,6 +91,32 @@ describe("brandingStore", () => {
 		]);
 	});
 
+	it("treats loaded branding without passkey policy as enabled", async () => {
+		mockState.getBranding.mockResolvedValue({
+			allow_user_registration: true,
+			title: "Legacy API Drive",
+			description: "Legacy endpoint",
+			favicon_url: "/legacy.svg",
+			wordmark_dark_url: "/legacy-dark.svg",
+			wordmark_light_url: "/legacy-light.svg",
+			site_urls: ["https://legacy.example.com"],
+		});
+
+		const { useBrandingStore } = await loadBrandingStoreModule();
+
+		await useBrandingStore.getState().load();
+
+		expect(useBrandingStore.getState()).toMatchObject({
+			allowUserRegistration: true,
+			isLoaded: true,
+			passkeyLoginEnabled: true,
+			branding: expect.objectContaining({
+				title: "Legacy API Drive",
+			}),
+			siteUrl: "https://legacy.example.com",
+		});
+	});
+
 	it("hydrates cached branding immediately and revalidates it", async () => {
 		const cachedBranding = {
 			allow_user_registration: true,

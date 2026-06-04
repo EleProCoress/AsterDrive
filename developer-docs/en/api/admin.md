@@ -257,7 +257,7 @@ Supported actions:
 | `GET` | `/admin/policy-groups/{id}` | Read policy group details |
 | `PATCH` | `/admin/policy-groups/{id}` | Update policy group |
 | `DELETE` | `/admin/policy-groups/{id}` | Delete policy group |
-| `POST` | `/admin/policy-groups/{id}/migrate-users` | Batch-migrate users to another policy group |
+| `POST` | `/admin/policy-groups/{id}/migrate-assignments` | Batch-migrate users to another policy group |
 
 Policy groups define storage policy selection for users and teams. They are rejected from deletion while still referenced.
 

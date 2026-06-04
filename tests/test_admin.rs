@@ -310,6 +310,44 @@ async fn test_admin_scope_allows_admin_users() {
         "user.registration_and_login"
     );
 
+    let local_email_allowlist = body["data"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|item| item["key"] == "auth_local_email_allowlist")
+        .unwrap();
+    assert_eq!(
+        local_email_allowlist["label_i18n_key"],
+        "settings_item_auth_local_email_allowlist_label"
+    );
+    assert_eq!(
+        local_email_allowlist["description_i18n_key"],
+        "settings_item_auth_local_email_allowlist_desc"
+    );
+    assert_eq!(
+        local_email_allowlist["category"],
+        "user.registration_and_login"
+    );
+
+    let local_email_blocklist = body["data"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|item| item["key"] == "auth_local_email_blocklist")
+        .unwrap();
+    assert_eq!(
+        local_email_blocklist["label_i18n_key"],
+        "settings_item_auth_local_email_blocklist_label"
+    );
+    assert_eq!(
+        local_email_blocklist["description_i18n_key"],
+        "settings_item_auth_local_email_blocklist_desc"
+    );
+    assert_eq!(
+        local_email_blocklist["category"],
+        "user.registration_and_login"
+    );
+
     let branding_title = body["data"]
         .as_array()
         .unwrap()
@@ -2071,6 +2109,25 @@ async fn test_admin_policy_group_migration_updates_users_and_teams() {
     assert_eq!(body["data"]["affected_users"], 1);
     assert_eq!(body["data"]["affected_teams"], 2);
     assert_eq!(body["data"]["migrated_assignments"], 3);
+
+    let req = test::TestRequest::post()
+        .uri(&format!(
+            "/api/v1/admin/policy-groups/{}/migrate-assignments",
+            source_group.id
+        ))
+        .insert_header(("Cookie", common::access_cookie_header(&admin_token)))
+        .insert_header(common::csrf_header_for(&admin_token))
+        .set_json(serde_json::json!({
+            "target_group_id": target_group.id
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["code"], 0, "{body}");
+    assert_eq!(body["data"]["affected_users"], 0);
+    assert_eq!(body["data"]["affected_teams"], 0);
+    assert_eq!(body["data"]["migrated_assignments"], 0);
 
     let migrated_user = user_repo::find_by_id(state.writer_db(), migrated_user_id)
         .await

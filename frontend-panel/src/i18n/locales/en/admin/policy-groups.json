@@ -56,7 +56,7 @@
 	"create_policy_group": "Create Policy Group",
 	"edit_policy_group": "Edit Policy Group",
 	"delete_policy_group": "Delete Policy Group",
-	"delete_policy_group_desc": "This will remove the group and its routing rules. Assigned users must be moved first.",
+	"delete_policy_group_desc": "This will remove the group and its routing rules. Assigned users and teams must be moved first.",
 	"policy_group_dialog_desc": "Define an ordered rule set that maps uploads to storage policies by file size.",
 	"policy_group_name_required": "Policy group name is required.",
 	"policy_group_default_requires_enabled": "A default policy group must remain enabled.",

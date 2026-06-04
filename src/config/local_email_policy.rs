@@ -109,14 +109,15 @@ fn read_policy_list(runtime_config: &RuntimeConfig, key: &str) -> EmailPolicyLis
     let Some(raw) = runtime_config.get(key) else {
         return EmailPolicyList::default();
     };
-    match serde_json::from_str::<Vec<String>>(&raw)
-        .ok()
-        .and_then(|items| normalize_policy_items(items).ok())
-    {
-        Some(items) => {
+    match serde_json::from_str::<Vec<String>>(&raw) {
+        Ok(items) => {
             let mut list = EmailPolicyList::default();
             for item in items {
-                match parse_policy_item(&item) {
+                let item = item.trim();
+                if item.is_empty() {
+                    continue;
+                }
+                match parse_policy_item(item) {
                     Ok(entry) => list.insert(entry),
                     Err(error) => {
                         tracing::warn!(
@@ -130,11 +131,12 @@ fn read_policy_list(runtime_config: &RuntimeConfig, key: &str) -> EmailPolicyLis
             }
             list
         }
-        None => {
+        Err(error) => {
             tracing::warn!(
                 key,
                 value = %raw,
-                "invalid local email policy config; using an empty list"
+                error = %error,
+                "invalid local email policy config JSON; using an empty list"
             );
             EmailPolicyList::default()
         }
@@ -262,6 +264,25 @@ mod tests {
     }
 
     #[test]
+    fn rejects_unicode_domains_and_accepts_punycode_domains() {
+        assert!(
+            normalize_local_email_policy_config_value(
+                AUTH_LOCAL_EMAIL_ALLOWLIST_KEY,
+                r#"["用户.中国"]"#
+            )
+            .is_err()
+        );
+        assert_eq!(
+            normalize_local_email_policy_config_value(
+                AUTH_LOCAL_EMAIL_ALLOWLIST_KEY,
+                r#"["xn--fiq228c.xn--fiqs8s"]"#,
+            )
+            .unwrap(),
+            r#"["xn--fiq228c.xn--fiqs8s"]"#
+        );
+    }
+
+    #[test]
     fn local_email_policy_allows_when_lists_are_empty() {
         let policy = LocalEmailPolicy::from_runtime_config(&RuntimeConfig::new());
 
@@ -304,5 +325,19 @@ mod tests {
 
         assert!(policy.check_not_blocked("bob@other.test").is_ok());
         assert!(policy.check_not_blocked("blocked@example.com").is_err());
+    }
+
+    #[test]
+    fn runtime_policy_list_keeps_valid_items_when_one_item_is_invalid() {
+        let runtime_config = RuntimeConfig::new();
+        runtime_config.apply(config_model(
+            AUTH_LOCAL_EMAIL_BLOCKLIST_KEY,
+            r#"["blocked@example.com","invalid-domain","tempmail.test"]"#,
+        ));
+        let policy = LocalEmailPolicy::from_runtime_config(&runtime_config);
+
+        assert!(policy.check("blocked@example.com").is_err());
+        assert!(policy.check("user@tempmail.test").is_err());
+        assert!(policy.check("user@example.com").is_ok());
     }
 }
