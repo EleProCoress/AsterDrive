@@ -559,9 +559,8 @@ async fn migrate_one_blob(
         task_id,
         source_policy_id,
         target_policy_id,
-        target_multipart_part_size,
-        source_driver,
         target_driver,
+        ..
     } = *migration;
     let latest = match file_repo::find_blob_by_id(state.writer_db(), blob.id).await {
         Ok(blob) => blob,
@@ -620,17 +619,7 @@ async fn migrate_one_blob(
     };
     let target_path = crate::utils::storage_path_from_blob_key(&target_hash);
 
-    copy_blob_streaming(
-        state,
-        context,
-        source_driver,
-        target_driver,
-        target_policy_id,
-        target_multipart_part_size,
-        &latest,
-        &target_path,
-    )
-    .await?;
+    copy_blob_streaming(migration, &latest, &target_path).await?;
     let moved = transaction::with_transaction(state.writer_db(), async |txn| {
         let moved = file_repo::move_blob_policy_if_current(
             txn,
@@ -780,15 +769,19 @@ fn checkpoint_delta(
 }
 
 async fn copy_blob_streaming(
-    state: &PrimaryAppState,
-    context: &TaskExecutionContext,
-    source_driver: &dyn StorageDriver,
-    target_driver: &dyn StorageDriver,
-    target_policy_id: i64,
-    target_multipart_part_size: i64,
+    migration: &BlobMigrationContext<'_>,
     blob: &file_blob::Model,
     target_path: &str,
 ) -> Result<()> {
+    let BlobMigrationContext {
+        state,
+        execution: context,
+        target_policy_id,
+        target_multipart_part_size,
+        source_driver,
+        target_driver,
+        ..
+    } = *migration;
     context.ensure_active()?;
     if let Some(multipart) = target_driver.as_multipart()
         && should_use_multipart_migration(blob.size, target_multipart_part_size)?
@@ -797,18 +790,7 @@ async fn copy_blob_streaming(
         // clone an in-flight reader after a timeout. Multipart migration keeps
         // each retryable unit bounded and aborts the upload before the blob row
         // is moved if any part fails.
-        return copy_blob_multipart(
-            state,
-            context,
-            source_driver,
-            target_driver,
-            multipart,
-            target_policy_id,
-            target_multipart_part_size,
-            blob,
-            target_path,
-        )
-        .await;
+        return copy_blob_multipart(migration, multipart, blob, target_path).await;
     }
 
     let source_stream = source_driver.get_stream(&blob.storage_path).await?;
@@ -854,16 +836,20 @@ async fn copy_blob_streaming(
 }
 
 async fn copy_blob_multipart(
-    state: &PrimaryAppState,
-    context: &TaskExecutionContext,
-    source_driver: &dyn StorageDriver,
-    target_driver: &dyn StorageDriver,
+    migration: &BlobMigrationContext<'_>,
     multipart: &dyn MultipartStorageDriver,
-    target_policy_id: i64,
-    target_multipart_part_size: i64,
     blob: &file_blob::Model,
     target_path: &str,
 ) -> Result<()> {
+    let BlobMigrationContext {
+        state,
+        execution: context,
+        target_policy_id,
+        target_multipart_part_size,
+        source_driver,
+        target_driver,
+        ..
+    } = *migration;
     context.ensure_active()?;
     let mut source_stream = source_driver.get_stream(&blob.storage_path).await?;
     let part_size = migration_multipart_part_size(blob.size, target_multipart_part_size)?;
@@ -947,9 +933,10 @@ fn migration_multipart_part_size(blob_size: i64, configured_part_size: i64) -> R
             "storage migration blob size cannot be negative: {blob_size}"
         )));
     }
-    let configured_part_size = configured_part_size
-        .max(MIGRATION_MULTIPART_MIN_PART_SIZE)
-        .min(MIGRATION_MULTIPART_PREFERRED_MAX_PART_SIZE);
+    let configured_part_size = configured_part_size.clamp(
+        MIGRATION_MULTIPART_MIN_PART_SIZE,
+        MIGRATION_MULTIPART_PREFERRED_MAX_PART_SIZE,
+    );
     let count_limited_part_size = if blob_size == 0 {
         MIGRATION_MULTIPART_MIN_PART_SIZE
     } else {
