@@ -251,6 +251,14 @@ impl DavLockSystem for NoopLockSystem {
         Box::pin(async { Vec::new() })
     }
 
+    fn conflicting_locks(
+        &self,
+        _path: &crate::webdav::dav::DavPath,
+        _deep: bool,
+    ) -> LsFuture<'_, Vec<DavLock>> {
+        Box::pin(async { Vec::new() })
+    }
+
     fn delete(&self, _path: &crate::webdav::dav::DavPath) -> LsFuture<'_, Result<(), ()>> {
         Box::pin(async { Ok(()) })
     }

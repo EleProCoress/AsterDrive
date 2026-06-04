@@ -2875,6 +2875,148 @@ async fn test_webdav_tagged_if_token_only_unlocks_matching_resource() {
 }
 
 #[actix_web::test]
+async fn test_webdav_recursive_delete_reports_locked_children_as_multistatus() {
+    let app = setup_with_webdav!();
+    let (token, _) = register_and_login!(app);
+    let auth = create_webdav_basic_auth!(app, token);
+
+    let req = test::TestRequest::with_uri("/webdav/partial-delete/")
+        .method(actix_web::http::Method::from_bytes(b"MKCOL").unwrap())
+        .insert_header(("Authorization", auth.clone()))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+
+    let req = test::TestRequest::put()
+        .uri("/webdav/partial-delete/locked.txt")
+        .insert_header(("Authorization", auth.clone()))
+        .set_payload("locked child")
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert!(resp.status() == 201 || resp.status() == 204);
+
+    let lock_body = r#"<?xml version="1.0" encoding="utf-8" ?>
+<D:lockinfo xmlns:D="DAV:">
+  <D:lockscope><D:exclusive/></D:lockscope>
+  <D:locktype><D:write/></D:locktype>
+  <D:owner><D:href>testuser</D:href></D:owner>
+</D:lockinfo>"#;
+    let req = test::TestRequest::with_uri("/webdav/partial-delete/locked.txt")
+        .method(actix_web::http::Method::from_bytes(b"LOCK").unwrap())
+        .insert_header(("Authorization", auth.clone()))
+        .insert_header(("Content-Type", "application/xml"))
+        .insert_header(("Depth", "0"))
+        .set_payload(lock_body)
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let req = test::TestRequest::delete()
+        .uri("/webdav/partial-delete/")
+        .insert_header(("Authorization", auth.clone()))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        207,
+        "recursive DELETE with locked descendants should return Multi-Status"
+    );
+    let body = test::read_body(resp).await;
+    let xml = String::from_utf8_lossy(&body);
+    assert!(xml.contains("/webdav/partial-delete/locked.txt"), "{xml}");
+    assert!(xml.contains("423 Locked"), "{xml}");
+
+    let req = test::TestRequest::get()
+        .uri("/webdav/partial-delete/locked.txt")
+        .insert_header(("Authorization", auth.clone()))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        200,
+        "locked descendant should remain after Multi-Status preflight failure"
+    );
+}
+
+#[actix_web::test]
+async fn test_webdav_recursive_move_reports_locked_children_as_multistatus() {
+    let app = setup_with_webdav!();
+    let (token, _) = register_and_login!(app);
+    let auth = create_webdav_basic_auth!(app, token);
+
+    for uri in ["/webdav/partial-move/", "/webdav/move-target-parent/"] {
+        let req = test::TestRequest::with_uri(uri)
+            .method(actix_web::http::Method::from_bytes(b"MKCOL").unwrap())
+            .insert_header(("Authorization", auth.clone()))
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), 201);
+    }
+
+    let req = test::TestRequest::put()
+        .uri("/webdav/partial-move/locked.txt")
+        .insert_header(("Authorization", auth.clone()))
+        .set_payload("locked child")
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert!(resp.status() == 201 || resp.status() == 204);
+
+    let lock_body = r#"<?xml version="1.0" encoding="utf-8" ?>
+<D:lockinfo xmlns:D="DAV:">
+  <D:lockscope><D:exclusive/></D:lockscope>
+  <D:locktype><D:write/></D:locktype>
+  <D:owner><D:href>testuser</D:href></D:owner>
+</D:lockinfo>"#;
+    let req = test::TestRequest::with_uri("/webdav/partial-move/locked.txt")
+        .method(actix_web::http::Method::from_bytes(b"LOCK").unwrap())
+        .insert_header(("Authorization", auth.clone()))
+        .insert_header(("Content-Type", "application/xml"))
+        .insert_header(("Depth", "0"))
+        .set_payload(lock_body)
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let req = test::TestRequest::with_uri("/webdav/partial-move/")
+        .method(actix_web::http::Method::from_bytes(b"MOVE").unwrap())
+        .insert_header(("Authorization", auth.clone()))
+        .insert_header(("Destination", "/webdav/move-target-parent/partial-move/"))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        207,
+        "recursive MOVE with locked descendants should return Multi-Status"
+    );
+    let body = test::read_body(resp).await;
+    let xml = String::from_utf8_lossy(&body);
+    assert!(xml.contains("/webdav/partial-move/locked.txt"), "{xml}");
+    assert!(xml.contains("423 Locked"), "{xml}");
+
+    let req = test::TestRequest::get()
+        .uri("/webdav/partial-move/locked.txt")
+        .insert_header(("Authorization", auth.clone()))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        200,
+        "locked descendant should remain at the source after Multi-Status preflight failure"
+    );
+
+    let req = test::TestRequest::get()
+        .uri("/webdav/move-target-parent/partial-move/locked.txt")
+        .insert_header(("Authorization", auth.clone()))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        404,
+        "failed recursive MOVE should not create the destination subtree"
+    );
+}
+
+#[actix_web::test]
 async fn test_webdav_unauthorized() {
     let app = setup_with_webdav!();
 

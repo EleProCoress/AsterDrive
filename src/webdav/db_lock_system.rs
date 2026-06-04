@@ -350,6 +350,21 @@ impl DavLockSystem for DbLockSystem {
         })
     }
 
+    fn conflicting_locks(&self, path: &DavPath, deep: bool) -> LsFuture<'_, Vec<DavLock>> {
+        let path_str = normalize_path(path);
+
+        Box::pin(async move {
+            let now = Utc::now();
+            find_overlapping_locks(&self.db, &path_str, deep)
+                .await
+                .unwrap_or_default()
+                .iter()
+                .filter(|lock| lock.timeout_at.is_none_or(|timeout_at| timeout_at >= now))
+                .map(model_to_dav_lock)
+                .collect()
+        })
+    }
+
     fn delete(&self, path: &DavPath) -> LsFuture<'_, Result<(), ()>> {
         let path_str = normalize_path(path);
         Box::pin(async move {

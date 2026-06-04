@@ -1,14 +1,16 @@
 //! WebDAV resource mutation handlers: MKCOL, DELETE, COPY, MOVE.
 
-use actix_web::http::header;
+use actix_web::http::{StatusCode, header};
 use actix_web::{HttpRequest, HttpResponse, web};
 use futures::StreamExt;
+use xmltree::XMLNode;
 
 use crate::webdav::dav::{DavFileSystem, DavLockSystem, DavPath, FsError};
 use crate::webdav::protocol::{self, Depth};
 use crate::webdav::{
-    decoded_path_string, ensure_system_file_name_allowed, ensure_unlocked, fs, fs_error_response,
-    href_for_relative, request_path, system_file,
+    dav_element, decoded_path_string, ensure_system_file_name_allowed, ensure_unlocked, fs,
+    fs_error_response, href_for_dav_path, href_for_relative, multi_status, request_path,
+    status_element, system_file, text_element, xml_response,
 };
 
 pub(crate) async fn handle_mkcol(
@@ -73,7 +75,15 @@ pub(crate) async fn handle_delete(
         Ok(meta) => meta,
         Err(err) => return fs_error_response(err),
     };
-    if let Err(resp) = ensure_unlocked(lock_system, &path, true, prefix, req.headers()).await {
+    if meta.is_dir() {
+        if let Some(resp) =
+            locked_multi_status_response(lock_system, &path, true, prefix, req).await
+        {
+            return resp;
+        }
+    } else if let Err(resp) =
+        ensure_unlocked(lock_system, &path, false, prefix, req.headers()).await
+    {
         return resp;
     }
 
@@ -139,20 +149,35 @@ pub(crate) async fn handle_copy_move(
         Ok(path) => path,
         Err(_) => return HttpResponse::BadRequest().body("Invalid destination path"),
     };
-    if is_move
-        && let Err(resp) = ensure_unlocked(lock_system, &source, true, prefix, req.headers()).await
-    {
-        return resp;
-    }
-    if let Err(resp) = ensure_unlocked(lock_system, &destination, true, prefix, req.headers()).await
-    {
-        return resp;
-    }
 
     let source_meta = match dav_fs.metadata(&source).await {
         Ok(meta) => meta,
         Err(err) => return fs_error_response(err),
     };
+    if is_move && source_meta.is_dir() {
+        if let Some(resp) =
+            locked_multi_status_response(lock_system, &source, true, prefix, req).await
+        {
+            return resp;
+        }
+    } else if is_move
+        && let Err(resp) = ensure_unlocked(lock_system, &source, false, prefix, req.headers()).await
+    {
+        return resp;
+    }
+    let destination_deep = source_meta.is_dir() && (is_move || depth != Depth::Zero);
+    if destination_deep {
+        if let Some(resp) =
+            locked_multi_status_response(lock_system, &destination, true, prefix, req).await
+        {
+            return resp;
+        }
+    } else if let Err(resp) =
+        ensure_unlocked(lock_system, &destination, false, prefix, req.headers()).await
+    {
+        return resp;
+    }
+
     let destination_exists = dav_fs.metadata(&destination).await.is_ok();
     if !protocol::overwrite_enabled(req.headers()) && destination_exists {
         return HttpResponse::PreconditionFailed().finish();
@@ -182,6 +207,50 @@ pub(crate) async fn handle_copy_move(
         }
         Err(err) => fs_error_response(err),
     }
+}
+
+async fn locked_multi_status_response(
+    lock_system: &dyn DavLockSystem,
+    path: &DavPath,
+    deep: bool,
+    prefix: &str,
+    req: &HttpRequest,
+) -> Option<HttpResponse> {
+    let mut conflicts = lock_system.conflicting_locks(path, deep).await;
+    conflicts.retain(|lock| {
+        let href = href_for_dav_path(prefix, &lock.path);
+        let tokens = protocol::submitted_lock_tokens_for_path(req.headers(), &href);
+        !tokens.iter().any(|token| token == &lock.token)
+    });
+    if conflicts.is_empty() {
+        return None;
+    }
+
+    Some(multi_status_locked_response(prefix, &conflicts))
+}
+
+fn multi_status_locked_response(
+    prefix: &str,
+    locks: &[crate::webdav::dav::DavLock],
+) -> HttpResponse {
+    let mut multistatus = dav_element("multistatus");
+    multistatus
+        .attributes
+        .insert("xmlns:D".to_string(), "DAV:".to_string());
+
+    for lock in locks {
+        let mut response = dav_element("response");
+        response.children.push(XMLNode::Element(text_element(
+            "D:href",
+            &href_for_dav_path(prefix, &lock.path),
+        )));
+        response
+            .children
+            .push(XMLNode::Element(status_element(StatusCode::LOCKED)));
+        multistatus.children.push(XMLNode::Element(response));
+    }
+
+    xml_response(multistatus, multi_status())
 }
 
 async fn ensure_empty_body(payload: &mut web::Payload) -> Result<(), HttpResponse> {
