@@ -7,10 +7,13 @@ use crate::entities::file_blob;
 use crate::errors::Result;
 use crate::runtime::PrimaryAppState;
 use crate::storage::{StorageDriver, StorageErrorKind};
+use crate::utils::numbers::u64_to_usize;
 
 use crate::services::media_processing_service::shared::{
     ThumbnailContext, ThumbnailData, requires_server_side_source_limit,
 };
+
+const MAX_CACHED_THUMBNAIL_BYTES: u64 = 16 * 1024 * 1024;
 
 pub async fn delete_thumbnail(state: &PrimaryAppState, blob: &file_blob::Model) -> Result<()> {
     let policy = state.policy_snapshot.get_policy_or_err(blob.policy_id)?;
@@ -156,8 +159,49 @@ async fn read_thumbnail_from_path(
     driver: &Arc<dyn StorageDriver>,
     path: &str,
 ) -> Result<Option<Vec<u8>>> {
+    let max_cached_thumbnail_bytes =
+        u64_to_usize(MAX_CACHED_THUMBNAIL_BYTES, "cached thumbnail size limit")?;
+    match driver.metadata(path).await {
+        Ok(metadata) if metadata.size > MAX_CACHED_THUMBNAIL_BYTES => {
+            tracing::warn!(
+                blob_id,
+                path,
+                size = metadata.size,
+                max_size = MAX_CACHED_THUMBNAIL_BYTES,
+                "ignoring oversized cached thumbnail"
+            );
+            return Ok(None);
+        }
+        Ok(_) => {}
+        Err(error) if error.storage_error_kind() == Some(StorageErrorKind::NotFound) => {
+            return Ok(None);
+        }
+        Err(error) => match driver.exists(path).await {
+            Ok(false) => return Ok(None),
+            Ok(true) => return Err(error),
+            Err(exists_error) => {
+                tracing::warn!(
+                    blob_id,
+                    path,
+                    "thumbnail metadata failed and existence recheck also failed: {exists_error}"
+                );
+                return Err(error);
+            }
+        },
+    }
+
     match driver.get(path).await {
-        Ok(data) => Ok(Some(data)),
+        Ok(data) if data.len() <= max_cached_thumbnail_bytes => Ok(Some(data)),
+        Ok(data) => {
+            tracing::warn!(
+                blob_id,
+                path,
+                size = data.len(),
+                max_size = MAX_CACHED_THUMBNAIL_BYTES,
+                "ignoring oversized cached thumbnail"
+            );
+            Ok(None)
+        }
         Err(error) if error.storage_error_kind() == Some(StorageErrorKind::NotFound) => Ok(None),
         Err(error) => match driver.exists(path).await {
             Ok(false) => Ok(None),
@@ -204,11 +248,12 @@ pub(super) async fn persist_thumbnail_metadata(
 
 #[cfg(test)]
 mod tests {
-    use super::read_thumbnail_from_path;
+    use super::{MAX_CACHED_THUMBNAIL_BYTES, read_thumbnail_from_path};
     use crate::errors::Result;
     use crate::storage::StorageErrorKind;
     use crate::storage::error::storage_driver_error;
     use crate::storage::{BlobMetadata, StorageDriver};
+    use crate::utils::numbers::u64_to_usize;
     use async_trait::async_trait;
     use std::sync::{
         Arc,
@@ -216,21 +261,22 @@ mod tests {
     };
     use tokio::io::AsyncRead;
 
-    struct MissingThumbnailDriver {
+    struct ThumbnailCacheDriver {
+        metadata_size: Option<u64>,
+        data_len: usize,
         exists_calls: AtomicUsize,
+        get_calls: AtomicUsize,
     }
 
     #[async_trait]
-    impl StorageDriver for MissingThumbnailDriver {
+    impl StorageDriver for ThumbnailCacheDriver {
         async fn put(&self, _path: &str, _data: &[u8]) -> Result<String> {
             unreachable!()
         }
 
         async fn get(&self, _path: &str) -> Result<Vec<u8>> {
-            Err(storage_driver_error(
-                StorageErrorKind::NotFound,
-                "thumbnail not found",
-            ))
+            self.get_calls.fetch_add(1, Ordering::SeqCst);
+            Ok(vec![b'x'; self.data_len])
         }
 
         async fn get_stream(&self, _path: &str) -> Result<Box<dyn AsyncRead + Unpin + Send>> {
@@ -247,14 +293,26 @@ mod tests {
         }
 
         async fn metadata(&self, _path: &str) -> Result<BlobMetadata> {
-            unreachable!()
+            let Some(size) = self.metadata_size else {
+                return Err(storage_driver_error(
+                    StorageErrorKind::NotFound,
+                    "thumbnail not found",
+                ));
+            };
+            Ok(BlobMetadata {
+                size,
+                content_type: Some("image/webp".to_string()),
+            })
         }
     }
 
     #[tokio::test]
-    async fn read_thumbnail_from_path_treats_not_found_get_as_miss_without_exists_probe() {
-        let driver = Arc::new(MissingThumbnailDriver {
+    async fn read_thumbnail_from_path_treats_not_found_metadata_as_miss_without_exists_probe() {
+        let driver = Arc::new(ThumbnailCacheDriver {
+            metadata_size: None,
+            data_len: 0,
             exists_calls: AtomicUsize::new(0),
+            get_calls: AtomicUsize::new(0),
         });
 
         let loaded =
@@ -264,5 +322,64 @@ mod tests {
 
         assert!(loaded.is_none());
         assert_eq!(driver.exists_calls.load(Ordering::SeqCst), 0);
+        assert_eq!(driver.get_calls.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn read_thumbnail_from_path_accepts_cache_entry_at_size_limit() {
+        let max_size = u64_to_usize(MAX_CACHED_THUMBNAIL_BYTES, "test thumbnail limit")
+            .expect("thumbnail limit should fit usize");
+        let driver = Arc::new(ThumbnailCacheDriver {
+            metadata_size: Some(MAX_CACHED_THUMBNAIL_BYTES),
+            data_len: max_size,
+            exists_calls: AtomicUsize::new(0),
+            get_calls: AtomicUsize::new(0),
+        });
+
+        let loaded =
+            read_thumbnail_from_path(1, &(driver.clone() as Arc<dyn StorageDriver>), "thumb.webp")
+                .await
+                .expect("thumbnail at cache size limit should load");
+
+        assert_eq!(loaded.expect("cache hit expected").len(), max_size);
+        assert_eq!(driver.get_calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn read_thumbnail_from_path_rejects_cache_entry_above_metadata_limit_without_get() {
+        let driver = Arc::new(ThumbnailCacheDriver {
+            metadata_size: Some(MAX_CACHED_THUMBNAIL_BYTES + 1),
+            data_len: 1,
+            exists_calls: AtomicUsize::new(0),
+            get_calls: AtomicUsize::new(0),
+        });
+
+        let loaded =
+            read_thumbnail_from_path(1, &(driver.clone() as Arc<dyn StorageDriver>), "thumb.webp")
+                .await
+                .expect("oversized thumbnail cache should be ignored");
+
+        assert!(loaded.is_none());
+        assert_eq!(driver.get_calls.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn read_thumbnail_from_path_rejects_cache_entry_above_read_limit() {
+        let max_size = u64_to_usize(MAX_CACHED_THUMBNAIL_BYTES, "test thumbnail limit")
+            .expect("thumbnail limit should fit usize");
+        let driver = Arc::new(ThumbnailCacheDriver {
+            metadata_size: Some(MAX_CACHED_THUMBNAIL_BYTES),
+            data_len: max_size + 1,
+            exists_calls: AtomicUsize::new(0),
+            get_calls: AtomicUsize::new(0),
+        });
+
+        let loaded =
+            read_thumbnail_from_path(1, &(driver.clone() as Arc<dyn StorageDriver>), "thumb.webp")
+                .await
+                .expect("oversized thumbnail read should be ignored");
+
+        assert!(loaded.is_none());
+        assert_eq!(driver.get_calls.load(Ordering::SeqCst), 1);
     }
 }
