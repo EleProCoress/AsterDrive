@@ -11,7 +11,8 @@ use crate::webdav::dav::{DavFileSystem, DavLock, DavLockSystem, FsError, OpenOpt
 use crate::webdav::protocol::{self, Depth};
 use crate::webdav::{
     XML_CONTENT_TYPE, child_elements, dav_element, encode_href, fs, fs_error_response,
-    href_for_dav_path, request_path, text_element, xml_bytes,
+    href_for_dav_path, lock_token_matches_request_uri_response, lock_token_submitted_response,
+    request_path, text_element, xml_bytes,
 };
 
 pub(crate) async fn handle_lock(
@@ -139,7 +140,9 @@ pub(crate) async fn handle_lock(
         .await
     {
         Ok(lock) => lock,
-        Err(_) => return HttpResponse::Locked().finish(),
+        Err(lock) => {
+            return lock_token_submitted_response(StatusCode::LOCKED, prefix, &lock.path);
+        }
     };
 
     let status = if resource_existed {
@@ -168,8 +171,10 @@ pub(crate) async fn handle_unlock(
     };
 
     match lock_system.unlock(&path, &token).await {
-        Ok(()) => HttpResponse::NoContent().finish(),
-        Err(()) => HttpResponse::Conflict().finish(),
+        Ok(()) => HttpResponse::NoContent()
+            .insert_header((header::CACHE_CONTROL, "no-store"))
+            .finish(),
+        Err(()) => lock_token_matches_request_uri_response(StatusCode::CONFLICT),
     }
 }
 

@@ -327,14 +327,89 @@ async fn test_webdav_propfind_root() {
     let (token, _) = register_and_login!(app);
     let auth = create_webdav_basic_auth!(app, token);
 
-    // PROPFIND 根目录 (Depth: 0)
+    for uri in ["/webdav", "/webdav/"] {
+        // PROPFIND 根目录 (Depth: 0)
+        let req = test::TestRequest::with_uri(uri)
+            .method(actix_web::http::Method::from_bytes(b"PROPFIND").unwrap())
+            .insert_header(("Authorization", auth.clone()))
+            .insert_header(("Depth", "0"))
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(
+            resp.status(),
+            207,
+            "PROPFIND root should return 207 for {uri}"
+        );
+    }
+}
+
+#[actix_web::test]
+async fn test_webdav_proppatch_root_is_explicitly_unsupported() {
+    let app = setup_with_webdav!();
+
+    let (token, _) = register_and_login!(app);
+    let auth = create_webdav_basic_auth!(app, token);
+
+    let body = r#"<?xml version="1.0" encoding="utf-8" ?>
+<D:propertyupdate xmlns:D="DAV:" xmlns:A="urn:aster:">
+  <D:set>
+    <D:prop>
+      <A:color>blue</A:color>
+    </D:prop>
+  </D:set>
+</D:propertyupdate>"#;
+    for uri in ["/webdav", "/webdav/"] {
+        let req = test::TestRequest::with_uri(uri)
+            .method(actix_web::http::Method::from_bytes(b"PROPPATCH").unwrap())
+            .insert_header(("Authorization", auth.clone()))
+            .insert_header(("Content-Type", "application/xml"))
+            .set_payload(body)
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(
+            resp.status(),
+            actix_web::http::StatusCode::FORBIDDEN,
+            "PROPPATCH on the WebDAV mount root is intentionally unsupported for {uri}"
+        );
+        let body = test::read_body(resp).await;
+        let text = String::from_utf8_lossy(&body);
+        assert!(
+            text.contains("mount root"),
+            "root PROPPATCH rejection should explain the unsupported target for {uri}: {text}"
+        );
+    }
+}
+
+#[actix_web::test]
+async fn test_webdav_propfind_root_custom_dead_property_is_missing() {
+    let app = setup_with_webdav!();
+
+    let (token, _) = register_and_login!(app);
+    let auth = create_webdav_basic_auth!(app, token);
+
+    let body = r#"<?xml version="1.0" encoding="utf-8" ?>
+<D:propfind xmlns:D="DAV:" xmlns:A="urn:aster:">
+  <D:prop>
+    <A:color />
+  </D:prop>
+</D:propfind>"#;
     let req = test::TestRequest::with_uri("/webdav/")
         .method(actix_web::http::Method::from_bytes(b"PROPFIND").unwrap())
         .insert_header(("Authorization", auth))
         .insert_header(("Depth", "0"))
+        .insert_header(("Content-Type", "application/xml"))
+        .set_payload(body)
         .to_request();
     let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), 207, "PROPFIND root should return 207");
+    assert_eq!(resp.status(), 207);
+    let body = test::read_body(resp).await;
+    let xml = String::from_utf8_lossy(&body);
+    assert!(
+        xml.contains("color") && xml.contains("HTTP/1.1 404 Not Found"),
+        "root custom dead properties should be reported missing, not persisted: {xml}"
+    );
+    Element::parse(Cursor::new(xml.as_bytes()))
+        .expect("PROPFIND root custom prop XML should parse");
 }
 
 #[actix_web::test]
@@ -4077,7 +4152,6 @@ async fn test_webdav_copy_locked_destination_without_token_is_locked() {
 }
 
 #[actix_web::test]
-#[ignore = "tracked by GH-276: COPY should accept a tagged lock token for the locked destination"]
 async fn test_webdav_copy_locked_destination_accepts_tagged_destination_lock_token() {
     let app = setup_with_webdav!();
     let (token, _) = register_and_login!(app);
@@ -4944,6 +5018,123 @@ async fn test_webdav_put_http_if_match_preconditions() {
 }
 
 #[actix_web::test]
+async fn test_webdav_mutations_http_etag_preconditions() {
+    let app = setup_with_webdav!();
+    let (token, _) = register_and_login!(app);
+    let auth = create_webdav_basic_auth!(app, token);
+
+    for (path, body) in [
+        ("/webdav/http-if-delete.txt", "delete source"),
+        ("/webdav/http-if-copy.txt", "copy source"),
+        ("/webdav/http-if-move.txt", "move source"),
+    ] {
+        let req = test::TestRequest::put()
+            .uri(path)
+            .insert_header(("Authorization", auth.clone()))
+            .set_payload(body)
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert!(resp.status() == 201 || resp.status() == 204);
+    }
+
+    let req = test::TestRequest::delete()
+        .uri("/webdav/http-if-delete.txt")
+        .insert_header(("Authorization", auth.clone()))
+        .insert_header(("If-Match", "\"wrong-delete-etag\""))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        actix_web::http::StatusCode::PRECONDITION_FAILED
+    );
+
+    let req = test::TestRequest::with_uri("/webdav/http-if-copy.txt")
+        .method(actix_web::http::Method::from_bytes(b"COPY").unwrap())
+        .insert_header(("Authorization", auth.clone()))
+        .insert_header(("Destination", "/webdav/http-if-copy-target.txt"))
+        .insert_header(("If-Match", "\"wrong-copy-etag\""))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        actix_web::http::StatusCode::PRECONDITION_FAILED
+    );
+
+    let req = test::TestRequest::with_uri("/webdav/http-if-move.txt")
+        .method(actix_web::http::Method::from_bytes(b"MOVE").unwrap())
+        .insert_header(("Authorization", auth.clone()))
+        .insert_header(("Destination", "/webdav/http-if-move-target.txt"))
+        .insert_header(("If-Match", "\"wrong-move-etag\""))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        actix_web::http::StatusCode::PRECONDITION_FAILED
+    );
+
+    for (path, expected) in [
+        ("/webdav/http-if-delete.txt", 200),
+        ("/webdav/http-if-copy-target.txt", 404),
+        ("/webdav/http-if-move-target.txt", 404),
+    ] {
+        let req = test::TestRequest::get()
+            .uri(path)
+            .insert_header(("Authorization", auth.clone()))
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(
+            resp.status(),
+            expected,
+            "{path} precondition result mismatch"
+        );
+    }
+
+    let req = test::TestRequest::default()
+        .method(actix_web::http::Method::HEAD)
+        .uri("/webdav/http-if-delete.txt")
+        .insert_header(("Authorization", auth.clone()))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let delete_etag = resp
+        .headers()
+        .get("ETag")
+        .and_then(|value| value.to_str().ok())
+        .expect("HEAD should return ETag")
+        .to_string();
+
+    let req = test::TestRequest::delete()
+        .uri("/webdav/http-if-delete.txt")
+        .insert_header(("Authorization", auth.clone()))
+        .insert_header(("If-None-Match", delete_etag))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        actix_web::http::StatusCode::PRECONDITION_FAILED,
+        "DELETE with matching If-None-Match must fail with 412"
+    );
+
+    let req = test::TestRequest::with_uri("/webdav/http-if-copy.txt")
+        .method(actix_web::http::Method::from_bytes(b"COPY").unwrap())
+        .insert_header(("Authorization", auth.clone()))
+        .insert_header(("Destination", "/webdav/http-if-copy-target.txt"))
+        .insert_header(("If-Match", "*"))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert!(resp.status() == 201 || resp.status() == 204);
+
+    let req = test::TestRequest::with_uri("/webdav/http-if-move.txt")
+        .method(actix_web::http::Method::from_bytes(b"MOVE").unwrap())
+        .insert_header(("Authorization", auth.clone()))
+        .insert_header(("Destination", "/webdav/http-if-move-target.txt"))
+        .insert_header(("If-None-Match", "\"definitely-not-current\""))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert!(resp.status() == 201 || resp.status() == 204);
+}
+
+#[actix_web::test]
 async fn test_webdav_read_methods_apply_if_header_preconditions() {
     let app = setup_with_webdav!();
     let (token, _) = register_and_login!(app);
@@ -5240,7 +5431,6 @@ async fn test_webdav_recursive_move_reports_locked_children_as_multistatus() {
 }
 
 #[actix_web::test]
-#[ignore = "tracked by GH-276: deep COPY should continue unaffected members after per-resource failures"]
 async fn test_webdav_recursive_copy_continues_unlocked_siblings_after_locked_destination_child() {
     let app = setup_with_webdav!();
     let (token, _) = register_and_login!(app);
@@ -5274,7 +5464,7 @@ async fn test_webdav_recursive_copy_continues_unlocked_siblings_after_locked_des
             "locked existing",
         ),
     ] {
-        if uri.contains("/source/locked/") {
+        if uri.contains("/partial-copy-source/locked/") {
             let req = test::TestRequest::with_uri("/webdav/partial-copy-source/locked/")
                 .method(actix_web::http::Method::from_bytes(b"MKCOL").unwrap())
                 .insert_header(("Authorization", auth.clone()))
@@ -5336,7 +5526,6 @@ async fn test_webdav_recursive_copy_continues_unlocked_siblings_after_locked_des
 }
 
 #[actix_web::test]
-#[ignore = "tracked by GH-276: deep MOVE should continue unaffected members after per-resource failures"]
 async fn test_webdav_recursive_move_continues_unlocked_siblings_after_locked_child() {
     let app = setup_with_webdav!();
     let (token, _) = register_and_login!(app);
@@ -5420,7 +5609,6 @@ async fn test_webdav_recursive_move_continues_unlocked_siblings_after_locked_chi
 }
 
 #[actix_web::test]
-#[ignore = "tracked by GH-276: locked responses should include RFC 4918 precondition XML"]
 async fn test_webdav_locked_response_includes_lock_token_submitted_error() {
     let app = setup_with_webdav!();
     let (token, _) = register_and_login!(app);
@@ -5464,7 +5652,6 @@ async fn test_webdav_locked_response_includes_lock_token_submitted_error() {
 }
 
 #[actix_web::test]
-#[ignore = "tracked by GH-276: UNLOCK URI/token mismatch should include RFC 4918 precondition XML"]
 async fn test_webdav_unlock_wrong_uri_includes_lock_token_matches_request_uri_error() {
     let app = setup_with_webdav!();
     let (token, _) = register_and_login!(app);

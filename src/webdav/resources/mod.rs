@@ -2,16 +2,35 @@
 
 use actix_web::http::{StatusCode, header};
 use actix_web::{HttpRequest, HttpResponse, web};
-use futures::StreamExt;
+use futures::{StreamExt, pin_mut};
 use xmltree::XMLNode;
 
-use crate::webdav::dav::{DavFileSystem, DavLockSystem, DavPath, FsError};
+use crate::webdav::dav::{DavFileSystem, DavLockSystem, DavPath, FsError, ReadDirMeta};
 use crate::webdav::protocol::{self, Depth};
 use crate::webdav::{
-    dav_element, decoded_path_string, ensure_parent_unlocked, ensure_system_file_name_allowed,
-    ensure_unlocked, fs, fs_error_response, href_for_dav_path, href_for_relative, multi_status,
-    parent_relative_path, request_path, status_element, system_file, text_element, xml_response,
+    child_relative_path, dav_element, decoded_path_string, ensure_parent_unlocked,
+    ensure_system_file_name_allowed, ensure_unlocked, fs, fs_error_response, href_for_dav_path,
+    href_for_relative, lock_token_submitted_element, multi_status, parent_relative_path,
+    request_path, status_element, system_file, text_element, xml_response,
 };
+
+#[derive(Clone)]
+struct MultiStatusFailure {
+    path: DavPath,
+    status: StatusCode,
+    lock_path: Option<DavPath>,
+}
+
+struct DavChild {
+    path: DavPath,
+    relative: String,
+    is_dir: bool,
+}
+
+struct PartialMutationOutcome {
+    failures: Vec<MultiStatusFailure>,
+    destination_exists: bool,
+}
 
 pub(crate) async fn handle_mkcol(
     req: &HttpRequest,
@@ -116,6 +135,14 @@ pub(crate) async fn handle_delete(
     };
     if meta.is_dir() && !depth.is_infinity() {
         return HttpResponse::BadRequest().finish();
+    }
+    if let Err(resp) = protocol::evaluate_http_etag_preconditions(
+        req.headers(),
+        true,
+        meta.etag().as_deref(),
+        false,
+    ) {
+        return resp;
     }
     let connection = req.connection_info();
     let request_scheme = connection.scheme().to_string();
@@ -240,6 +267,14 @@ pub(crate) async fn handle_copy_move(
         Ok(meta) => meta,
         Err(err) => return fs_error_response(err),
     };
+    if let Err(resp) = protocol::evaluate_http_etag_preconditions(
+        req.headers(),
+        true,
+        source_meta.etag().as_deref(),
+        false,
+    ) {
+        return resp;
+    }
     if source_meta.is_dir() {
         if is_move && !depth.is_infinity() {
             return HttpResponse::BadRequest().finish();
@@ -268,13 +303,7 @@ pub(crate) async fn handle_copy_move(
     {
         return resp;
     }
-    if is_move && source_meta.is_dir() {
-        if let Some(resp) =
-            locked_multi_status_response(lock_system, &source, true, prefix, req).await
-        {
-            return resp;
-        }
-    } else if is_move
+    if is_move
         && let Err(resp) = ensure_unlocked(
             lock_system,
             &source,
@@ -318,22 +347,17 @@ pub(crate) async fn handle_copy_move(
     let destination_is_collection = destination_meta.as_ref().is_some_and(|meta| meta.is_dir());
     let destination_deep =
         destination_is_collection || source_meta.is_dir() && (is_move || depth != Depth::Zero);
-    if destination_deep {
-        if let Some(resp) =
-            locked_multi_status_response(lock_system, &destination, true, prefix, req).await
-        {
-            return resp;
-        }
-    } else if let Err(resp) = ensure_unlocked(
-        lock_system,
-        &destination,
-        false,
-        prefix,
-        req.headers(),
-        &request_scheme,
-        &request_host,
-    )
-    .await
+    if !destination_deep
+        && let Err(resp) = ensure_unlocked(
+            lock_system,
+            &destination,
+            false,
+            prefix,
+            req.headers(),
+            &request_scheme,
+            &request_host,
+        )
+        .await
     {
         return resp;
     }
@@ -348,6 +372,51 @@ pub(crate) async fn handle_copy_move(
     .await
     {
         return resp;
+    }
+
+    if recursive_collection_copy_or_move {
+        let source_conflicts = if is_move {
+            unsubmitted_lock_conflicts(lock_system, &source, true, prefix, req).await
+        } else {
+            Vec::new()
+        };
+        let destination_conflicts =
+            unsubmitted_lock_conflicts(lock_system, &destination, true, prefix, req).await;
+        if !source_conflicts.is_empty() || !destination_conflicts.is_empty() {
+            let outcome = match partial_recursive_copy_move(
+                dav_fs,
+                lock_system,
+                req,
+                prefix,
+                &source,
+                &source_relative,
+                &destination,
+                &destination_relative,
+                destination_exists,
+                destination_is_collection,
+                is_move,
+            )
+            .await
+            {
+                Ok(outcome) => outcome,
+                Err(err) => return fs_error_response(err),
+            };
+            if !outcome.failures.is_empty() {
+                return multi_status_failure_response(prefix, &outcome.failures);
+            }
+            if outcome.destination_exists {
+                return no_store_response(StatusCode::NO_CONTENT);
+            }
+            return no_store_response(StatusCode::CREATED);
+        }
+    }
+
+    if destination_deep {
+        if let Some(resp) =
+            locked_multi_status_response(lock_system, &destination, true, prefix, req).await
+        {
+            return resp;
+        }
     }
 
     let result = if is_move {
@@ -428,6 +497,327 @@ fn multi_status_locked_response(
         response
             .children
             .push(XMLNode::Element(status_element(StatusCode::LOCKED)));
+        let mut error = dav_element("error");
+        error
+            .children
+            .push(XMLNode::Element(lock_token_submitted_element(
+                prefix, &lock.path,
+            )));
+        response.children.push(XMLNode::Element(error));
+        multistatus.children.push(XMLNode::Element(response));
+    }
+
+    let mut response = xml_response(multistatus, multi_status());
+    response.headers_mut().insert(
+        header::CACHE_CONTROL,
+        header::HeaderValue::from_static("no-store"),
+    );
+    response
+}
+
+async fn unsubmitted_lock_conflicts(
+    lock_system: &dyn DavLockSystem,
+    path: &DavPath,
+    deep: bool,
+    prefix: &str,
+    req: &HttpRequest,
+) -> Vec<crate::webdav::dav::DavLock> {
+    let mut conflicts = lock_system.conflicting_locks(path, deep).await;
+    let connection = req.connection_info();
+    let request_scheme = connection.scheme().to_string();
+    let request_host = connection.host().to_string();
+    conflicts.retain(|lock| {
+        let href = href_for_dav_path(prefix, &lock.path);
+        let tokens = protocol::submitted_lock_tokens_for_path(
+            req.headers(),
+            &href,
+            &request_scheme,
+            &request_host,
+        );
+        !tokens.iter().any(|token| token == &lock.token)
+    });
+    conflicts
+}
+
+async fn partial_recursive_copy_move(
+    dav_fs: &fs::AsterDavFs,
+    lock_system: &dyn DavLockSystem,
+    req: &HttpRequest,
+    prefix: &str,
+    source: &DavPath,
+    source_relative: &str,
+    destination: &DavPath,
+    destination_relative: &str,
+    destination_exists: bool,
+    destination_is_collection: bool,
+    is_move: bool,
+) -> Result<PartialMutationOutcome, FsError> {
+    let mut failures = Vec::new();
+    if destination_exists && !destination_is_collection {
+        dav_fs.remove_file(destination).await?;
+    } else if destination_exists && destination_is_collection {
+        let conflicts = collect_lock_failures(lock_system, req, prefix, destination, true).await;
+        if !conflicts.is_empty() {
+            failures.extend(conflicts);
+        }
+    }
+
+    if !destination_exists {
+        dav_fs.copy_dir_shallow(source, destination).await?;
+    }
+
+    let source_children = collect_children(dav_fs, source, source_relative).await?;
+    for child in source_children {
+        let dest_relative =
+            replace_relative_prefix(&child.relative, source_relative, destination_relative);
+        let dest_path = DavPath::new(&dest_relative).map_err(|_| FsError::BadRequest)?;
+        if child.is_dir {
+            partial_recursive_copy_move_dir(
+                dav_fs,
+                lock_system,
+                req,
+                prefix,
+                &child.path,
+                &child.relative,
+                &dest_path,
+                &dest_relative,
+                is_move,
+                &mut failures,
+            )
+            .await?;
+        } else {
+            partial_copy_move_file(
+                dav_fs,
+                lock_system,
+                req,
+                prefix,
+                &child.path,
+                &dest_path,
+                is_move,
+                &mut failures,
+            )
+            .await?;
+        }
+    }
+
+    if is_move {
+        let remaining = collect_children(dav_fs, source, source_relative).await?;
+        if remaining.is_empty() {
+            dav_fs.remove_dir(source).await?;
+            if lock_system.delete(source).await.is_err() {
+                tracing::warn!(path = %source_relative, "failed to delete WebDAV locks after partial move");
+            }
+        }
+    }
+
+    Ok(PartialMutationOutcome {
+        failures,
+        destination_exists,
+    })
+}
+
+fn partial_recursive_copy_move_dir<'a>(
+    dav_fs: &'a fs::AsterDavFs,
+    lock_system: &'a dyn DavLockSystem,
+    req: &'a HttpRequest,
+    prefix: &'a str,
+    source: &'a DavPath,
+    source_relative: &'a str,
+    destination: &'a DavPath,
+    destination_relative: &'a str,
+    is_move: bool,
+    failures: &'a mut Vec<MultiStatusFailure>,
+) -> futures::future::LocalBoxFuture<'a, Result<(), FsError>> {
+    Box::pin(async move {
+        if is_move {
+            let conflicts = collect_lock_failures(lock_system, req, prefix, source, true).await;
+            if !conflicts.is_empty() {
+                failures.extend(conflicts);
+                return Ok(());
+            }
+        }
+
+        let dest_meta = match dav_fs.metadata(destination).await {
+            Ok(meta) => Some(meta),
+            Err(FsError::NotFound) => None,
+            Err(err) => return Err(err),
+        };
+        if dest_meta.as_ref().is_some_and(|meta| !meta.is_dir()) {
+            let conflicts =
+                collect_lock_failures(lock_system, req, prefix, destination, false).await;
+            if !conflicts.is_empty() {
+                failures.extend(conflicts);
+                return Ok(());
+            }
+            dav_fs.remove_file(destination).await?;
+        } else if dest_meta.as_ref().is_some_and(|meta| meta.is_dir()) {
+            let conflicts =
+                collect_lock_failures(lock_system, req, prefix, destination, true).await;
+            if !conflicts.is_empty() {
+                failures.extend(conflicts);
+                return Ok(());
+            }
+        } else {
+            dav_fs.copy_dir_shallow(source, destination).await?;
+        }
+
+        let children = collect_children(dav_fs, source, source_relative).await?;
+        for child in children {
+            let dest_relative =
+                replace_relative_prefix(&child.relative, source_relative, destination_relative);
+            let dest_path = DavPath::new(&dest_relative).map_err(|_| FsError::BadRequest)?;
+            if child.is_dir {
+                partial_recursive_copy_move_dir(
+                    dav_fs,
+                    lock_system,
+                    req,
+                    prefix,
+                    &child.path,
+                    &child.relative,
+                    &dest_path,
+                    &dest_relative,
+                    is_move,
+                    failures,
+                )
+                .await?;
+            } else {
+                partial_copy_move_file(
+                    dav_fs,
+                    lock_system,
+                    req,
+                    prefix,
+                    &child.path,
+                    &dest_path,
+                    is_move,
+                    failures,
+                )
+                .await?;
+            }
+        }
+
+        if is_move {
+            let remaining = collect_children(dav_fs, source, source_relative).await?;
+            if remaining.is_empty() {
+                dav_fs.remove_dir(source).await?;
+                if lock_system.delete(source).await.is_err() {
+                    tracing::warn!(path = %source_relative, "failed to delete WebDAV locks after partial move");
+                }
+            }
+        }
+
+        Ok(())
+    })
+}
+
+async fn partial_copy_move_file(
+    dav_fs: &fs::AsterDavFs,
+    lock_system: &dyn DavLockSystem,
+    req: &HttpRequest,
+    prefix: &str,
+    source: &DavPath,
+    destination: &DavPath,
+    is_move: bool,
+    failures: &mut Vec<MultiStatusFailure>,
+) -> Result<(), FsError> {
+    if is_move {
+        let conflicts = collect_lock_failures(lock_system, req, prefix, source, false).await;
+        if !conflicts.is_empty() {
+            failures.extend(conflicts);
+            return Ok(());
+        }
+    }
+    let dest_conflicts = collect_lock_failures(lock_system, req, prefix, destination, false).await;
+    if !dest_conflicts.is_empty() {
+        failures.extend(dest_conflicts);
+        return Ok(());
+    }
+    if is_move {
+        dav_fs.rename(source, destination).await?;
+        if lock_system.delete(source).await.is_err() {
+            tracing::warn!(path = %decoded_path_string(source), "failed to delete WebDAV locks after partial file move");
+        }
+    } else {
+        dav_fs.copy(source, destination).await?;
+    }
+    Ok(())
+}
+
+async fn collect_lock_failures(
+    lock_system: &dyn DavLockSystem,
+    req: &HttpRequest,
+    prefix: &str,
+    path: &DavPath,
+    deep: bool,
+) -> Vec<MultiStatusFailure> {
+    unsubmitted_lock_conflicts(lock_system, path, deep, prefix, req)
+        .await
+        .into_iter()
+        .map(|lock| MultiStatusFailure {
+            path: (*lock.path).clone(),
+            status: StatusCode::LOCKED,
+            lock_path: Some((*lock.path).clone()),
+        })
+        .collect()
+}
+
+async fn collect_children(
+    dav_fs: &fs::AsterDavFs,
+    path: &DavPath,
+    relative: &str,
+) -> Result<Vec<DavChild>, FsError> {
+    let entries = dav_fs.read_dir(path, ReadDirMeta::Data).await?;
+    pin_mut!(entries);
+    let mut children = Vec::new();
+    while let Some(entry) = entries.next().await {
+        let entry = entry?;
+        let meta = entry.metadata().await?;
+        let child_relative = child_relative_path(relative, &entry.name(), meta.is_dir());
+        let child_path = DavPath::new(&child_relative).map_err(|_| FsError::GeneralFailure)?;
+        children.push(DavChild {
+            path: child_path,
+            relative: child_relative,
+            is_dir: meta.is_dir(),
+        });
+    }
+    Ok(children)
+}
+
+fn replace_relative_prefix(path: &str, source_prefix: &str, destination_prefix: &str) -> String {
+    let source_prefix = source_prefix.trim_end_matches('/');
+    let destination_prefix = destination_prefix.trim_end_matches('/');
+    let suffix = path.trim_start_matches(source_prefix);
+    if suffix.is_empty() {
+        format!("{destination_prefix}/")
+    } else {
+        format!("{destination_prefix}{suffix}")
+    }
+}
+
+fn multi_status_failure_response(prefix: &str, failures: &[MultiStatusFailure]) -> HttpResponse {
+    let mut multistatus = dav_element("multistatus");
+    multistatus
+        .attributes
+        .insert("xmlns:D".to_string(), "DAV:".to_string());
+
+    for failure in failures {
+        let mut response = dav_element("response");
+        response.children.push(XMLNode::Element(text_element(
+            "D:href",
+            &href_for_dav_path(prefix, &failure.path),
+        )));
+        response
+            .children
+            .push(XMLNode::Element(status_element(failure.status)));
+        if failure.status == StatusCode::LOCKED {
+            let lock_path = failure.lock_path.as_ref().unwrap_or(&failure.path);
+            let mut error = dav_element("error");
+            error
+                .children
+                .push(XMLNode::Element(lock_token_submitted_element(
+                    prefix, lock_path,
+                )));
+            response.children.push(XMLNode::Element(error));
+        }
         multistatus.children.push(XMLNode::Element(response));
     }
 

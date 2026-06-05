@@ -989,9 +989,29 @@ async fn delete_existing_destination_for_overwrite(
     audit_ctx: &AuditContext,
 ) -> Result<(), FsError> {
     if let Some(existing) = find_file_by_name_in_scope(state, scope, parent_id, name).await? {
-        file_service::delete_in_scope_with_audit(state, scope, existing.id, audit_ctx)
+        file_repo::soft_delete(state.writer_db(), existing.id)
             .await
             .map_err(to_fs_error)?;
+        storage_change_service::publish(
+            state,
+            storage_change_service::StorageChangeEvent::new(
+                storage_change_service::StorageChangeKind::FileTrashed,
+                scope,
+                vec![existing.id],
+                vec![],
+                vec![existing.folder_id],
+            ),
+        );
+        audit_service::log(
+            state,
+            audit_ctx,
+            audit_service::AuditAction::FileDelete,
+            crate::services::audit_service::AuditEntityType::File,
+            Some(existing.id),
+            Some(&existing.name),
+            Some(serde_json::json!({ "source": "webdav", "overwrite": true })),
+        )
+        .await;
     }
 
     if let Some(existing) = find_folder_by_name_in_scope(state, scope, parent_id, name).await? {

@@ -277,7 +277,11 @@ pub(crate) async fn ensure_unlocked(
     );
     match lock_system.check(path, None, false, deep, &tokens).await {
         Ok(()) => Ok(()),
-        Err(_) => Err(HttpResponse::Locked().finish()),
+        Err(lock) => Err(lock_token_submitted_response(
+            StatusCode::LOCKED,
+            prefix,
+            &lock.path,
+        )),
     }
 }
 
@@ -367,6 +371,41 @@ pub(crate) fn status_element(status: StatusCode) -> Element {
             status.canonical_reason().unwrap_or("Unknown"),
         ),
     )
+}
+
+pub(crate) fn lock_token_submitted_element(prefix: &str, path: &DavPath) -> Element {
+    let mut submitted = dav_element("lock-token-submitted");
+    submitted.children.push(XMLNode::Element(text_element(
+        "D:href",
+        &href_for_dav_path(prefix, path),
+    )));
+    submitted
+}
+
+pub(crate) fn lock_token_submitted_response(
+    status: StatusCode,
+    prefix: &str,
+    path: &DavPath,
+) -> HttpResponse {
+    let mut error = dav_element("error");
+    error
+        .attributes
+        .insert("xmlns:D".to_string(), "DAV:".to_string());
+    error
+        .children
+        .push(XMLNode::Element(lock_token_submitted_element(prefix, path)));
+    xml_response(error, status)
+}
+
+pub(crate) fn lock_token_matches_request_uri_response(status: StatusCode) -> HttpResponse {
+    let mut error = dav_element("error");
+    error
+        .attributes
+        .insert("xmlns:D".to_string(), "DAV:".to_string());
+    error.children.push(XMLNode::Element(dav_element(
+        "lock-token-matches-request-uri",
+    )));
+    xml_response(error, status)
 }
 
 pub(crate) fn child_elements(element: &Element) -> impl Iterator<Item = &Element> {

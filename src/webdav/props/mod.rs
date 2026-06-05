@@ -175,6 +175,13 @@ pub(crate) async fn handle_proppatch(
         Ok(v) => v,
         Err(resp) => return resp,
     };
+    if path.as_str() == "/" {
+        // The WebDAV mount root is a virtual listing boundary, not a persisted
+        // file/folder entity. Dead properties are intentionally unavailable
+        // there instead of being backed by an implicit root row.
+        return HttpResponse::Forbidden()
+            .body("PROPPATCH on the WebDAV mount root is not supported");
+    }
     let connection = req.connection_info();
     let request_scheme = connection.scheme().to_string();
     let request_host = connection.host().to_string();
@@ -755,6 +762,8 @@ fn xml_lang_value(element: &Element) -> Option<&str> {
 }
 
 fn is_root_resource(resource: &PropfindResource) -> bool {
+    // The mount root has no dead-property backing store. PROPFIND may expose
+    // its live DAV properties, while PROPPATCH rejects "/" explicitly.
     resource.relative == "/"
 }
 
