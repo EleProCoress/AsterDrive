@@ -41,6 +41,70 @@ macro_rules! upload_test_file_with_name_and_mime {
     }};
 }
 
+macro_rules! upload_test_file_to_folder_with_content {
+    ($app:expr, $token:expr, $folder_id:expr, $name:expr, $content:expr) => {{
+        use actix_web::test;
+        use serde_json::Value;
+
+        let boundary = "----StorageUsedBoundary";
+        let payload = format!(
+            "------StorageUsedBoundary\r\n\
+             Content-Disposition: form-data; name=\"file\"; filename=\"{name}\"\r\n\
+             Content-Type: text/plain\r\n\r\n\
+             {content}\r\n\
+             ------StorageUsedBoundary--\r\n",
+            name = $name,
+            content = $content
+        );
+        let req = test::TestRequest::post()
+            .uri(&format!("/api/v1/files/upload?folder_id={}", $folder_id))
+            .insert_header(("Cookie", common::access_cookie_header(&$token)))
+            .insert_header(common::csrf_header_for(&$token))
+            .insert_header((
+                "Content-Type",
+                format!("multipart/form-data; boundary={boundary}"),
+            ))
+            .set_payload(payload)
+            .to_request();
+        let resp = test::call_service(&$app, req).await;
+        assert_eq!(resp.status(), 201, "upload to folder should return 201");
+        let body: Value = test::read_body_json(resp).await;
+        body["data"]["id"].as_i64().unwrap()
+    }};
+}
+
+macro_rules! upload_test_file_with_content {
+    ($app:expr, $token:expr, $name:expr, $content:expr) => {{
+        use actix_web::test;
+        use serde_json::Value;
+
+        let boundary = "----StorageUsedRootBoundary";
+        let payload = format!(
+            "------StorageUsedRootBoundary\r\n\
+             Content-Disposition: form-data; name=\"file\"; filename=\"{name}\"\r\n\
+             Content-Type: text/plain\r\n\r\n\
+             {content}\r\n\
+             ------StorageUsedRootBoundary--\r\n",
+            name = $name,
+            content = $content
+        );
+        let req = test::TestRequest::post()
+            .uri("/api/v1/files/upload")
+            .insert_header(("Cookie", common::access_cookie_header(&$token)))
+            .insert_header(common::csrf_header_for(&$token))
+            .insert_header((
+                "Content-Type",
+                format!("multipart/form-data; boundary={boundary}"),
+            ))
+            .set_payload(payload)
+            .to_request();
+        let resp = test::call_service(&$app, req).await;
+        assert_eq!(resp.status(), 201, "upload should return 201");
+        let body: Value = test::read_body_json(resp).await;
+        body["data"]["id"].as_i64().unwrap()
+    }};
+}
+
 fn upload_payload(filename: &str, content: &str) -> String {
     format!(
         "------UnicodeBoundary123\r\n\
@@ -1014,6 +1078,264 @@ async fn test_file_versions() {
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
+}
+
+#[actix_web::test]
+async fn test_file_detail_storage_used_equals_size_without_versions() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let content = "plain-current";
+    let file_id = upload_test_file_with_content!(app, token, "plain.txt", content);
+
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/files/{file_id}"))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["size"], content.len() as i64);
+    assert_eq!(body["data"]["storage_used"], content.len() as i64);
+}
+
+#[actix_web::test]
+async fn test_file_detail_storage_used_includes_all_history_versions() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let initial = "v1";
+    let second = "version-two";
+    let current = "version-three";
+    let file_id = upload_test_file_with_content!(app, token, "versioned.txt", initial);
+
+    for content in [second, current] {
+        let req = test::TestRequest::put()
+            .uri(&format!("/api/v1/files/{file_id}/content"))
+            .insert_header(("Cookie", common::access_cookie_header(&token)))
+            .insert_header(common::csrf_header_for(&token))
+            .insert_header(("Content-Type", "application/octet-stream"))
+            .set_payload(content)
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), StatusCode::OK);
+    }
+
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/files/{file_id}/versions"))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"].as_array().unwrap().len(), 2);
+
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/files/{file_id}"))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["size"], current.len() as i64);
+    assert_eq!(
+        body["data"]["storage_used"],
+        (initial.len() + second.len() + current.len()) as i64
+    );
+}
+
+#[actix_web::test]
+async fn test_empty_folder_detail_storage_used_is_zero() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/folders")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .set_json(serde_json::json!({ "name": "Empty Storage" }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), StatusCode::CREATED);
+    let body: Value = test::read_body_json(resp).await;
+    let folder_id = body["data"]["id"].as_i64().unwrap();
+
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/folders/{folder_id}/info"))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["storage_used"], 0);
+}
+
+#[actix_web::test]
+async fn test_folder_detail_storage_used_is_recursive_and_excludes_trashed_files() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/folders")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .set_json(serde_json::json!({ "name": "Storage Used" }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), StatusCode::CREATED);
+    let body: Value = test::read_body_json(resp).await;
+    let root_folder_id = body["data"]["id"].as_i64().unwrap();
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/folders")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .set_json(serde_json::json!({
+            "name": "Nested",
+            "parent_id": root_folder_id,
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), StatusCode::CREATED);
+    let body: Value = test::read_body_json(resp).await;
+    let nested_folder_id = body["data"]["id"].as_i64().unwrap();
+
+    let root_initial = "alpha";
+    let root_updated = "longer-alpha";
+    let nested_initial = "beta!";
+    let nested_updated = "longer-beta";
+    let trashed_initial = "trashed";
+    let trashed_updated = "trashed-updated";
+    let root_file_id = upload_test_file_to_folder_with_content!(
+        app,
+        token,
+        root_folder_id,
+        "root.txt",
+        root_initial
+    );
+    let nested_file_id = upload_test_file_to_folder_with_content!(
+        app,
+        token,
+        nested_folder_id,
+        "nested.txt",
+        nested_initial
+    );
+    let trashed_file_id = upload_test_file_to_folder_with_content!(
+        app,
+        token,
+        nested_folder_id,
+        "trashed.txt",
+        trashed_initial
+    );
+
+    let req = test::TestRequest::put()
+        .uri(&format!("/api/v1/files/{root_file_id}/content"))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .insert_header(("Content-Type", "application/octet-stream"))
+        .set_payload(root_updated)
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    let req = test::TestRequest::put()
+        .uri(&format!("/api/v1/files/{nested_file_id}/content"))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .insert_header(("Content-Type", "application/octet-stream"))
+        .set_payload(nested_updated)
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    let req = test::TestRequest::put()
+        .uri(&format!("/api/v1/files/{trashed_file_id}/content"))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .insert_header(("Content-Type", "application/octet-stream"))
+        .set_payload(trashed_updated)
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1/files/{trashed_file_id}"))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    let root_file_storage_used = root_initial.len() as i64 + root_updated.len() as i64;
+    let nested_file_storage_used = nested_initial.len() as i64 + nested_updated.len() as i64;
+
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/files/{root_file_id}"))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["size"], root_updated.len() as i64);
+    assert_eq!(body["data"]["storage_used"], root_file_storage_used);
+
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/folders/{root_folder_id}/info"))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(
+        body["data"]["storage_used"],
+        root_file_storage_used + nested_file_storage_used
+    );
+}
+
+#[actix_web::test]
+async fn test_folder_detail_storage_used_handles_paginated_file_batches() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/folders")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .set_json(serde_json::json!({ "name": "Wide Storage" }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), StatusCode::CREATED);
+    let body: Value = test::read_body_json(resp).await;
+    let folder_id = body["data"]["id"].as_i64().unwrap();
+
+    let mut expected = 0i64;
+    for index in 0..501 {
+        let name = format!("wide-{index}.txt");
+        let content = if index % 2 == 0 { "aa" } else { "bbb" };
+        upload_test_file_to_folder_with_content!(app, token, folder_id, &name, content);
+        expected += content.len() as i64;
+    }
+
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/folders/{folder_id}/info"))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["storage_used"], expected);
 }
 
 #[actix_web::test]

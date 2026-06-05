@@ -5,7 +5,7 @@ use std::collections::BTreeSet;
 use chrono::Utc;
 use sea_orm::{ActiveModelTrait, ConnectionTrait, Set};
 
-use crate::db::repository::{file_repo, folder_repo};
+use crate::db::repository::{file_repo, folder_repo, version_repo};
 use crate::entities::{file, folder};
 use crate::errors::{AsterError, Result};
 use crate::runtime::PrimaryAppState;
@@ -17,6 +17,110 @@ use crate::services::{
 use crate::types::NullablePatch;
 
 use super::{collect_folder_tree_in_scope, ensure_folder_model_in_scope};
+
+const STORAGE_USED_VERSION_SUM_CHUNK_SIZE: usize = 500;
+const STORAGE_USED_FOLDER_QUERY_CHUNK_SIZE: usize = 500;
+const STORAGE_USED_FILE_PAGE_SIZE: u64 = 500;
+
+fn add_checked(total: &mut i64, value: i64, context: impl std::fmt::Display) -> Result<()> {
+    *total = total.checked_add(value).ok_or_else(|| {
+        AsterError::internal_error(format!("folder storage_used overflow: {context}"))
+    })?;
+    Ok(())
+}
+
+async fn load_file_id_size_page(
+    state: &PrimaryAppState,
+    scope: WorkspaceStorageScope,
+    folder_ids: &[i64],
+    after_id: Option<i64>,
+) -> Result<Vec<file_repo::FileIdSize>> {
+    let file_scope = match scope {
+        WorkspaceStorageScope::Personal { user_id } => file_repo::FileScope::Personal { user_id },
+        WorkspaceStorageScope::Team { team_id, .. } => file_repo::FileScope::Team { team_id },
+    };
+    file_repo::find_id_size_by_folders(
+        state.reader_db(),
+        file_scope,
+        folder_ids,
+        after_id,
+        STORAGE_USED_FILE_PAGE_SIZE,
+    )
+    .await
+}
+
+async fn load_child_folder_ids(
+    state: &PrimaryAppState,
+    scope: WorkspaceStorageScope,
+    folder_ids: &[i64],
+) -> Result<Vec<i64>> {
+    let folder_scope = match scope {
+        WorkspaceStorageScope::Personal { user_id } => {
+            folder_repo::FolderScope::Personal { user_id }
+        }
+        WorkspaceStorageScope::Team { team_id, .. } => folder_repo::FolderScope::Team { team_id },
+    };
+    folder_repo::find_child_ids_in_parents(state.reader_db(), folder_scope, folder_ids).await
+}
+
+async fn compute_folder_storage_used(
+    state: &PrimaryAppState,
+    scope: WorkspaceStorageScope,
+    folder_id: i64,
+) -> Result<i64> {
+    let mut total = 0i64;
+    let mut frontier = vec![folder_id];
+
+    while !frontier.is_empty() {
+        frontier.sort_unstable();
+        frontier.dedup();
+        let mut next_frontier = Vec::new();
+
+        for folder_chunk in frontier.chunks(STORAGE_USED_FOLDER_QUERY_CHUNK_SIZE) {
+            let mut after_file_id = None;
+            loop {
+                let files =
+                    load_file_id_size_page(state, scope, folder_chunk, after_file_id).await?;
+                if files.is_empty() {
+                    break;
+                }
+
+                let mut file_ids = Vec::with_capacity(files.len());
+                for (file_id, size) in &files {
+                    add_checked(
+                        &mut total,
+                        *size,
+                        format!("current file bytes for file #{file_id}"),
+                    )?;
+                    file_ids.push(*file_id);
+                }
+                after_file_id = files.last().map(|(file_id, _)| *file_id);
+
+                for file_id_chunk in file_ids.chunks(STORAGE_USED_VERSION_SUM_CHUNK_SIZE) {
+                    let version_bytes =
+                        version_repo::sum_sizes_by_file_ids(state.reader_db(), file_id_chunk)
+                            .await?;
+                    add_checked(
+                        &mut total,
+                        version_bytes,
+                        format!("version bytes for folder #{folder_id}"),
+                    )?;
+                }
+
+                if files.len() < STORAGE_USED_FILE_PAGE_SIZE as usize {
+                    break;
+                }
+            }
+
+            let child_ids = load_child_folder_ids(state, scope, folder_chunk).await?;
+            next_frontier.extend(child_ids);
+        }
+
+        frontier = next_frontier;
+    }
+
+    Ok(total)
+}
 
 pub(crate) async fn create_in_scope(
     state: &PrimaryAppState,
@@ -175,6 +279,19 @@ pub(crate) async fn get_info_in_scope(
     folder_id: i64,
 ) -> Result<folder::Model> {
     workspace_storage_service::verify_folder_access_for_read(state, scope, folder_id).await
+}
+
+pub(crate) async fn get_info_with_storage_used_in_scope(
+    state: &PrimaryAppState,
+    scope: WorkspaceStorageScope,
+    folder_id: i64,
+) -> Result<FolderInfo> {
+    let folder = get_info_in_scope(state, scope, folder_id).await?;
+    let storage_used = compute_folder_storage_used(state, scope, folder_id).await?;
+    Ok(FolderInfo::from_model_with_storage_used(
+        folder,
+        storage_used,
+    ))
 }
 
 pub(crate) async fn update_in_scope(

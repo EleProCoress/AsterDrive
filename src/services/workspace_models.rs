@@ -14,6 +14,8 @@ pub struct FileInfo {
     pub team_id: Option<i64>,
     pub blob_id: i64,
     pub size: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub storage_used: Option<i64>,
     pub owner_user_id: Option<i64>,
     pub created_by_user_id: Option<i64>,
     pub created_by_username: String,
@@ -40,6 +42,7 @@ impl From<crate::entities::file::Model> for FileInfo {
             team_id: model.team_id,
             blob_id: model.blob_id,
             size: model.size,
+            storage_used: None,
             owner_user_id: model.owner_user_id,
             created_by_user_id: model.created_by_user_id,
             created_by_username: model.created_by_username,
@@ -55,6 +58,17 @@ impl From<crate::entities::file::Model> for FileInfo {
     }
 }
 
+impl FileInfo {
+    pub fn from_model_with_storage_used(
+        model: crate::entities::file::Model,
+        storage_used: i64,
+    ) -> Self {
+        let mut info = Self::from(model);
+        info.storage_used = Some(storage_used);
+        info
+    }
+}
+
 #[derive(Clone, Debug, Serialize)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct FolderInfo {
@@ -66,6 +80,8 @@ pub struct FolderInfo {
     pub created_by_user_id: Option<i64>,
     pub created_by_username: String,
     pub policy_id: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub storage_used: Option<i64>,
     #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
     pub created_at: DateTime<Utc>,
     #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
@@ -87,11 +103,23 @@ impl From<crate::entities::folder::Model> for FolderInfo {
             created_by_user_id: model.created_by_user_id,
             created_by_username: model.created_by_username,
             policy_id: model.policy_id,
+            storage_used: None,
             created_at: model.created_at,
             updated_at: model.updated_at,
             deleted_at: model.deleted_at,
             is_locked: model.is_locked,
         }
+    }
+}
+
+impl FolderInfo {
+    pub fn from_model_with_storage_used(
+        model: crate::entities::folder::Model,
+        storage_used: i64,
+    ) -> Self {
+        let mut info = Self::from(model);
+        info.storage_used = Some(storage_used);
+        info
     }
 }
 
