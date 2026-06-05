@@ -559,9 +559,13 @@ async fn partial_recursive_copy_move(
     if destination_exists && !destination_is_collection {
         ctx.dav_fs.remove_file(root.destination).await?;
     } else if destination_exists && destination_is_collection {
-        let conflicts = collect_lock_failures(ctx, root.destination, true).await;
+        let conflicts = collect_lock_failures(ctx, root.destination, false).await;
         if !conflicts.is_empty() {
             failures.extend(conflicts);
+            return Ok(PartialMutationOutcome {
+                failures,
+                destination_exists,
+            });
         }
     }
 
@@ -750,7 +754,10 @@ async fn collect_children(
 fn replace_relative_prefix(path: &str, source_prefix: &str, destination_prefix: &str) -> String {
     let source_prefix = source_prefix.trim_end_matches('/');
     let destination_prefix = destination_prefix.trim_end_matches('/');
-    let suffix = path.trim_start_matches(source_prefix);
+    let suffix = path
+        .strip_prefix(source_prefix)
+        .filter(|suffix| suffix.is_empty() || suffix.starts_with('/'))
+        .unwrap_or(path);
     if suffix.is_empty() {
         format!("{destination_prefix}/")
     } else {
@@ -846,7 +853,9 @@ fn resource_identity_path(path: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{ensure_empty_body, is_descendant_path, same_resource_path};
+    use super::{
+        ensure_empty_body, is_descendant_path, replace_relative_prefix, same_resource_path,
+    };
     use actix_web::FromRequest;
     use actix_web::http::StatusCode;
     use actix_web::web;
@@ -915,5 +924,33 @@ mod tests {
         assert!(!is_descendant_path("/docs", "/docs"));
         assert!(!is_descendant_path("/docs", "/docs2/sub"));
         assert!(!is_descendant_path("/", "/docs"));
+    }
+
+    #[test]
+    fn replace_relative_prefix_strips_only_one_source_prefix() {
+        assert_eq!(
+            replace_relative_prefix("/docs/docs/file.txt", "/docs", "/archive"),
+            "/archive/docs/file.txt"
+        );
+    }
+
+    #[test]
+    fn replace_relative_prefix_handles_collection_root_and_trailing_slashes() {
+        assert_eq!(
+            replace_relative_prefix("/docs/", "/docs/", "/archive/"),
+            "/archive/"
+        );
+        assert_eq!(
+            replace_relative_prefix("/docs/sub/", "/docs/", "/archive/"),
+            "/archive/sub/"
+        );
+    }
+
+    #[test]
+    fn replace_relative_prefix_leaves_unmatched_paths_attached_to_destination_prefix() {
+        assert_eq!(
+            replace_relative_prefix("/docs2/file.txt", "/docs", "/archive"),
+            "/archive/docs2/file.txt"
+        );
     }
 }

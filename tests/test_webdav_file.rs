@@ -237,12 +237,15 @@ async fn test_aster_dav_fs_reports_quota_and_roundtrips_custom_props() {
 
     let props_with_content = dav_fs.get_props(&file_path, true).await.unwrap();
     assert_eq!(props_with_content.len(), 1);
-    assert!(
-        props_with_content[0]
-            .xml
-            .as_deref()
-            .is_some_and(|xml| String::from_utf8_lossy(xml).contains(">blue<"))
-    );
+    let xml = props_with_content[0]
+        .xml
+        .as_deref()
+        .expect("stored property should include XML content");
+    let color_prop = xmltree::Element::parse(std::io::Cursor::new(xml))
+        .expect("stored property XML should parse");
+    assert_eq!(color_prop.name, "color");
+    assert_eq!(color_prop.namespace.as_deref(), Some("urn:aster:test"));
+    assert_eq!(color_prop.get_text().as_deref(), Some("blue"));
 
     let remove_results = dav_fs
         .patch_props(

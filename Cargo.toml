@@ -58,7 +58,12 @@ metrics = ["server", "dep:prometheus", "dep:sysinfo"]
 openapi = ["dep:utoipa", "dep:utoipa-swagger-ui", "api-docs-macros/openapi"]
 full = ["server", "cli", "metrics", "openapi"]
 jemalloc = ["dep:tikv-jemallocator"]
-jemalloc-stats = ["jemalloc", "tikv-jemallocator/stats"]
+jemalloc-stats = [
+    "jemalloc",
+    "tikv-jemallocator/stats",
+    "dep:tikv-jemalloc-ctl",
+    "tikv-jemalloc-ctl/stats",
+]
 jemalloc-profiling = ["jemalloc-stats", "tikv-jemallocator/profiling"]
 
 [dependencies]
@@ -127,6 +132,7 @@ toml = "1.1"
 toml_edit = "0.25"
 tiff = "0.11.3"
 tikv-jemallocator = { version = "0.7", optional = true }
+tikv-jemalloc-ctl = { version = "0.7", optional = true }
 tracing = { version = "0.1.44", default-features = false}
 tracing-appender = "0.2.5"
 tracing-subscriber = { version = "0.3.23", default-features = false, features = ["ansi", "env-filter", "fmt", "json"] }

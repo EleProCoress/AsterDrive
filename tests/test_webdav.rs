@@ -2178,11 +2178,19 @@ async fn test_webdav_file_operations_ignore_depth_header() {
         .insert_header(("Depth", "1"))
         .to_request();
     let resp = test::call_service(&app, req).await;
-    assert!(
-        resp.status() == 201 || resp.status() == 204,
-        "Depth header must be ignored for COPY on non-collection resources, got {}",
+    assert_eq!(
+        resp.status(),
+        400,
+        "COPY must reject Depth: 1 per RFC 4918, got {}",
         resp.status()
     );
+
+    let req = test::TestRequest::get()
+        .uri("/webdav/depth-copied-file.txt")
+        .insert_header(("Authorization", auth.clone()))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 404, "rejected COPY must not create target");
 }
 
 #[actix_web::test]
@@ -4756,6 +4764,18 @@ async fn test_webdav_lock_refresh_requires_if_header_token_submission() {
     let req = test::TestRequest::with_uri("/webdav/lock-refresh-if.txt")
         .method(actix_web::http::Method::from_bytes(b"LOCK").unwrap())
         .insert_header(("Authorization", auth.clone()))
+        .insert_header(("If", format!("(<{submitted_lock_token}>")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        400,
+        "malformed If headers must be rejected instead of scanned for lock tokens"
+    );
+
+    let req = test::TestRequest::with_uri("/webdav/lock-refresh-if.txt")
+        .method(actix_web::http::Method::from_bytes(b"LOCK").unwrap())
+        .insert_header(("Authorization", auth.clone()))
         .insert_header(("If", format!("(<{submitted_lock_token}>)")))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -4767,6 +4787,58 @@ async fn test_webdav_lock_refresh_requires_if_header_token_submission() {
     assert!(
         resp.headers().get("Lock-Token").is_none(),
         "LOCK refresh response must not include a Lock-Token response header"
+    );
+}
+
+#[actix_web::test]
+async fn test_webdav_lock_refresh_counts_negated_tokens_as_submission() {
+    let app = setup_with_webdav!();
+    let (token, _) = register_and_login!(app);
+    let auth = create_webdav_basic_auth!(app, token);
+
+    let req = test::TestRequest::put()
+        .uri("/webdav/lock-refresh-not-token.txt")
+        .insert_header(("Authorization", auth.clone()))
+        .set_payload("initial")
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert!(resp.status() == 201 || resp.status() == 204);
+
+    let lock_body = r#"<?xml version="1.0" encoding="utf-8" ?>
+<D:lockinfo xmlns:D="DAV:">
+  <D:lockscope><D:exclusive/></D:lockscope>
+  <D:locktype><D:write/></D:locktype>
+</D:lockinfo>"#;
+    let req = test::TestRequest::with_uri("/webdav/lock-refresh-not-token.txt")
+        .method(actix_web::http::Method::from_bytes(b"LOCK").unwrap())
+        .insert_header(("Authorization", auth.clone()))
+        .insert_header(("Content-Type", "application/xml"))
+        .insert_header(("Depth", "0"))
+        .set_payload(lock_body)
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let lock_token = resp
+        .headers()
+        .get("Lock-Token")
+        .and_then(|value| value.to_str().ok())
+        .expect("LOCK response should include Lock-Token")
+        .trim_matches(|c| c == '<' || c == '>')
+        .to_string();
+
+    let req = test::TestRequest::with_uri("/webdav/lock-refresh-not-token.txt")
+        .method(actix_web::http::Method::from_bytes(b"LOCK").unwrap())
+        .insert_header(("Authorization", auth.clone()))
+        .insert_header((
+            "If",
+            format!("(<{lock_token}>) (Not <urn:uuid:not-submitted>)"),
+        ))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        400,
+        "LOCK refresh requires exactly one submitted lock token; RFC 4918 still counts a negated state-token as submitted"
     );
 }
 
@@ -5523,6 +5595,93 @@ async fn test_webdav_recursive_copy_continues_unlocked_siblings_after_locked_des
     );
     let body = test::read_body(resp).await;
     assert_eq!(String::from_utf8_lossy(&body), "unlocked sibling");
+}
+
+#[actix_web::test]
+async fn test_webdav_recursive_copy_move_stops_when_existing_destination_collection_is_locked() {
+    let app = setup_with_webdav!();
+    let (token, _) = register_and_login!(app);
+    let auth = create_webdav_basic_auth!(app, token);
+
+    let lock_body = r#"<?xml version="1.0" encoding="utf-8" ?>
+<D:lockinfo xmlns:D="DAV:">
+  <D:lockscope><D:exclusive/></D:lockscope>
+  <D:locktype><D:write/></D:locktype>
+</D:lockinfo>"#;
+
+    for method in ["COPY", "MOVE"] {
+        let label = method.to_ascii_lowercase();
+        let source_root = format!("/webdav/partial-dest-root-lock-{label}-source/");
+        let source_child = format!("{source_root}open/");
+        let source_file = format!("{source_child}file.txt");
+        let destination_root = format!("/webdav/partial-dest-root-lock-{label}-dest/");
+        let destination_child_file = format!("{destination_root}open/file.txt");
+
+        for uri in [&source_root, &source_child, &destination_root] {
+            let req = test::TestRequest::with_uri(uri)
+                .method(actix_web::http::Method::from_bytes(b"MKCOL").unwrap())
+                .insert_header(("Authorization", auth.clone()))
+                .to_request();
+            let resp = test::call_service(&app, req).await;
+            assert_eq!(resp.status(), 201, "MKCOL {uri} should succeed");
+        }
+
+        let req = test::TestRequest::put()
+            .uri(&source_file)
+            .insert_header(("Authorization", auth.clone()))
+            .set_payload(format!("{method} must not write into locked destination"))
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert!(resp.status() == 201 || resp.status() == 204);
+
+        let req = test::TestRequest::with_uri(&destination_root)
+            .method(actix_web::http::Method::from_bytes(b"LOCK").unwrap())
+            .insert_header(("Authorization", auth.clone()))
+            .insert_header(("Content-Type", "application/xml"))
+            .insert_header(("Depth", "0"))
+            .set_payload(lock_body)
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), 200, "LOCK {destination_root} should succeed");
+
+        let req = test::TestRequest::with_uri(&source_root)
+            .method(actix_web::http::Method::from_bytes(method.as_bytes()).unwrap())
+            .insert_header(("Authorization", auth.clone()))
+            .insert_header(("Destination", destination_root.as_str()))
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(
+            resp.status(),
+            207,
+            "{method} into a locked existing collection should return Multi-Status"
+        );
+        let body = test::read_body(resp).await;
+        let xml = String::from_utf8_lossy(&body);
+        assert!(xml.contains(&destination_root), "{xml}");
+        assert!(xml.contains("423 Locked"), "{xml}");
+
+        let req = test::TestRequest::get()
+            .uri(&destination_child_file)
+            .insert_header(("Authorization", auth.clone()))
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(
+            resp.status(),
+            404,
+            "{method} must not create descendants inside the locked destination collection"
+        );
+
+        let req = test::TestRequest::get()
+            .uri(&source_file)
+            .insert_header(("Authorization", auth.clone()))
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(
+            resp.status(),
+            200,
+            "{method} failure at the destination root must leave the source tree intact"
+        );
+    }
 }
 
 #[actix_web::test]

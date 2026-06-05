@@ -91,7 +91,16 @@ pub async fn lock_file(
         }));
     }
 
-    create_wopi_lock(state, &resolved.payload, &resolved.file, &lock_value).await?;
+    match create_wopi_lock(state, &resolved.payload, &resolved.file, &lock_value).await {
+        Ok(()) => {}
+        Err(error) => {
+            return map_create_wopi_lock_error(error, || {
+                concurrent_wopi_lock_conflict(state, resolved.file.id)
+            })
+            .await;
+        }
+    }
+
     log_wopi_lock_action(
         state,
         request_info,
@@ -375,6 +384,42 @@ async fn create_wopi_lock(
     Ok(())
 }
 
+async fn concurrent_wopi_lock_conflict(
+    state: &PrimaryAppState,
+    file_id: i64,
+) -> Result<WopiConflict> {
+    match load_active_lock(state, file_id).await? {
+        Some(active_lock) => Ok(WopiConflict {
+            current_lock: Some(active_wopi_lock_value(&active_lock).unwrap_or_default()),
+            reason: if active_lock.payload.is_some() {
+                "file is locked by another WOPI session"
+            } else {
+                "file is locked outside WOPI"
+            }
+            .to_string(),
+        }),
+        None => Ok(WopiConflict {
+            current_lock: Some(String::new()),
+            reason: "file lock conflicted with a concurrent request".to_string(),
+        }),
+    }
+}
+
+async fn map_create_wopi_lock_error<F, Fut>(
+    error: AsterError,
+    conflict_loader: F,
+) -> Result<WopiLockOperationResult>
+where
+    F: FnOnce() -> Fut,
+    Fut: std::future::Future<Output = Result<WopiConflict>>,
+{
+    if matches!(error, AsterError::ResourceLocked(_)) {
+        return Ok(WopiLockOperationResult::Conflict(conflict_loader().await?));
+    }
+
+    Err(error)
+}
+
 async fn refresh_lock_model(state: &PrimaryAppState, lock: resource_lock::Model) -> Result<()> {
     let mut active: resource_lock::ActiveModel = lock.into();
     active.timeout_at = Set(Some(
@@ -442,4 +487,47 @@ fn normalize_wopi_lock_header(header_name: &str, value: &str) -> Result<String> 
         )));
     }
     Ok(trimmed.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn create_lock_resource_locked_error_maps_to_wopi_conflict() {
+        let result = map_create_wopi_lock_error(
+            AsterError::resource_locked("resource is already locked"),
+            || async {
+                Ok(WopiConflict {
+                    current_lock: Some("lock-a".to_string()),
+                    reason: "file is locked by another WOPI session".to_string(),
+                })
+            },
+        )
+        .await
+        .expect("resource locked should map to WOPI conflict");
+
+        match result {
+            WopiLockOperationResult::Conflict(conflict) => {
+                assert_eq!(conflict.current_lock.as_deref(), Some("lock-a"));
+                assert!(conflict.reason.contains("another WOPI session"));
+            }
+            WopiLockOperationResult::Success => panic!("expected WOPI conflict"),
+        }
+    }
+
+    #[tokio::test]
+    async fn create_lock_non_resource_locked_error_is_propagated() {
+        let error =
+            map_create_wopi_lock_error(AsterError::database_operation("insert failed"), || async {
+                Ok(WopiConflict {
+                    current_lock: Some("lock-a".to_string()),
+                    reason: "unused".to_string(),
+                })
+            })
+            .await
+            .expect_err("non-lock errors should propagate");
+
+        assert!(matches!(error, AsterError::DatabaseOperation(_)));
+    }
 }

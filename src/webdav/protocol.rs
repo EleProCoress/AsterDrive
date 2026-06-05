@@ -14,12 +14,6 @@ pub(crate) enum Depth {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct IfCondition {
-    pub(crate) tagged_path: Option<String>,
-    pub(crate) tokens: Vec<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct IfHeader {
     groups: Vec<IfResourceGroup>,
 }
@@ -65,7 +59,7 @@ pub(crate) fn parse_copy_depth(headers: &header::HeaderMap) -> Result<Depth, Htt
     match parse_depth_header(headers)? {
         Some(Depth::Zero) => Ok(Depth::Zero),
         Some(Depth::Infinity) | None => Ok(Depth::Infinity),
-        Some(Depth::One) => Ok(Depth::One),
+        Some(Depth::One) => Err(HttpResponse::BadRequest().finish()),
     }
 }
 
@@ -160,36 +154,45 @@ pub(crate) fn destination_relative_path(
     decode_relative_path(relative).map(|(_, relative)| relative)
 }
 
-#[cfg(test)]
-fn submitted_lock_tokens(headers: &header::HeaderMap) -> Vec<String> {
-    let mut tokens = Vec::new();
-
-    for condition in parse_if_conditions(headers) {
-        tokens.extend(condition.tokens);
-    }
-
-    tokens.sort();
-    tokens.dedup();
-    tokens
-}
-
 pub(crate) fn submitted_lock_tokens_for_path(
     headers: &header::HeaderMap,
     request_path: &str,
     request_scheme: &str,
     request_host: &str,
 ) -> Vec<String> {
+    let Some(if_header) = parsed_if_header_for_token_submission(headers) else {
+        return Vec::new();
+    };
+    submitted_lock_tokens_from_if_header(&if_header, |tagged_path| {
+        if_tag_matches_path(tagged_path, request_path, request_scheme, request_host)
+    })
+}
+
+fn parsed_if_header_for_token_submission(headers: &header::HeaderMap) -> Option<IfHeader> {
+    match parse_if_header(headers) {
+        Ok(parsed) => parsed,
+        Err(_) => None,
+    }
+}
+
+fn submitted_lock_tokens_from_if_header<F>(if_header: &IfHeader, mut tag_matches: F) -> Vec<String>
+where
+    F: FnMut(&str) -> bool,
+{
     let mut tokens = Vec::new();
 
-    for condition in parse_if_conditions(headers) {
-        match condition.tagged_path.as_deref() {
-            None => tokens.extend(condition.tokens),
-            Some(tagged_path)
-                if if_tag_matches_path(tagged_path, request_path, request_scheme, request_host) =>
-            {
-                tokens.extend(condition.tokens);
+    for group in &if_header.groups {
+        match group.tagged_path.as_deref() {
+            None => {}
+            Some(tagged_path) if tag_matches(tagged_path) => {}
+            Some(_) => continue,
+        }
+        for list in &group.lists {
+            for condition in &list.conditions {
+                if let IfStateCondition::Token { value, .. } = condition {
+                    tokens.push(value.clone());
+                }
             }
-            Some(_) => {}
         }
     }
 
@@ -351,62 +354,6 @@ fn parse_if_header(headers: &header::HeaderMap) -> Result<Option<IfHeader>, Http
 
     let mut parser = IfHeaderParser::new(raw);
     parser.parse().map(Some)
-}
-
-pub(crate) fn parse_if_conditions(headers: &header::HeaderMap) -> Vec<IfCondition> {
-    let Some(raw) = headers.get("If").and_then(|value| value.to_str().ok()) else {
-        return Vec::new();
-    };
-
-    let mut conditions = Vec::new();
-    let mut current_tag = None;
-    let mut rest = raw.trim();
-    while !rest.is_empty() {
-        if let Some(after) = rest.strip_prefix('<') {
-            let Some(end) = after.find('>') else {
-                break;
-            };
-            let tag = after[..end].trim();
-            current_tag = (!tag.is_empty()).then(|| tag.to_string());
-            rest = after[end + 1..].trim_start();
-            continue;
-        }
-
-        if let Some(after) = rest.strip_prefix('(') {
-            let Some(end) = after.find(')') else {
-                break;
-            };
-            let list = &after[..end];
-            let tokens = lock_tokens_from_condition_list(list);
-            if !tokens.is_empty() {
-                conditions.push(IfCondition {
-                    tagged_path: current_tag.clone(),
-                    tokens,
-                });
-            }
-            rest = after[end + 1..].trim_start();
-            continue;
-        }
-
-        break;
-    }
-
-    conditions
-}
-
-fn lock_tokens_from_condition_list(value: &str) -> Vec<String> {
-    let mut tokens = Vec::new();
-    let mut rest = value;
-    while let Some(start) = rest.find('<') {
-        let next = &rest[start + 1..];
-        let Some(end) = next.find('>') else {
-            break;
-        };
-        let token = normalize_lock_token(&next[..end]);
-        tokens.push(token);
-        rest = &next[end + 1..];
-    }
-    tokens
 }
 
 fn normalize_lock_token(value: &str) -> String {
@@ -770,9 +717,8 @@ mod tests {
     use actix_web::http::header::{HeaderMap, HeaderName, HeaderValue};
 
     use super::{
-        Depth, IfHeader, IfStateCondition, parse_copy_depth, parse_delete_depth,
-        parse_if_conditions, parse_if_header, parse_move_depth, parse_propfind_depth,
-        submitted_lock_tokens, submitted_lock_tokens_for_path,
+        Depth, IfHeader, IfStateCondition, parse_copy_depth, parse_delete_depth, parse_if_header,
+        parse_move_depth, parse_propfind_depth, submitted_lock_tokens_for_path,
     };
 
     fn headers(name: &'static str, value: &'static str) -> HeaderMap {
@@ -818,9 +764,15 @@ mod tests {
             Depth::Zero
         );
         assert_eq!(
-            parse_copy_depth(&headers("Depth", "1")).unwrap(),
-            Depth::One
+            parse_copy_depth(&headers("Depth", "infinity")).unwrap(),
+            Depth::Infinity
         );
+    }
+
+    #[test]
+    fn copy_rejects_depth_one_and_invalid_depth_values() {
+        assert!(parse_copy_depth(&headers("Depth", "1")).is_err());
+        assert!(parse_copy_depth(&headers("Depth", "invalid")).is_err());
     }
 
     #[test]
@@ -838,20 +790,7 @@ mod tests {
     }
 
     #[test]
-    fn if_header_extracts_tagged_condition_tokens() {
-        let conditions = parse_if_conditions(&headers(
-            "If",
-            r#"</webdav/a.txt> (<urn:uuid:one> ["etag"]) (Not <urn:uuid:two>)"#,
-        ));
-
-        assert_eq!(conditions.len(), 2);
-        assert_eq!(conditions[0].tagged_path.as_deref(), Some("/webdav/a.txt"));
-        assert_eq!(conditions[0].tokens, ["urn:uuid:one"]);
-        assert_eq!(conditions[1].tokens, ["urn:uuid:two"]);
-    }
-
-    #[test]
-    fn submitted_tokens_ignore_lock_token_header() {
+    fn submitted_tokens_for_path_ignore_lock_token_header() {
         let mut headers = headers("If", "(<urn:uuid:two>)");
         headers.insert(
             HeaderName::from_static("lock-token"),
@@ -859,7 +798,7 @@ mod tests {
         );
 
         assert_eq!(
-            submitted_lock_tokens(&headers),
+            submitted_lock_tokens_for_path(&headers, "/webdav/current.txt", "http", "localhost"),
             ["urn:uuid:two".to_string()]
         );
     }
@@ -897,6 +836,57 @@ mod tests {
                 "/webdav/current.txt",
                 "http",
                 "localhost:8080"
+            ),
+            ["urn:uuid:current".to_string()]
+        );
+    }
+
+    #[test]
+    fn submitted_tokens_for_path_counts_negated_tokens_as_submitted() {
+        let headers = headers(
+            "If",
+            r#"</webdav/current.txt> (<urn:uuid:current>) (Not <urn:uuid:other>)"#,
+        );
+
+        assert_eq!(
+            submitted_lock_tokens_for_path(&headers, "/webdav/current.txt", "http", "localhost"),
+            ["urn:uuid:current".to_string(), "urn:uuid:other".to_string()]
+        );
+    }
+
+    #[test]
+    fn submitted_tokens_for_path_deduplicates_tokens_across_conditions() {
+        let headers = headers(
+            "If",
+            r#"(<urn:uuid:current>) (<urn:uuid:current>) (Not <urn:uuid:current>)"#,
+        );
+
+        assert_eq!(
+            submitted_lock_tokens_for_path(&headers, "/webdav/current.txt", "http", "localhost"),
+            ["urn:uuid:current".to_string()]
+        );
+    }
+
+    #[test]
+    fn submitted_tokens_for_path_ignore_invalid_if_header() {
+        let headers = headers("If", r#"</webdav/current.txt> (<urn:uuid:current>"#);
+
+        assert!(
+            submitted_lock_tokens_for_path(&headers, "/webdav/current.txt", "http", "localhost")
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn submitted_tokens_for_path_match_percent_encoded_tags() {
+        let headers = headers("If", r#"</webdav/current%20file.txt> (<urn:uuid:current>)"#);
+
+        assert_eq!(
+            submitted_lock_tokens_for_path(
+                &headers,
+                "/webdav/current file.txt",
+                "http",
+                "localhost",
             ),
             ["urn:uuid:current".to_string()]
         );

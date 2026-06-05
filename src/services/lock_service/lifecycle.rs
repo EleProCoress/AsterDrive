@@ -107,26 +107,39 @@ pub async fn unlock(
     entity_id: i64,
     user_id: i64,
 ) -> Result<()> {
-    let db = state.writer_db();
-
-    // 校验归属：文件所有者可解全部；否则只能解自己持有的全部活跃锁。
     let now = Utc::now();
-    let locks = lock_repo::find_all_by_entity(db, entity_type, entity_id).await?;
-    if !locks.is_empty() {
-        let is_entity_owner = check_entity_ownership(db, entity_type, entity_id, user_id).await?;
-        let has_foreign_active_lock = locks.iter().any(|lock| {
-            lock.timeout_at.is_none_or(|timeout_at| timeout_at >= now)
-                && lock.owner_id != Some(user_id)
-        });
-        if !is_entity_owner && has_foreign_active_lock {
-            return Err(auth_forbidden_with_subcode(
-                ApiSubcode::LockNotOwner,
-                "not the lock owner",
-            ));
-        }
-    }
 
-    do_unlock_by_entity(state, entity_type, entity_id).await?;
+    crate::db::transaction::with_transaction(state.writer_db(), async |txn| {
+        lock_target_entity(txn, entity_type, entity_id).await?;
+
+        let locks = lock_repo::find_all_by_entity_for_update(txn, entity_type, entity_id).await?;
+        if locks.is_empty() {
+            return Ok(());
+        }
+
+        let is_entity_owner = check_entity_ownership(txn, entity_type, entity_id, user_id).await?;
+        if is_entity_owner {
+            lock_repo::delete_by_entity(txn, entity_type, entity_id).await?;
+        } else {
+            let has_foreign_active_lock = locks.iter().any(|lock| {
+                lock.timeout_at.is_none_or(|timeout_at| timeout_at >= now)
+                    && lock.owner_id != Some(user_id)
+            });
+            if has_foreign_active_lock {
+                return Err(auth_forbidden_with_subcode(
+                    ApiSubcode::LockNotOwner,
+                    "not the lock owner",
+                ));
+            }
+
+            lock_repo::delete_by_entity_and_owner(txn, entity_type, entity_id, user_id).await?;
+        }
+
+        clear_entity_locked_if_unlocked(txn, entity_type, entity_id).await?;
+        Ok(())
+    })
+    .await?;
+
     tracing::debug!(
         entity_type = ?entity_type,
         entity_id,
@@ -196,16 +209,6 @@ pub async fn force_unlock_with_audit(
         },
     )
     .await;
-    Ok(())
-}
-
-async fn do_unlock_by_entity(
-    state: &PrimaryAppState,
-    entity_type: EntityType,
-    entity_id: i64,
-) -> Result<()> {
-    lock_repo::delete_by_entity(state.writer_db(), entity_type, entity_id).await?;
-    clear_entity_locked_if_unlocked(state.writer_db(), entity_type, entity_id).await?;
     Ok(())
 }
 

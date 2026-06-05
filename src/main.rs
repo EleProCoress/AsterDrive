@@ -32,6 +32,8 @@ pub static malloc_conf: Option<&'static std::ffi::c_char> = Some(unsafe {
         ptr: &'static std::ffi::c_char,
     }
 
+    // `narenas:1` lowers idle memory for the self-hosted default profile, but
+    // can become allocator contention under high concurrency.
     Conf {
         bytes: &b"narenas:1,dirty_decay_ms:1000,muzzy_decay_ms:1000,background_thread:true\0"[0],
     }

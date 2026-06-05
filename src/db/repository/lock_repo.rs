@@ -3,7 +3,7 @@
 use chrono::Utc;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, ExprTrait, QueryFilter,
-    QueryOrder, Select, Set,
+    QueryOrder, QuerySelect, Select, Set,
     sea_query::{Expr, Query, SelectStatement},
 };
 
@@ -169,6 +169,24 @@ pub async fn find_all_by_entity<C: ConnectionTrait>(
         .map_err(AsterError::from)
 }
 
+pub async fn find_all_by_entity_for_update<C: ConnectionTrait>(
+    db: &C,
+    entity_type: EntityType,
+    entity_id: i64,
+) -> Result<Vec<resource_lock::Model>> {
+    ResourceLock::find()
+        .filter(resource_lock::Column::EntityType.eq(entity_type))
+        .filter(resource_lock::Column::EntityId.eq(entity_id))
+        .order_by_asc(resource_lock::Column::Id)
+        .lock_exclusive()
+        .all(db)
+        .await
+        .map_err(AsterError::from)
+}
+
+/// Returns at most one active lock for a resource: the first non-expired row
+/// after sorting by `id` ascending. Use `find_all_by_entity` when callers need
+/// the full lock set.
 pub async fn find_active_by_entity<C: ConnectionTrait>(
     db: &C,
     entity_type: EntityType,
@@ -233,6 +251,22 @@ pub async fn delete_by_entity<C: ConnectionTrait>(
     ResourceLock::delete_many()
         .filter(resource_lock::Column::EntityType.eq(entity_type))
         .filter(resource_lock::Column::EntityId.eq(entity_id))
+        .exec(db)
+        .await
+        .map_err(AsterError::from)?;
+    Ok(())
+}
+
+pub async fn delete_by_entity_and_owner<C: ConnectionTrait>(
+    db: &C,
+    entity_type: EntityType,
+    entity_id: i64,
+    owner_id: i64,
+) -> Result<()> {
+    ResourceLock::delete_many()
+        .filter(resource_lock::Column::EntityType.eq(entity_type))
+        .filter(resource_lock::Column::EntityId.eq(entity_id))
+        .filter(resource_lock::Column::OwnerId.eq(owner_id))
         .exec(db)
         .await
         .map_err(AsterError::from)?;

@@ -256,9 +256,14 @@ pub(crate) async fn handle_put(
 fn content_length_hint(headers: &header::HeaderMap) -> Option<u64> {
     headers
         .get("X-Expected-Entity-Length")
-        .or_else(|| headers.get(header::CONTENT_LENGTH))
         .and_then(|value| value.to_str().ok())
         .and_then(|value| value.trim().parse::<u64>().ok())
+        .or_else(|| {
+            headers
+                .get(header::CONTENT_LENGTH)
+                .and_then(|value| value.to_str().ok())
+                .and_then(|value| value.trim().parse::<u64>().ok())
+        })
 }
 
 fn header_equals(headers: &header::HeaderMap, name: header::HeaderName, expected: &str) -> bool {
@@ -266,4 +271,54 @@ fn header_equals(headers: &header::HeaderMap, name: header::HeaderName, expected
         .get(name)
         .and_then(|value| value.to_str().ok())
         .is_some_and(|value| value.trim() == expected)
+}
+
+#[cfg(test)]
+mod tests {
+    use actix_web::http::header::{self, HeaderMap, HeaderName, HeaderValue};
+
+    use super::content_length_hint;
+
+    fn expected_entity_length_header() -> HeaderName {
+        HeaderName::from_static("x-expected-entity-length")
+    }
+
+    #[test]
+    fn content_length_hint_prefers_valid_expected_entity_length() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            expected_entity_length_header(),
+            HeaderValue::from_static(" 8 "),
+        );
+        headers.insert(header::CONTENT_LENGTH, HeaderValue::from_static("4"));
+
+        assert_eq!(content_length_hint(&headers), Some(8));
+    }
+
+    #[test]
+    fn content_length_hint_falls_back_to_content_length_when_expected_is_invalid() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            expected_entity_length_header(),
+            HeaderValue::from_static("invalid"),
+        );
+        headers.insert(header::CONTENT_LENGTH, HeaderValue::from_static("4"));
+
+        assert_eq!(content_length_hint(&headers), Some(4));
+    }
+
+    #[test]
+    fn content_length_hint_returns_none_when_no_header_can_be_parsed() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            expected_entity_length_header(),
+            HeaderValue::from_static("-1"),
+        );
+        headers.insert(
+            header::CONTENT_LENGTH,
+            HeaderValue::from_static("not-a-number"),
+        );
+
+        assert_eq!(content_length_hint(&headers), None);
+    }
 }
