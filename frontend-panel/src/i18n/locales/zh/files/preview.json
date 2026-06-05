@@ -2,6 +2,7 @@
 	"loading_preview": "加载中...",
 	"preview_load_failed": "加载失败",
 	"preview_retry": "重试",
+	"preview_show_original": "显示原图",
 	"preview_not_available": "暂不支持预览此文件类型",
 	"preview_not_available_desc": "可先下载该文件，或稍后尝试其他打开方式。",
 	"preview_enter_fullscreen": "占满窗口",

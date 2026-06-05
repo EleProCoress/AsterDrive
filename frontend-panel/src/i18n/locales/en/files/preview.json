@@ -2,6 +2,7 @@
 	"loading_preview": "Loading...",
 	"preview_load_failed": "Failed to load",
 	"preview_retry": "Retry",
+	"preview_show_original": "Show original",
 	"preview_not_available": "Preview is not available for this file type",
 	"preview_not_available_desc": "Download the file, or try another open mode later.",
 	"preview_enter_fullscreen": "Fill window",

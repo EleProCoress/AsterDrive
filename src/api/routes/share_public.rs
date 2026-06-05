@@ -803,6 +803,7 @@ pub async fn shared_thumbnail(
     params(("token" = String, Path, description = "Share token")),
     responses(
         (status = 200, description = "Image preview (WebP)"),
+        (status = 202, description = "Image preview is being generated"),
         (status = 304, description = "Image preview not modified"),
         (status = 400, description = "Image preview not supported for this file type"),
         (status = 403, description = "Password required"),
@@ -826,11 +827,14 @@ pub async fn shared_image_preview(
         .get("If-None-Match")
         .and_then(|value| value.to_str().ok());
 
-    Ok(files::image_preview_response(
-        result,
-        if_none_match,
-        "public, max-age=0, must-revalidate".to_string(),
-    ))
+    match result {
+        Some(result) => Ok(files::image_preview_response(
+            result,
+            if_none_match,
+            "public, max-age=0, must-revalidate".to_string(),
+        )),
+        None => Ok(thumbnail_pending_response()),
+    }
 }
 
 #[api_docs_macros::path(
@@ -945,6 +949,7 @@ pub async fn shared_folder_file_media_metadata(
     ),
     responses(
         (status = 200, description = "Image preview (WebP)"),
+        (status = 202, description = "Image preview is being generated"),
         (status = 304, description = "Image preview not modified"),
         (status = 400, description = "Image preview not supported for this file type"),
         (status = 403, description = "Password required or file outside shared scope"),
@@ -969,11 +974,14 @@ pub async fn shared_folder_file_image_preview(
         .get("If-None-Match")
         .and_then(|value| value.to_str().ok());
 
-    Ok(files::image_preview_response(
-        result,
-        if_none_match,
-        "public, max-age=0, must-revalidate".to_string(),
-    ))
+    match result {
+        Some(result) => Ok(files::image_preview_response(
+            result,
+            if_none_match,
+            "public, max-age=0, must-revalidate".to_string(),
+        )),
+        None => Ok(thumbnail_pending_response()),
+    }
 }
 
 #[cfg(test)]

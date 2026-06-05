@@ -100,7 +100,7 @@
 	"settings_item_media_processing_registry_json_label": "Media processing registry",
 	"settings_item_media_processing_registry_json_desc": "Choose which media processors are enabled and bind extensions as needed. Built-in AsterDrive processors act as the final fallback when enabled.",
 	"settings_item_frontend_image_preview_preference_label": "Image preview strategy",
-	"settings_item_frontend_image_preview_preference_desc": "Default image source used by the web preview dialog. Original-first avoids generating medium previews unless needed; preview-first loads the generated medium image first and falls back to the original.",
+	"settings_item_frontend_image_preview_preference_desc": "Default image source used by the web preview dialog. Original-first downloads the original immediately; preview-first loads only the generated medium image until the user chooses to show the original.",
 	"settings_image_preview_preference_option_original_first": "Original first",
 	"settings_image_preview_preference_option_preview_first": "Medium preview first",
 	"settings_item_avatar_dir_label": "Avatar directory",

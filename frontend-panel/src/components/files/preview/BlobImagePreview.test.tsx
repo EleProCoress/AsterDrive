@@ -52,7 +52,9 @@ describe("BlobImagePreview", () => {
 
 		render(<BlobImagePreview file={file} path="/files/1" />);
 
-		expect(mockState.useBlobUrl).toHaveBeenCalledWith("/files/1");
+		expect(mockState.useBlobUrl).toHaveBeenCalledWith("/files/1", {
+			lane: "default",
+		});
 		expect(screen.getByText("loading_preview")).toBeInTheDocument();
 	});
 
@@ -134,48 +136,6 @@ describe("BlobImagePreview", () => {
 		expect(image.parentElement).not.toHaveClass("w-fit");
 	});
 
-	it("uses the backend preview directly for HEIC images", () => {
-		mockState.useBlobUrl.mockReturnValue({
-			blobUrl: "blob:fallback",
-			error: false,
-			loading: false,
-			retry: mockState.retry,
-		});
-
-		render(
-			<BlobImagePreview
-				file={{ name: "photo.heic", mime_type: "image/heic" }}
-				path="/files/1/download"
-				fallbackPath="/files/1/image-preview"
-			/>,
-		);
-
-		expect(mockState.useBlobUrl).toHaveBeenCalledWith("/files/1/image-preview");
-		expect(screen.getByRole("img", { name: "photo.heic" })).toHaveAttribute(
-			"src",
-			"blob:fallback",
-		);
-	});
-
-	it("uses the backend preview directly for HEIF files detected by extension", () => {
-		mockState.useBlobUrl.mockReturnValue({
-			blobUrl: "blob:fallback",
-			error: false,
-			loading: false,
-			retry: mockState.retry,
-		});
-
-		render(
-			<BlobImagePreview
-				file={{ name: "camera.HEIF", mime_type: "application/octet-stream" }}
-				path="/files/2/download"
-				fallbackPath="/files/2/image-preview"
-			/>,
-		);
-
-		expect(mockState.useBlobUrl).toHaveBeenCalledWith("/files/2/image-preview");
-	});
-
 	it("uses the original image first when the public preference is original_first", () => {
 		render(
 			<BlobImagePreview
@@ -185,10 +145,15 @@ describe("BlobImagePreview", () => {
 			/>,
 		);
 
-		expect(mockState.useBlobUrl).toHaveBeenCalledWith("/files/1/download");
+		expect(mockState.useBlobUrl).toHaveBeenCalledWith("/files/1/download", {
+			lane: "default",
+		});
+		expect(
+			screen.queryByRole("button", { name: "preview_show_original" }),
+		).not.toBeInTheDocument();
 	});
 
-	it("uses the backend preview first when the public preference is preview_first", () => {
+	it("uses only the backend preview initially when the public preference is preview_first", () => {
 		mockState.imagePreviewPreference = "preview_first";
 
 		render(
@@ -199,7 +164,16 @@ describe("BlobImagePreview", () => {
 			/>,
 		);
 
-		expect(mockState.useBlobUrl).toHaveBeenCalledWith("/files/1/image-preview");
+		expect(mockState.useBlobUrl).toHaveBeenCalledWith(
+			"/files/1/image-preview",
+			{ lane: "thumbnail" },
+		);
+		expect(mockState.useBlobUrl).not.toHaveBeenCalledWith("/files/1/download", {
+			lane: "default",
+		});
+		expect(
+			screen.getByRole("button", { name: "preview_show_original" }),
+		).toBeInTheDocument();
 	});
 
 	it("uses the original path when preview_first has no backend preview path", () => {
@@ -207,14 +181,18 @@ describe("BlobImagePreview", () => {
 
 		render(<BlobImagePreview file={file} path="/files/1/download" />);
 
-		expect(mockState.useBlobUrl).toHaveBeenCalledWith("/files/1/download");
+		expect(mockState.useBlobUrl).toHaveBeenCalledWith("/files/1/download", {
+			lane: "default",
+		});
+		expect(
+			screen.queryByRole("button", { name: "preview_show_original" }),
+		).not.toBeInTheDocument();
 	});
 
-	it("switches ordinary images to the backend preview on render errors", async () => {
+	it("downloads the original only after the user asks to show it", async () => {
+		mockState.imagePreviewPreference = "preview_first";
 		mockState.useBlobUrl.mockImplementation((path: string) => ({
-			blobUrl: path.includes("image-preview")
-				? "blob:fallback"
-				: "blob:original",
+			blobUrl: path.includes("image-preview") ? "blob:medium" : "blob:original",
 			error: false,
 			loading: false,
 			retry: mockState.retry,
@@ -228,20 +206,34 @@ describe("BlobImagePreview", () => {
 			/>,
 		);
 
-		fireEvent.error(screen.getByRole("img", { name: "preview.png" }));
+		expect(mockState.useBlobUrl).toHaveBeenLastCalledWith(
+			"/files/1/image-preview",
+			{ lane: "thumbnail" },
+		);
+		expect(screen.getByRole("img", { name: "preview.png" })).toHaveAttribute(
+			"src",
+			"blob:medium",
+		);
 
+		fireEvent.click(
+			screen.getByRole("button", { name: "preview_show_original" }),
+		);
 		await waitFor(() =>
 			expect(mockState.useBlobUrl).toHaveBeenLastCalledWith(
-				"/files/1/image-preview",
+				"/files/1/download",
+				{ lane: "default" },
 			),
 		);
 		expect(screen.getByRole("img", { name: "preview.png" })).toHaveAttribute(
 			"src",
-			"blob:fallback",
+			"blob:original",
 		);
+		expect(
+			screen.queryByRole("button", { name: "preview_show_original" }),
+		).not.toBeInTheDocument();
 	});
 
-	it("switches to the original when preview_first backend preview loading fails", async () => {
+	it("does not download the original automatically when the backend preview loading fails", () => {
 		mockState.imagePreviewPreference = "preview_first";
 		mockState.useBlobUrl.mockImplementation((path: string) => ({
 			blobUrl: path.includes("image-preview") ? null : "blob:original",
@@ -258,18 +250,20 @@ describe("BlobImagePreview", () => {
 			/>,
 		);
 
-		await waitFor(() =>
-			expect(mockState.useBlobUrl).toHaveBeenLastCalledWith(
-				"/files/1/download",
-			),
+		expect(mockState.useBlobUrl).toHaveBeenLastCalledWith(
+			"/files/1/image-preview",
+			{ lane: "thumbnail" },
 		);
-		expect(screen.getByRole("img", { name: "preview.png" })).toHaveAttribute(
-			"src",
-			"blob:original",
-		);
+		expect(mockState.useBlobUrl).not.toHaveBeenCalledWith("/files/1/download", {
+			lane: "default",
+		});
+		expect(screen.getByText("preview_load_failed")).toBeInTheDocument();
+		expect(
+			screen.getByRole("button", { name: "preview_show_original" }),
+		).toBeInTheDocument();
 	});
 
-	it("shows the retry state after both preview sources fail", async () => {
+	it("shows the retry state when the selected preview source fails", () => {
 		mockState.useBlobUrl.mockReturnValue({
 			blobUrl: null,
 			error: true,
@@ -285,19 +279,16 @@ describe("BlobImagePreview", () => {
 			/>,
 		);
 
-		await waitFor(() =>
-			expect(mockState.useBlobUrl).toHaveBeenLastCalledWith(
-				"/files/1/image-preview",
-			),
-		);
+		expect(mockState.useBlobUrl).toHaveBeenLastCalledWith("/files/1/download", {
+			lane: "default",
+		});
 		expect(screen.getByText("preview_load_failed")).toBeInTheDocument();
 	});
 
-	it("falls back to the original when the HEIC backend preview cannot render", async () => {
+	it("does not switch sources automatically on image render errors", () => {
+		mockState.imagePreviewPreference = "preview_first";
 		mockState.useBlobUrl.mockImplementation((path: string) => ({
-			blobUrl: path.includes("image-preview")
-				? "blob:fallback"
-				: "blob:original",
+			blobUrl: path.includes("image-preview") ? "blob:medium" : "blob:original",
 			error: false,
 			loading: false,
 			retry: mockState.retry,
@@ -313,14 +304,13 @@ describe("BlobImagePreview", () => {
 
 		fireEvent.error(screen.getByRole("img", { name: "photo.heic" }));
 
-		await waitFor(() =>
-			expect(mockState.useBlobUrl).toHaveBeenLastCalledWith(
-				"/files/1/download",
-			),
+		expect(mockState.useBlobUrl).toHaveBeenLastCalledWith(
+			"/files/1/image-preview",
+			{ lane: "thumbnail" },
 		);
-		expect(screen.getByRole("img", { name: "photo.heic" })).toHaveAttribute(
-			"src",
-			"blob:original",
-		);
+		expect(mockState.useBlobUrl).not.toHaveBeenCalledWith("/files/1/download", {
+			lane: "default",
+		});
+		expect(screen.getByText("preview_load_failed")).toBeInTheDocument();
 	});
 });
