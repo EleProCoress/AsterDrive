@@ -11,6 +11,7 @@ const mockState = vi.hoisted(() => ({
 		user: null as { role?: string } | null,
 	},
 	frontendConfigLoad: vi.fn(),
+	initFrontendConfigRuntime: vi.fn(),
 	displayTimeZoneStore: {
 		preference: "browser",
 	},
@@ -73,6 +74,7 @@ vi.mock("@/components/music/MusicPlayerHost", () => ({
 }));
 
 vi.mock("@/stores/frontendConfigStore", () => ({
+	initFrontendConfigRuntime: () => mockState.initFrontendConfigRuntime(),
 	useFrontendConfigStore: {
 		getState: () => ({
 			load: mockState.frontendConfigLoad,
@@ -143,6 +145,7 @@ describe("App", () => {
 		mockState.authStore.user = null;
 		mockState.displayTimeZoneStore.preference = "browser";
 		mockState.frontendConfigLoad.mockReset();
+		mockState.initFrontendConfigRuntime.mockReset();
 		mockState.previewAppsLoad.mockReset();
 		mockState.mediaDataSupportLoad.mockReset();
 		mockState.setAuthState.mockReset();

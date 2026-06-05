@@ -51,6 +51,24 @@ const mockState = vi.hoisted(() => ({
 		isLoaded: true,
 		load: vi.fn(async () => {}),
 	},
+	thumbnailSupportStore: {
+		config: {
+			audio_thumbnail: { enabled: true, extensions: ["mp3"] },
+			extensions: ["heic", "nef", "raw", "mp3"],
+			image_preview: {
+				enabled: true,
+				extensions: ["heic", "nef", "raw"],
+			},
+			image_thumbnail: {
+				enabled: true,
+				extensions: ["heic", "nef", "raw"],
+			},
+			video_thumbnail: { enabled: true, extensions: ["mp4"] },
+			version: 1,
+		},
+		isLoaded: true,
+		load: vi.fn(async () => {}),
+	},
 	videoBrowserOption: null as {
 		config?: Record<string, unknown>;
 		icon: string;
@@ -173,6 +191,12 @@ vi.mock("@/stores/previewAppStore", () => ({
 	usePreviewAppStore: (
 		selector: (state: typeof mockState.previewAppStore) => unknown,
 	) => selector(mockState.previewAppStore),
+}));
+
+vi.mock("@/stores/thumbnailSupportStore", () => ({
+	useThumbnailSupportStore: (
+		selector: (state: typeof mockState.thumbnailSupportStore) => unknown,
+	) => selector(mockState.thumbnailSupportStore),
 }));
 
 vi.mock("@/components/files/preview/BlobImagePreview", () => ({

@@ -200,6 +200,15 @@ describe("ImagePreviewPanel", () => {
 		expect(mockState.blobProps?.source).toBe("original");
 	});
 
+	it("uses the original source when preview-first has no backend preview path", () => {
+		mockState.imagePreviewPreference = "preview_first";
+
+		renderPanel({ imagePreviewPath: undefined });
+
+		expect(screen.getByText("Original")).toBeInTheDocument();
+		expect(mockState.blobProps?.source).toBe("original");
+	});
+
 	it("zooms in, zooms out, and resets to fit", () => {
 		renderPanel();
 

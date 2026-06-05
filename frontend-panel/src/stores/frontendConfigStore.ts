@@ -225,6 +225,9 @@ export const useFrontendConfigStore = create<FrontendConfigState>(
 				lastRevalidationAttemptAt = Date.now();
 				try {
 					const config = await frontendConfigService.get();
+					if (!isFrontendConfig(config)) {
+						throw new Error("invalid frontend config response");
+					}
 					writeCachedFrontendConfig(config);
 					set(applyFrontendConfig(config));
 				} catch (error) {

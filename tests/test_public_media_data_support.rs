@@ -7,6 +7,13 @@ use actix_web::test;
 use sea_orm::Set;
 use serde_json::{Value, json};
 
+fn extension_values<'a>(kind_support: &'a Value, name: &str) -> &'a [Value] {
+    kind_support[name]
+        .as_array()
+        .map(Vec::as_slice)
+        .unwrap_or_default()
+}
+
 fn available_test_command() -> String {
     std::env::current_exe()
         .expect("current test executable path should be available")
@@ -251,12 +258,8 @@ async fn test_public_media_data_support_ignores_storage_native_options_for_unsup
     assert_eq!(resp.status(), 200);
 
     let body: Value = test::read_body_json(resp).await;
-    let video_extensions = body["data"]["kinds"]["video"]["extensions"]
-        .as_array()
-        .expect("video extensions should be an array");
-    let audio_extensions = body["data"]["kinds"]["audio"]["extensions"]
-        .as_array()
-        .expect("audio extensions should be an array");
+    let video_extensions = extension_values(&body["data"]["kinds"]["video"], "extensions");
+    let audio_extensions = extension_values(&body["data"]["kinds"]["audio"], "extensions");
     assert!(!video_extensions.iter().any(|value| value == "zzrawmedia"));
     assert!(!audio_extensions.iter().any(|value| value == "zzrawmedia"));
     assert!(

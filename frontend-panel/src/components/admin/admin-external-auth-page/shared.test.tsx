@@ -499,6 +499,19 @@ describe("admin external auth shared helpers", () => {
 			microsoftTenantMode: "custom",
 			microsoftTenant: "11111111-2222-3333-4444-555555555555",
 		});
+		expect(
+			formFromProvider(
+				provider({
+					issuer_url: "https://login.microsoftonline.com/organizations/v2.0",
+					options: undefined,
+					provider_kind: "microsoft",
+				}),
+			),
+		).toMatchObject({
+			microsoftTenantMode: "organizations",
+			microsoftTenant: "organizations",
+			providerKind: "microsoft",
+		});
 		expect(callbackUrl("microsoft", "microsoft")).toBe(
 			"https://app.example.com/api/v1/auth/external-auth/microsoft/microsoft/callback",
 		);
@@ -579,6 +592,27 @@ describe("admin external auth shared helpers", () => {
 					scopes: "openid email profile",
 				}),
 				oauth2Kind(),
+			),
+		).toBe(false);
+		expect(
+			formConnectionChanged(
+				{
+					...emptyForm,
+					clientId: "client-123",
+					clientSecret: "***REDACTED***",
+					displayName: "Microsoft",
+					microsoftTenant: "organizations",
+					microsoftTenantMode: "organizations",
+					providerKind: "microsoft",
+					scopes: "openid email profile",
+				},
+				provider({
+					issuer_url: "https://login.microsoftonline.com/organizations/v2.0",
+					options: undefined,
+					provider_kind: "microsoft",
+					scopes: "openid email profile",
+				}),
+				microsoftKind(),
 			),
 		).toBe(false);
 	});

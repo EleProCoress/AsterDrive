@@ -160,7 +160,7 @@ export function formFromProvider(
 	provider: AdminExternalAuthProviderInfo,
 ): ExternalAuthProviderFormData {
 	const microsoftTenant = isMicrosoftProviderKind(provider.provider_kind)
-		? provider.options.microsoft?.tenant ||
+		? provider.options?.microsoft?.tenant ||
 			microsoftTenantFromIssuerUrl(provider.issuer_url) ||
 			MICROSOFT_DEFAULT_TENANT
 		: MICROSOFT_DEFAULT_TENANT;
@@ -383,6 +383,14 @@ function formMicrosoftTenantValue(form: ExternalAuthProviderFormData) {
 		: form.microsoftTenantMode;
 }
 
+function providerMicrosoftTenantValue(provider: AdminExternalAuthProviderInfo) {
+	return (
+		provider.options?.microsoft?.tenant ||
+		microsoftTenantFromIssuerUrl(provider.issuer_url) ||
+		MICROSOFT_DEFAULT_TENANT
+	);
+}
+
 function formIssuerUrlForPayload(form: ExternalAuthProviderFormData) {
 	if (
 		isGitHubProviderKind(form.providerKind) ||
@@ -549,18 +557,16 @@ export function formConnectionChanged(
 ) {
 	const defaultScopes = defaultScopesForKind(selectedKind);
 	const formIssuerUrl = formIssuerUrlForPayload(form) ?? "";
-	const providerIssuerUrl =
-		isMicrosoftProviderKind(provider.provider_kind) &&
-		provider.options.microsoft
-			? ""
-			: (provider.issuer_url ?? "");
+	const providerIssuerUrl = isMicrosoftProviderKind(provider.provider_kind)
+		? ""
+		: (provider.issuer_url ?? "");
 	return (
 		form.providerKind !== provider.provider_kind ||
 		normalizeConnectionValue(formIssuerUrl) !==
 			normalizeConnectionValue(providerIssuerUrl) ||
 		(isMicrosoftProviderKind(form.providerKind) &&
 			formMicrosoftTenantValue(form) !==
-				(provider.options.microsoft?.tenant || MICROSOFT_DEFAULT_TENANT)) ||
+				providerMicrosoftTenantValue(provider)) ||
 		normalizeConnectionValue(form.authorizationUrl) !==
 			normalizeConnectionValue(provider.authorization_url) ||
 		normalizeConnectionValue(form.tokenUrl) !==
