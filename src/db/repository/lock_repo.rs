@@ -24,22 +24,6 @@ pub async fn create<C: ConnectionTrait>(
     model.insert(db).await.map_err(AsterError::from)
 }
 
-pub async fn create_if_unlocked<C: ConnectionTrait>(
-    db: &C,
-    model: resource_lock::ActiveModel,
-    entity_type: EntityType,
-    entity_id: i64,
-) -> Result<Option<resource_lock::Model>> {
-    if find_active_by_entity(db, entity_type, entity_id)
-        .await?
-        .is_some()
-    {
-        return Ok(None);
-    }
-
-    create(db, model).await.map(Some)
-}
-
 pub async fn find_all<C: ConnectionTrait>(db: &C) -> Result<Vec<resource_lock::Model>> {
     ResourceLock::find()
         .order_by_asc(resource_lock::Column::Id)
@@ -271,6 +255,23 @@ pub async fn delete_by_entity_and_owner<C: ConnectionTrait>(
         .await
         .map_err(AsterError::from)?;
     Ok(())
+}
+
+pub async fn delete_expired_by_entity_before<C: ConnectionTrait>(
+    db: &C,
+    entity_type: EntityType,
+    entity_id: i64,
+    cutoff: chrono::DateTime<Utc>,
+) -> Result<u64> {
+    let res = ResourceLock::delete_many()
+        .filter(resource_lock::Column::EntityType.eq(entity_type))
+        .filter(resource_lock::Column::EntityId.eq(entity_id))
+        .filter(resource_lock::Column::TimeoutAt.is_not_null())
+        .filter(resource_lock::Column::TimeoutAt.lt(cutoff))
+        .exec(db)
+        .await
+        .map_err(AsterError::from)?;
+    Ok(res.rows_affected)
 }
 
 /// 删除路径前缀匹配的所有锁

@@ -80,12 +80,18 @@ pub(crate) fn parse_lock_depth(headers: &header::HeaderMap) -> Result<Depth, Htt
 }
 
 fn parse_depth_header(headers: &header::HeaderMap) -> Result<Option<Depth>, HttpResponse> {
-    match headers.get("Depth").and_then(|value| value.to_str().ok()) {
-        None => Ok(None),
-        Some(value) if value.eq_ignore_ascii_case("0") => Ok(Some(Depth::Zero)),
-        Some(value) if value.eq_ignore_ascii_case("1") => Ok(Some(Depth::One)),
-        Some(value) if value.eq_ignore_ascii_case("infinity") => Ok(Some(Depth::Infinity)),
-        Some(_) => Err(HttpResponse::BadRequest().finish()),
+    let Some(value) = headers.get("Depth") else {
+        return Ok(None);
+    };
+    let value = value
+        .to_str()
+        .map_err(|_| HttpResponse::BadRequest().finish())?;
+
+    match value {
+        value if value.eq_ignore_ascii_case("0") => Ok(Some(Depth::Zero)),
+        value if value.eq_ignore_ascii_case("1") => Ok(Some(Depth::One)),
+        value if value.eq_ignore_ascii_case("infinity") => Ok(Some(Depth::Infinity)),
+        _ => Err(HttpResponse::BadRequest().finish()),
     }
 }
 
@@ -718,7 +724,7 @@ mod tests {
 
     use super::{
         Depth, IfHeader, IfStateCondition, parse_copy_depth, parse_delete_depth, parse_if_header,
-        parse_move_depth, parse_propfind_depth, submitted_lock_tokens_for_path,
+        parse_lock_depth, parse_move_depth, parse_propfind_depth, submitted_lock_tokens_for_path,
     };
 
     fn headers(name: &'static str, value: &'static str) -> HeaderMap {
@@ -754,6 +760,16 @@ mod tests {
     }
 
     #[test]
+    fn depth_header_values_are_case_insensitive_but_not_whitespace_tolerant() {
+        assert_eq!(
+            parse_propfind_depth(&headers("Depth", "Infinity")).unwrap(),
+            Depth::Infinity
+        );
+        assert!(parse_propfind_depth(&headers("Depth", "")).is_err());
+        assert!(parse_propfind_depth(&headers("Depth", " infinity ")).is_err());
+    }
+
+    #[test]
     fn copy_defaults_to_infinity_and_parses_legal_depths() {
         assert_eq!(
             parse_copy_depth(&HeaderMap::new()).unwrap(),
@@ -773,6 +789,34 @@ mod tests {
     fn copy_rejects_depth_one_and_invalid_depth_values() {
         assert!(parse_copy_depth(&headers("Depth", "1")).is_err());
         assert!(parse_copy_depth(&headers("Depth", "invalid")).is_err());
+    }
+
+    #[test]
+    fn lock_depth_accepts_zero_infinity_and_missing_but_rejects_one() {
+        assert_eq!(
+            parse_lock_depth(&HeaderMap::new()).unwrap(),
+            Depth::Infinity
+        );
+        assert_eq!(
+            parse_lock_depth(&headers("Depth", "0")).unwrap(),
+            Depth::Zero
+        );
+        assert_eq!(
+            parse_lock_depth(&headers("Depth", "infinity")).unwrap(),
+            Depth::Infinity
+        );
+        assert!(parse_lock_depth(&headers("Depth", "1")).is_err());
+    }
+
+    #[test]
+    fn depth_header_present_but_not_utf8_is_bad_request() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            HeaderName::from_static("depth"),
+            HeaderValue::from_bytes(&[0xff]).expect("test header value should be constructible"),
+        );
+
+        assert!(parse_propfind_depth(&headers).is_err());
     }
 
     #[test]

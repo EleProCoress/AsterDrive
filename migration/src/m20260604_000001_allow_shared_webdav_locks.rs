@@ -31,6 +31,8 @@ impl MigrationTrait for Migration {
     }
 
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        abort_if_duplicate_entity_locks_exist(manager).await?;
+
         manager
             .drop_index(
                 Index::drop()
@@ -40,8 +42,6 @@ impl MigrationTrait for Migration {
                     .to_owned(),
             )
             .await?;
-
-        abort_if_duplicate_entity_locks_exist(manager).await?;
 
         manager
             .create_index(

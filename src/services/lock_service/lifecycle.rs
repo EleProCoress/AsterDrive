@@ -111,28 +111,28 @@ pub async fn unlock(
 
     crate::db::transaction::with_transaction(state.writer_db(), async |txn| {
         lock_target_entity(txn, entity_type, entity_id).await?;
+        lock_repo::delete_expired_by_entity_before(txn, entity_type, entity_id, now).await?;
 
         let locks = lock_repo::find_all_by_entity_for_update(txn, entity_type, entity_id).await?;
-        if locks.is_empty() {
-            return Ok(());
-        }
+        if !locks.is_empty() {
+            let is_entity_owner =
+                check_entity_ownership(txn, entity_type, entity_id, user_id).await?;
+            if is_entity_owner {
+                lock_repo::delete_by_entity(txn, entity_type, entity_id).await?;
+            } else {
+                let has_foreign_active_lock = locks.iter().any(|lock| {
+                    lock.timeout_at.is_none_or(|timeout_at| timeout_at >= now)
+                        && lock.owner_id != Some(user_id)
+                });
+                if has_foreign_active_lock {
+                    return Err(auth_forbidden_with_subcode(
+                        ApiSubcode::LockNotOwner,
+                        "not the lock owner",
+                    ));
+                }
 
-        let is_entity_owner = check_entity_ownership(txn, entity_type, entity_id, user_id).await?;
-        if is_entity_owner {
-            lock_repo::delete_by_entity(txn, entity_type, entity_id).await?;
-        } else {
-            let has_foreign_active_lock = locks.iter().any(|lock| {
-                lock.timeout_at.is_none_or(|timeout_at| timeout_at >= now)
-                    && lock.owner_id != Some(user_id)
-            });
-            if has_foreign_active_lock {
-                return Err(auth_forbidden_with_subcode(
-                    ApiSubcode::LockNotOwner,
-                    "not the lock owner",
-                ));
+                lock_repo::delete_by_entity_and_owner(txn, entity_type, entity_id, user_id).await?;
             }
-
-            lock_repo::delete_by_entity_and_owner(txn, entity_type, entity_id, user_id).await?;
         }
 
         clear_entity_locked_if_unlocked(txn, entity_type, entity_id).await?;

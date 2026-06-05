@@ -423,7 +423,7 @@ async fn unlock_as_lock_owner_removes_only_own_locks_when_no_foreign_active_lock
     let (state, user, file) = build_lock_test_state().await;
     let lock_owner_id = user.id + 1;
     insert_lock_for_test(&state, &file, "own-lock", lock_owner_id, None).await;
-    let expired_foreign = insert_lock_for_test(
+    insert_lock_for_test(
         &state,
         &file,
         "expired-foreign-lock",
@@ -442,14 +442,45 @@ async fn unlock_as_lock_owner_removes_only_own_locks_when_no_foreign_active_lock
     let locks = lock_repo::find_all_by_entity(state.writer_db(), EntityType::File, file.id)
         .await
         .expect("locks should load");
-    assert_eq!(locks.len(), 1);
-    assert_eq!(locks[0].id, expired_foreign.id);
+    assert!(locks.is_empty(), "expired foreign locks should be pruned");
     let reloaded_file = file_repo::find_by_id(state.writer_db(), file.id)
         .await
         .expect("file should reload");
     assert!(
-        reloaded_file.is_locked,
-        "remaining lock row should keep is_locked set"
+        !reloaded_file.is_locked,
+        "is_locked should clear after own and expired locks are removed"
+    );
+}
+
+#[tokio::test]
+async fn unlock_prunes_only_expired_locks_and_clears_stale_locked_flag() {
+    let (state, user, file) = build_lock_test_state().await;
+    insert_lock_for_test(
+        &state,
+        &file,
+        "expired-lock",
+        user.id + 1,
+        Some(Utc::now() - Duration::seconds(30)),
+    )
+    .await;
+    set_entity_locked(state.writer_db(), EntityType::File, file.id, true)
+        .await
+        .expect("file should be marked locked");
+
+    unlock(&state, EntityType::File, file.id, user.id + 2)
+        .await
+        .expect("expired-only locks should be pruned without ownership failure");
+
+    let locks = lock_repo::find_all_by_entity(state.writer_db(), EntityType::File, file.id)
+        .await
+        .expect("locks should load");
+    assert!(locks.is_empty(), "expired lock rows should be deleted");
+    let reloaded_file = file_repo::find_by_id(state.writer_db(), file.id)
+        .await
+        .expect("file should reload");
+    assert!(
+        !reloaded_file.is_locked,
+        "stale is_locked should be cleared after expired lock cleanup"
     );
 }
 

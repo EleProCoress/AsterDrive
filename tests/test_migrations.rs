@@ -1,7 +1,7 @@
 //! 集成测试：`migration`。
 
 use migration::{CurrentMigrator, MigratorTrait};
-use sea_orm::{ConnectionTrait, Database, DbBackend, DbErr, Statement};
+use sea_orm::{ConnectionTrait, Database, DatabaseConnection, DbBackend, DbErr, Statement};
 
 async fn setup_current_schema() -> sea_orm::DatabaseConnection {
     let db = Database::connect("sqlite::memory:")
@@ -37,6 +37,17 @@ async fn insert_resource_lock(
     ))
     .await
     .expect("resource lock fixture should insert");
+}
+
+async fn sqlite_index_exists(db: &DatabaseConnection, index_name: &str) -> bool {
+    db.query_all_raw(Statement::from_string(
+        DbBackend::Sqlite,
+        "PRAGMA index_list('resource_locks')",
+    ))
+    .await
+    .expect("sqlite index list should load")
+    .into_iter()
+    .any(|row| row.try_get_by_index::<String>(1).as_deref() == Ok(index_name))
 }
 
 #[tokio::test]
@@ -84,4 +95,8 @@ async fn allow_shared_webdav_locks_down_reports_duplicate_entity_locks() {
 
     assert!(message.contains("cannot recreate unique index idx_resource_locks_entity"));
     assert!(message.contains("file:1 (2 locks)"));
+    assert!(
+        sqlite_index_exists(&db, "idx_resource_locks_entity").await,
+        "failed rollback must not drop idx_resource_locks_entity before duplicate validation"
+    );
 }
