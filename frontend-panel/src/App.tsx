@@ -13,7 +13,10 @@ import {
 	resolveActiveDisplayTimeZone,
 	useDisplayTimeZoneStore,
 } from "@/stores/displayTimeZoneStore";
-import { useFrontendConfigStore } from "@/stores/frontendConfigStore";
+import {
+	initFrontendConfigRuntime,
+	useFrontendConfigStore,
+} from "@/stores/frontendConfigStore";
 import { useMediaDataSupportStore } from "@/stores/mediaDataSupportStore";
 import { usePreviewAppStore } from "@/stores/previewAppStore";
 import { useThemeStore } from "@/stores/themeStore";
@@ -24,6 +27,7 @@ function shouldSkipInitialAuthCheck(pathname: string) {
 }
 
 function loadPublicConfig() {
+	initFrontendConfigRuntime();
 	void useFrontendConfigStore.getState().load();
 	const cancelDeferredLoads = runWhenIdle(
 		() => {

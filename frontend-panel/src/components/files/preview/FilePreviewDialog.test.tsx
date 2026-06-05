@@ -108,7 +108,11 @@ vi.mock("@/components/ui/dialog", () => ({
 		overlayClassName?: string;
 	}) => (
 		<>
-			<div data-testid="dialog-overlay" className={overlayClassName} />
+			<div
+				data-testid="dialog-overlay"
+				className={overlayClassName}
+				aria-hidden="true"
+			/>
 			<div data-testid="dialog-content" className={className}>
 				{children}
 			</div>

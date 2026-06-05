@@ -148,6 +148,8 @@ function dialogStateReducer(
 				confirmOpen: false,
 				isDirty: false,
 			};
+		// First image auto-expand also marks expansion as manual so later identical
+		// actions are skipped and close/open animation does not replay.
 		case "setExpanded":
 			return state.isExpanded === action.expanded && state.hasManualExpanded
 				? state

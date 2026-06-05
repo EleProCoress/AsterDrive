@@ -1,6 +1,5 @@
 import {
 	type PointerEvent as ReactPointerEvent,
-	type WheelEvent as ReactWheelEvent,
 	useCallback,
 	useEffect,
 	useMemo,
@@ -264,19 +263,6 @@ export function useImagePreviewTransform({
 		[clampOffset, imageOffset, pointers, zoom],
 	);
 
-	const handleWheel = useCallback(
-		(event: ReactWheelEvent<HTMLDivElement>) => {
-			if (!event.ctrlKey && !event.metaKey) return;
-			event.preventDefault();
-			const direction = event.deltaY > 0 ? -1 : 1;
-			setClampedZoom(zoom + direction * ZOOM_STEP, {
-				x: event.clientX,
-				y: event.clientY,
-			});
-		},
-		[setClampedZoom, zoom],
-	);
-
 	useEffect(() => {
 		const handleResize = () => {
 			setImageOffset((current) => clampOffset(current, zoom));
@@ -285,13 +271,32 @@ export function useImagePreviewTransform({
 		return () => window.removeEventListener("resize", handleResize);
 	}, [clampOffset, zoom]);
 
+	useEffect(() => {
+		const viewport = viewportRef.current;
+		if (!viewport) return;
+
+		const handleWheel = (event: WheelEvent) => {
+			if (!event.ctrlKey && !event.metaKey) return;
+			event.preventDefault();
+			const direction = event.deltaY > 0 ? -1 : 1;
+			setClampedZoom(zoom + direction * ZOOM_STEP, {
+				x: event.clientX,
+				y: event.clientY,
+			});
+		};
+
+		viewport.addEventListener("wheel", handleWheel, { passive: false });
+		return () => {
+			viewport.removeEventListener("wheel", handleWheel);
+		};
+	}, [setClampedZoom, viewportRef, zoom]);
+
 	return {
 		canZoomIn,
 		canZoomOut,
 		handlePointerDown,
 		handlePointerEnd,
 		handlePointerMove,
-		handleWheel,
 		imageStyle,
 		resetImageTransform,
 		rotateRight,

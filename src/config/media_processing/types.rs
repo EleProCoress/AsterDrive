@@ -117,6 +117,7 @@ pub struct PublicMediaDataKindSupport {
     pub enabled: bool,
     #[serde(rename = "match")]
     pub match_kind: PublicMediaDataSupportMatch,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub extensions: Vec<String>,
 }
 

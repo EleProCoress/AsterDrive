@@ -55,7 +55,7 @@ pub fn routes() -> impl actix_web::dev::HttpServiceFactory + use<> {
         (status = 200, description = "Public branding config", body = inline(ApiResponse<config_service::PublicBranding>)),
     ),
 )]
-// TODO(0.4.0): remove this legacy endpoint after clients migrate to /public/frontend-config.
+// TODO(0.3.0): remove this legacy endpoint after clients migrate to /public/frontend-config.
 pub async fn get_branding(state: web::Data<PrimaryAppState>) -> Result<HttpResponse> {
     let branding = config_service::get_public_branding(&state);
     Ok(public_config_response(branding))

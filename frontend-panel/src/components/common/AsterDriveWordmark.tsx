@@ -1,4 +1,5 @@
 import type { ComponentProps } from "react";
+import { useShallow } from "zustand/react/shallow";
 import { cn } from "@/lib/utils";
 import { useFrontendConfigStore } from "@/stores/frontendConfigStore";
 import { useThemeStore } from "@/stores/themeStore";
@@ -16,11 +17,11 @@ export function AsterDriveWordmark({
 	surfaceTheme,
 	...props
 }: AsterDriveWordmarkProps) {
-	const wordmarkDarkUrl = useFrontendConfigStore(
-		(s) => s.branding.wordmarkDarkUrl,
-	);
-	const wordmarkLightUrl = useFrontendConfigStore(
-		(s) => s.branding.wordmarkLightUrl,
+	const { wordmarkDarkUrl, wordmarkLightUrl } = useFrontendConfigStore(
+		useShallow((s) => ({
+			wordmarkDarkUrl: s.branding.wordmarkDarkUrl,
+			wordmarkLightUrl: s.branding.wordmarkLightUrl,
+		})),
 	);
 	const resolvedTheme = useThemeStore((s) => s.resolvedTheme);
 	const effectiveTheme = surfaceTheme ?? resolvedTheme;

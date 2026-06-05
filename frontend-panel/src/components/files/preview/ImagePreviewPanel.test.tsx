@@ -20,11 +20,15 @@ vi.mock("@/components/files/preview/BlobImagePreview", () => ({
 	BlobImagePreview: ({
 		imageRef,
 		imageStyle,
+		onImageLoad,
+		onImageRenderError,
 		source,
 		viewportRef,
 	}: {
 		imageRef?: React.Ref<HTMLImageElement>;
 		imageStyle?: React.CSSProperties;
+		onImageLoad?: (source: ImagePreviewSource) => void;
+		onImageRenderError?: (source: ImagePreviewSource) => void;
 		source?: ImagePreviewSource;
 		viewportRef?: React.Ref<HTMLDivElement>;
 	}) => {
@@ -40,6 +44,8 @@ vi.mock("@/components/files/preview/BlobImagePreview", () => ({
 					ref={imageRef}
 					src="blob:preview"
 					style={imageStyle}
+					onLoad={() => source && onImageLoad?.(source)}
+					onError={() => source && onImageRenderError?.(source)}
 				/>
 			</div>
 		);
@@ -292,9 +298,9 @@ describe("ImagePreviewPanel", () => {
 
 	it("zooms with ctrl wheel and ignores plain scroll", () => {
 		renderPanel();
-		const surface = getGestureSurface();
+		const viewport = screen.getByTestId("panel-preview-viewport");
 
-		fireEvent.wheel(surface, {
+		fireEvent.wheel(viewport, {
 			clientX: 200,
 			clientY: 150,
 			ctrlKey: false,
@@ -304,7 +310,7 @@ describe("ImagePreviewPanel", () => {
 			screen.getByRole("button", { name: "Fit to window" }),
 		).toHaveTextContent("100%");
 
-		fireEvent.wheel(surface, {
+		fireEvent.wheel(viewport, {
 			clientX: 200,
 			clientY: 150,
 			ctrlKey: true,
@@ -315,6 +321,51 @@ describe("ImagePreviewPanel", () => {
 			screen.getByRole("button", { name: "Fit to window" }),
 		).toHaveTextContent("125%");
 		expect(mockState.blobProps?.imageStyle?.transform).toContain("scale(1.25)");
+	});
+
+	it("zooms with meta wheel and keeps the pointer anchor in bounds", () => {
+		renderPanel();
+		mockImageGeometry();
+		const image = screen.getByTestId("panel-preview-image");
+		Object.defineProperty(image, "offsetWidth", {
+			configurable: true,
+			value: 400,
+		});
+		Object.defineProperty(image, "offsetHeight", {
+			configurable: true,
+			value: 300,
+		});
+		const viewport = screen.getByTestId("panel-preview-viewport");
+
+		fireEvent.wheel(viewport, {
+			clientX: 400,
+			clientY: 300,
+			deltaY: -100,
+			metaKey: true,
+		});
+
+		expect(
+			screen.getByRole("button", { name: "Fit to window" }),
+		).toHaveTextContent("125%");
+		expect(mockState.blobProps?.imageStyle?.transform).toContain(
+			"translate3d(-50px, -37.5px, 0)",
+		);
+	});
+
+	it("registers wheel zoom as a non-passive listener on the image viewport", () => {
+		const addEventListenerSpy = vi.spyOn(
+			HTMLElement.prototype,
+			"addEventListener",
+		);
+
+		renderPanel();
+
+		expect(addEventListenerSpy).toHaveBeenCalledWith(
+			"wheel",
+			expect.any(Function),
+			{ passive: false },
+		);
+		addEventListenerSpy.mockRestore();
 	});
 
 	it("does not drag the image while it is fitted", () => {
@@ -375,6 +426,78 @@ describe("ImagePreviewPanel", () => {
 		);
 	});
 
+	it("reclamps dragged offsets when the viewport is resized", () => {
+		renderPanel();
+		mockImageGeometry();
+		for (let index = 0; index < 16; index += 1) {
+			fireEvent.click(screen.getByRole("button", { name: "Zoom in" }));
+		}
+
+		const surface = getGestureSurface();
+		fireEvent.pointerDown(surface, {
+			clientX: 200,
+			clientY: 150,
+			pointerId: 1,
+		});
+		fireEvent.pointerMove(surface, {
+			clientX: 1200,
+			clientY: 900,
+			pointerId: 1,
+		});
+		expect(mockState.blobProps?.imageStyle?.transform).toContain(
+			"translate3d(550px, 350px, 0)",
+		);
+
+		const viewport = screen.getByTestId("panel-preview-viewport");
+		Object.defineProperty(viewport, "getBoundingClientRect", {
+			configurable: true,
+			value: () => ({
+				bottom: 800,
+				height: 800,
+				left: 0,
+				right: 1000,
+				top: 0,
+				width: 1000,
+				x: 0,
+				y: 0,
+				toJSON: () => {},
+			}),
+		});
+
+		act(() => {
+			window.dispatchEvent(new Event("resize"));
+		});
+
+		expect(mockState.blobProps?.imageStyle?.transform).toContain(
+			"translate3d(250px, 100px, 0)",
+		);
+	});
+
+	it("clamps drag movement against sideways dimensions after rotation", () => {
+		renderPanel();
+		mockImageGeometry();
+		fireEvent.click(screen.getByRole("button", { name: "Rotate right" }));
+		for (let index = 0; index < 16; index += 1) {
+			fireEvent.click(screen.getByRole("button", { name: "Zoom in" }));
+		}
+
+		const surface = getGestureSurface();
+		fireEvent.pointerDown(surface, {
+			clientX: 200,
+			clientY: 150,
+			pointerId: 1,
+		});
+		fireEvent.pointerMove(surface, {
+			clientX: 1200,
+			clientY: 900,
+			pointerId: 1,
+		});
+
+		expect(mockState.blobProps?.imageStyle?.transform).toContain(
+			"translate3d(300px, 600px, 0)",
+		);
+	});
+
 	it("pinch-zooms with two pointers and clamps the resulting scale", () => {
 		renderPanel();
 		mockImageGeometry();
@@ -405,6 +528,113 @@ describe("ImagePreviewPanel", () => {
 			screen.getByRole("button", { name: "Fit to window" }),
 		).toHaveTextContent("500%");
 		expect(mockState.blobProps?.imageStyle?.transform).toContain("scale(5)");
+	});
+
+	it("continues dragging the remaining pointer after a pinch ends", () => {
+		renderPanel();
+		mockImageGeometry();
+		const surface = getGestureSurface();
+
+		fireEvent.pointerDown(surface, {
+			clientX: 180,
+			clientY: 150,
+			pointerId: 1,
+		});
+		fireEvent.pointerDown(surface, {
+			clientX: 220,
+			clientY: 150,
+			pointerId: 2,
+		});
+		fireEvent.pointerMove(surface, {
+			clientX: 120,
+			clientY: 150,
+			pointerId: 1,
+		});
+		fireEvent.pointerMove(surface, {
+			clientX: 280,
+			clientY: 150,
+			pointerId: 2,
+		});
+		expect(
+			screen.getByRole("button", { name: "Fit to window" }),
+		).toHaveTextContent("400%");
+
+		fireEvent.pointerUp(surface, {
+			clientX: 280,
+			clientY: 150,
+			pointerId: 2,
+		});
+		fireEvent.pointerMove(surface, {
+			clientX: 400,
+			clientY: 210,
+			pointerId: 1,
+		});
+
+		expect(mockState.blobProps?.imageStyle?.transform).toContain(
+			"translate3d(280px, 60px, 0)",
+		);
+	});
+
+	it("ignores inactive pointer moves and zero-distance pinches", () => {
+		renderPanel();
+		mockImageGeometry();
+		const surface = getGestureSurface();
+
+		fireEvent.pointerMove(surface, {
+			clientX: 260,
+			clientY: 210,
+			pointerId: 99,
+		});
+		expect(mockState.blobProps?.imageStyle?.transform).toContain(
+			"translate3d(0px, 0px, 0)",
+		);
+
+		fireEvent.pointerDown(surface, {
+			clientX: 200,
+			clientY: 150,
+			pointerId: 1,
+		});
+		fireEvent.pointerDown(surface, {
+			clientX: 200,
+			clientY: 150,
+			pointerId: 2,
+		});
+		fireEvent.pointerMove(surface, {
+			clientX: 260,
+			clientY: 150,
+			pointerId: 2,
+		});
+
+		expect(
+			screen.getByRole("button", { name: "Fit to window" }),
+		).toHaveTextContent("100%");
+		expect(mockState.blobProps?.imageStyle?.transform).toContain("scale(1)");
+	});
+
+	it("skips releasePointerCapture when the surface no longer owns capture", () => {
+		renderPanel();
+		const surface = getGestureSurface();
+		const hasPointerCapture = vi
+			.spyOn(HTMLElement.prototype, "hasPointerCapture")
+			.mockReturnValue(false);
+		const releasePointerCapture = vi.spyOn(
+			HTMLElement.prototype,
+			"releasePointerCapture",
+		);
+
+		fireEvent.pointerDown(surface, {
+			clientX: 100,
+			clientY: 100,
+			pointerId: 1,
+		});
+		fireEvent.pointerUp(surface, {
+			clientX: 100,
+			clientY: 100,
+			pointerId: 1,
+		});
+
+		expect(hasPointerCapture).toHaveBeenCalledWith(1);
+		expect(releasePointerCapture).not.toHaveBeenCalled();
 	});
 
 	it("requests the original and renders loading and success states with collapse animation classes", () => {
@@ -467,6 +697,7 @@ describe("ImagePreviewPanel", () => {
 		);
 		expect(mockState.blobProps?.source).toBe("original");
 		expect(screen.getByRole("button", { name: "Original" })).toBeDisabled();
+		fireEvent.load(screen.getByTestId("panel-preview-image"));
 
 		act(() => {
 			vi.advanceTimersByTime(650);
@@ -546,6 +777,62 @@ describe("ImagePreviewPanel", () => {
 
 		expect(screen.getByRole("button", { name: "Original" })).toBeEnabled();
 		expect(mockState.blobProps?.source).toBe("backend_preview");
+	});
+
+	it("falls back to the backend preview when the downloaded original cannot render", () => {
+		const { rerender } = render(
+			<ImagePreviewPanel
+				file={file}
+				allOptionsCount={1}
+				downloadPath="/files/7/download"
+				imagePreviewPath="/files/7/image-preview"
+				isExpanded
+				onChooseOpenMethod={vi.fn()}
+				onClose={vi.fn()}
+				onToggleExpand={vi.fn()}
+				chooseOpenMethodLabel="Choose open method"
+				enterFullscreenLabel="Fill window"
+				exitFullscreenLabel="Restore window"
+				closeLabel="Close"
+				fitToWindowLabel="Fit to window"
+				previewSourceLabel="Preview"
+				originalSourceLabel="Original"
+				rotateRightLabel="Rotate right"
+				zoomInLabel="Zoom in"
+				zoomOutLabel="Zoom out"
+			/>,
+		);
+
+		fireEvent.click(screen.getByRole("button", { name: "Original" }));
+		mockState.originalBlobUrl = "blob:original";
+		rerender(
+			<ImagePreviewPanel
+				file={file}
+				allOptionsCount={1}
+				downloadPath="/files/7/download"
+				imagePreviewPath="/files/7/image-preview"
+				isExpanded
+				onChooseOpenMethod={vi.fn()}
+				onClose={vi.fn()}
+				onToggleExpand={vi.fn()}
+				chooseOpenMethodLabel="Choose open method"
+				enterFullscreenLabel="Fill window"
+				exitFullscreenLabel="Restore window"
+				closeLabel="Close"
+				fitToWindowLabel="Fit to window"
+				previewSourceLabel="Preview"
+				originalSourceLabel="Original"
+				rotateRightLabel="Rotate right"
+				zoomInLabel="Zoom in"
+				zoomOutLabel="Zoom out"
+			/>,
+		);
+
+		expect(mockState.blobProps?.source).toBe("original");
+		fireEvent.error(screen.getByTestId("panel-preview-image"));
+
+		expect(mockState.blobProps?.source).toBe("backend_preview");
+		expect(screen.getByRole("button", { name: "Original" })).toBeEnabled();
 	});
 });
 

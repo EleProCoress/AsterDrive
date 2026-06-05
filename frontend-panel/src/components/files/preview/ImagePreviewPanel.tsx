@@ -111,7 +111,6 @@ export function ImagePreviewPanel({
 		handlePointerDown,
 		handlePointerEnd,
 		handlePointerMove,
-		handleWheel,
 		imageStyle,
 		resetImageTransform,
 		rotateRight,
@@ -127,6 +126,12 @@ export function ImagePreviewPanel({
 	const [requestedOriginalKey, setRequestedOriginalKey] = useState<
 		string | null
 	>(null);
+	const [renderedOriginalKey, setRenderedOriginalKey] = useState<string | null>(
+		null,
+	);
+	const [failedOriginalKey, setFailedOriginalKey] = useState<string | null>(
+		null,
+	);
 	const previewKey = [
 		file.name,
 		file.mime_type,
@@ -139,6 +144,7 @@ export function ImagePreviewPanel({
 		blobUrl: originalBlobUrl,
 		error: originalError,
 		loading: originalLoading,
+		retry: retryOriginal,
 	} = useBlobUrl(
 		initialSource === "backend_preview" && requestedOriginal
 			? downloadPath
@@ -147,14 +153,15 @@ export function ImagePreviewPanel({
 	);
 	const originalReady =
 		requestedOriginal && originalBlobUrl && !originalLoading && !originalError;
-	const effectiveSource: ImagePreviewSource = originalReady
-		? "original"
-		: initialSource;
+	const originalRenderedSuccessfully = renderedOriginalKey === previewKey;
+	const originalRenderFailed = failedOriginalKey === previewKey;
+	const effectiveSource: ImagePreviewSource =
+		originalReady && !originalRenderFailed ? "original" : initialSource;
 	const effectiveShowOriginalState: ShowOriginalState =
 		initialSource === "backend_preview"
-			? originalReady
+			? originalRenderedSuccessfully
 				? "success"
-				: requestedOriginal && !originalError
+				: requestedOriginal && !originalError && !originalRenderFailed
 					? "loading"
 					: "available"
 			: "hidden";
@@ -168,8 +175,32 @@ export function ImagePreviewPanel({
 		: enterFullscreenLabel;
 
 	const showOriginal = useCallback(() => {
+		setFailedOriginalKey(null);
+		if (requestedOriginal && originalError) {
+			retryOriginal();
+			return;
+		}
 		setRequestedOriginalKey(previewKey);
-	}, [previewKey]);
+	}, [originalError, previewKey, requestedOriginal, retryOriginal]);
+
+	const handleImageLoad = useCallback(
+		(renderedSource: ImagePreviewSource) => {
+			if (renderedSource !== "original") return;
+			setFailedOriginalKey(null);
+			setRenderedOriginalKey(previewKey);
+		},
+		[previewKey],
+	);
+
+	const handleImageRenderError = useCallback(
+		(failedSource: ImagePreviewSource) => {
+			if (failedSource !== "original") return;
+			setFailedOriginalKey(previewKey);
+			setRenderedOriginalKey(null);
+			setRequestedOriginalKey(null);
+		},
+		[previewKey],
+	);
 
 	useEffect(() => {
 		if (
@@ -258,7 +289,6 @@ export function ImagePreviewPanel({
 					onPointerMove={handlePointerMove}
 					onPointerUp={handlePointerEnd}
 					onPointerCancel={handlePointerEnd}
-					onWheel={handleWheel}
 				>
 					<BlobImagePreview
 						file={file}
@@ -269,6 +299,8 @@ export function ImagePreviewPanel({
 						viewportRef={viewportRef}
 						source={effectiveSource}
 						showOriginalButtonPlacement="none"
+						onImageLoad={handleImageLoad}
+						onImageRenderError={handleImageRenderError}
 						viewportClassName="flex h-full min-h-0 w-full items-center justify-center overflow-hidden px-4 py-16 sm:px-8"
 						imageClassName="block max-h-full max-w-full min-w-0 touch-none select-none object-contain"
 						imageStyle={imageStyle}
@@ -466,7 +498,7 @@ function OriginalImageButton({
 			className={cn(
 				"flex origin-left items-center overflow-hidden transition-[max-width,opacity,transform] duration-[260ms] ease-out",
 				visible
-					? "max-w-28 translate-x-0 opacity-100"
+					? "max-w-40 translate-x-0 opacity-100"
 					: "max-w-0 translate-x-2 opacity-0",
 			)}
 		>

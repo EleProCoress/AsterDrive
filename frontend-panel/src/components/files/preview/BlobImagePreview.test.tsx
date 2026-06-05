@@ -243,7 +243,7 @@ describe("BlobImagePreview", () => {
 		expect(originalButton.querySelector("svg")).toHaveClass("animate-spin");
 	});
 
-	it("switches to the original only after the original blob is ready", async () => {
+	it("switches to the original after the original blob is ready and hides the button after render", async () => {
 		mockState.imagePreviewPreference = "preview_first";
 		let originalReady = false;
 		mockState.useBlobUrl.mockImplementation((path: string | null) => {
@@ -299,8 +299,73 @@ describe("BlobImagePreview", () => {
 			),
 		);
 		expect(
+			screen.getByRole("button", { name: "preview_show_original" }),
+		).toBeDisabled();
+		fireEvent.load(screen.getByRole("img", { name: "preview.png" }));
+		expect(
 			screen.queryByRole("button", { name: "preview_show_original" }),
 		).not.toBeInTheDocument();
+	});
+
+	it("falls back to the backend preview when the downloaded original cannot render", async () => {
+		mockState.imagePreviewPreference = "preview_first";
+		let originalReady = false;
+		mockState.useBlobUrl.mockImplementation((path: string | null) => {
+			if (path === null) {
+				return {
+					blobUrl: null,
+					error: false,
+					loading: false,
+					retry: mockState.retry,
+				};
+			}
+			return {
+				blobUrl: path.includes("image-preview")
+					? "blob:medium"
+					: originalReady
+						? "blob:original"
+						: null,
+				error: false,
+				loading: path.includes("image-preview") ? false : !originalReady,
+				retry: mockState.retry,
+			};
+		});
+
+		const { rerender } = render(
+			<BlobImagePreview
+				file={file}
+				path="/files/1/download"
+				fallbackPath="/files/1/image-preview"
+			/>,
+		);
+
+		fireEvent.click(
+			screen.getByRole("button", { name: "preview_show_original" }),
+		);
+		originalReady = true;
+		rerender(
+			<BlobImagePreview
+				file={file}
+				path="/files/1/download"
+				fallbackPath="/files/1/image-preview"
+			/>,
+		);
+
+		await waitFor(() =>
+			expect(screen.getByRole("img", { name: "preview.png" })).toHaveAttribute(
+				"src",
+				"blob:original",
+			),
+		);
+		fireEvent.error(screen.getByRole("img", { name: "preview.png" }));
+
+		expect(screen.getByRole("img", { name: "preview.png" })).toHaveAttribute(
+			"src",
+			"blob:medium",
+		);
+		expect(
+			screen.getByRole("button", { name: "preview_show_original" }),
+		).toBeEnabled();
 	});
 
 	it("uses a controlled source without starting the inline original request flow", () => {
@@ -383,6 +448,47 @@ describe("BlobImagePreview", () => {
 		).toBeEnabled();
 	});
 
+	it("retries the original request when the show-original flow failed", () => {
+		mockState.imagePreviewPreference = "preview_first";
+		mockState.useBlobUrl.mockImplementation((path: string | null) => {
+			if (path === null) {
+				return {
+					blobUrl: null,
+					error: false,
+					loading: false,
+					retry: mockState.retry,
+				};
+			}
+			return {
+				blobUrl: path.includes("image-preview") ? "blob:medium" : null,
+				error: !path.includes("image-preview"),
+				loading: false,
+				retry: mockState.retry,
+			};
+		});
+
+		render(
+			<BlobImagePreview
+				file={file}
+				path="/files/1/download"
+				fallbackPath="/files/1/image-preview"
+			/>,
+		);
+
+		fireEvent.click(
+			screen.getByRole("button", { name: "preview_show_original" }),
+		);
+		fireEvent.click(
+			screen.getByRole("button", { name: "preview_show_original" }),
+		);
+
+		expect(mockState.retry).toHaveBeenCalledTimes(1);
+		expect(screen.getByRole("img", { name: "preview.png" })).toHaveAttribute(
+			"src",
+			"blob:medium",
+		);
+	});
+
 	it("does not download the original automatically when the backend preview loading fails", () => {
 		mockState.imagePreviewPreference = "preview_first";
 		mockState.useBlobUrl.mockImplementation((path: string | null) => {
@@ -443,6 +549,21 @@ describe("BlobImagePreview", () => {
 			lane: "default",
 		});
 		expect(screen.getByText("preview_load_failed")).toBeInTheDocument();
+	});
+
+	it("clears image render failure before retrying the selected source", () => {
+		render(<BlobImagePreview file={file} path="/files/1/download" />);
+
+		fireEvent.error(screen.getByRole("img", { name: "preview.png" }));
+		expect(screen.getByText("preview_load_failed")).toBeInTheDocument();
+
+		fireEvent.click(screen.getByRole("button", { name: "preview_retry" }));
+
+		expect(mockState.retry).toHaveBeenCalledTimes(1);
+		expect(screen.getByRole("img", { name: "preview.png" })).toHaveAttribute(
+			"src",
+			"blob:image",
+		);
 	});
 
 	it("does not switch sources automatically on image render errors", () => {

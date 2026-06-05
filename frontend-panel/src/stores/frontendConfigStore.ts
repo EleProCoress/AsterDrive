@@ -6,7 +6,10 @@ import {
 	resolveBranding,
 } from "@/lib/branding";
 import { logger } from "@/lib/logger";
-import { setPublicSiteUrls } from "@/lib/publicSiteUrl";
+import {
+	normalizePublicSiteUrls,
+	setPublicSiteUrls,
+} from "@/lib/publicSiteUrl";
 import { frontendConfigService } from "@/services/frontendConfigService";
 import type {
 	PublicBranding,
@@ -87,6 +90,8 @@ function isFrontendConfig(value: unknown): value is PublicFrontendConfig {
 }
 
 function readCachedFrontendConfig(): CachedFrontendConfigPayload | null {
+	if (typeof window === "undefined") return null;
+
 	try {
 		const raw = localStorage.getItem(FRONTEND_CONFIG_CACHE_KEY);
 		if (!raw) return null;
@@ -115,6 +120,8 @@ function readCachedFrontendConfig(): CachedFrontendConfigPayload | null {
 }
 
 function writeCachedFrontendConfig(config: PublicFrontendConfig) {
+	if (typeof window === "undefined") return;
+
 	try {
 		localStorage.setItem(
 			FRONTEND_CONFIG_CACHE_KEY,
@@ -129,6 +136,8 @@ function writeCachedFrontendConfig(config: PublicFrontendConfig) {
 }
 
 function clearCachedFrontendConfig() {
+	if (typeof window === "undefined") return;
+
 	try {
 		localStorage.removeItem(FRONTEND_CONFIG_CACHE_KEY);
 	} catch {
@@ -177,11 +186,8 @@ const initialCachedPayload = readCachedFrontendConfig();
 const initialCachedConfig = initialCachedPayload?.config ?? null;
 const initialBranding = resolveBranding(initialCachedConfig?.branding ?? null);
 const initialSiteUrl = initialCachedConfig
-	? setPublicSiteUrls(initialCachedConfig.branding.site_urls)
+	? (normalizePublicSiteUrls(initialCachedConfig.branding.site_urls)[0] ?? null)
 	: null;
-if (initialCachedConfig) {
-	applyBranding(initialBranding);
-}
 
 export const useFrontendConfigStore = create<FrontendConfigState>(
 	(set, get) => ({
@@ -237,6 +243,13 @@ export const useFrontendConfigStore = create<FrontendConfigState>(
 		},
 	}),
 );
+
+export function initFrontendConfigRuntime() {
+	if (typeof window === "undefined" || !initialCachedConfig) return;
+	const siteUrl = setPublicSiteUrls(initialCachedConfig.branding.site_urls);
+	applyBranding(initialBranding);
+	useFrontendConfigStore.setState({ siteUrl });
+}
 
 export function setFrontendSiteUrlState(siteUrl: string | null) {
 	useFrontendConfigStore.setState({ siteUrl });

@@ -103,7 +103,10 @@ describe("mediaDataSupportStore", () => {
 	it("ignores stale unversioned cached support", async () => {
 		localStorage.setItem(
 			"aster-cached-media-data-support",
-			JSON.stringify({ config: supportConfig, cachedAt: Date.now() }),
+			JSON.stringify({
+				config: { ...supportConfig, max_source_bytes: 128 },
+				cachedAt: Date.now(),
+			}),
 		);
 		mockState.get.mockResolvedValue(supportConfig);
 

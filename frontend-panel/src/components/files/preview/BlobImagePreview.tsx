@@ -16,6 +16,8 @@ interface BlobImagePreviewProps {
 	imageClassName?: string;
 	imageRef?: Ref<HTMLImageElement>;
 	imageStyle?: CSSProperties;
+	onImageLoad?: (source: ImagePreviewSource) => void;
+	onImageRenderError?: (source: ImagePreviewSource) => void;
 	path: string;
 	source?: ImagePreviewSource;
 	showOriginalButtonPlacement?: "inline" | "none";
@@ -40,6 +42,8 @@ export function BlobImagePreview({
 	imageClassName: imageClassNameProp,
 	imageRef,
 	imageStyle,
+	onImageLoad,
+	onImageRenderError,
 	path,
 	source,
 	showOriginalButtonPlacement = "inline",
@@ -56,7 +60,15 @@ export function BlobImagePreview({
 	const [requestedOriginalKey, setRequestedOriginalKey] = useState<
 		string | null
 	>(null);
+	const [renderedOriginalKey, setRenderedOriginalKey] = useState<string | null>(
+		null,
+	);
+	const [failedOriginalKey, setFailedOriginalKey] = useState<string | null>(
+		null,
+	);
 	const requestedOriginal = requestedOriginalKey === previewKey;
+	const originalRenderedSuccessfully = renderedOriginalKey === previewKey;
+	const originalRenderFailed = failedOriginalKey === previewKey;
 	const canShowOriginal =
 		imagePreviewPreference === "preview_first" && fallbackPath != null;
 	const baseSource: ImagePreviewSource =
@@ -78,7 +90,10 @@ export function BlobImagePreview({
 	const originalReady =
 		shouldLoadOriginal && originalBlobUrl && !originalLoading && !originalError;
 	const displaySource: ImagePreviewSource =
-		!isControlledSource && baseSource === "backend_preview" && originalReady
+		!isControlledSource &&
+		baseSource === "backend_preview" &&
+		originalReady &&
+		!originalRenderFailed
 			? "original"
 			: baseSource;
 	const displayPath: string | null =
@@ -95,14 +110,16 @@ export function BlobImagePreview({
 		!isControlledSource &&
 		canShowOriginal &&
 		baseSource === "backend_preview" &&
-		displaySource === "backend_preview";
+		!originalRenderedSuccessfully;
 	const showOriginalState: ShowOriginalState = canRequestOriginal
-		? originalReady
+		? originalRenderedSuccessfully
 			? "success"
 			: requestedOriginal && !originalError
 				? "loading"
 				: "available"
-		: canShowOriginal && displaySource === "original"
+		: canShowOriginal &&
+				displaySource === "original" &&
+				originalRenderedSuccessfully
 			? "success"
 			: "hidden";
 	const imageContainerClass =
@@ -121,7 +138,24 @@ export function BlobImagePreview({
 				: "block max-h-[min(70vh,48rem)] max-w-full min-w-0 object-contain");
 
 	const handleImageError = () => {
+		onImageRenderError?.(displaySource);
+		if (
+			!isControlledSource &&
+			displaySource === "original" &&
+			canShowOriginal
+		) {
+			setFailedOriginalKey(previewKey);
+			setRequestedOriginalKey(null);
+			return;
+		}
 		setImageRenderFailedKey(imageRenderKey);
+	};
+
+	const handleImageLoad = () => {
+		onImageLoad?.(displaySource);
+		if (!isControlledSource && displaySource === "original") {
+			setRenderedOriginalKey(previewKey);
+		}
 	};
 
 	const handleRetry = () => {
@@ -131,6 +165,7 @@ export function BlobImagePreview({
 
 	const handleShowOriginal = () => {
 		setImageRenderFailedKey(null);
+		setFailedOriginalKey(null);
 		if (requestedOriginal && originalError) {
 			retryOriginal();
 			return;
@@ -168,6 +203,7 @@ export function BlobImagePreview({
 				alt={file.name}
 				draggable={false}
 				onError={handleImageError}
+				onLoad={handleImageLoad}
 				className={imageClass}
 				style={imageStyle}
 			/>

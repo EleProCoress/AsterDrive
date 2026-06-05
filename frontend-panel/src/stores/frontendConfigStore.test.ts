@@ -22,10 +22,14 @@ vi.mock("@/lib/branding", async (importOriginal) => {
 	};
 });
 
-vi.mock("@/lib/publicSiteUrl", () => ({
-	setPublicSiteUrls: (...args: unknown[]) =>
-		mockState.setPublicSiteUrls(...args),
-}));
+vi.mock("@/lib/publicSiteUrl", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("@/lib/publicSiteUrl")>();
+	return {
+		...actual,
+		setPublicSiteUrls: (...args: unknown[]) =>
+			mockState.setPublicSiteUrls(...args),
+	};
+});
 
 vi.mock("@/lib/logger", () => ({
 	logger: {
@@ -112,12 +116,24 @@ describe("frontendConfigStore", () => {
 		);
 		mockState.get.mockResolvedValue(frontendConfig);
 
-		const { FRONTEND_CONFIG_CACHE_KEY, useFrontendConfigStore } =
-			await loadStore();
+		const {
+			FRONTEND_CONFIG_CACHE_KEY,
+			initFrontendConfigRuntime,
+			useFrontendConfigStore,
+		} = await loadStore();
 
 		expect(useFrontendConfigStore.getState().config).toEqual(cachedConfig);
 		expect(useFrontendConfigStore.getState().imagePreviewPreference).toBe(
 			"preview_first",
+		);
+		expect(mockState.applyBranding).not.toHaveBeenCalled();
+		expect(mockState.setPublicSiteUrls).not.toHaveBeenCalled();
+
+		initFrontendConfigRuntime();
+
+		expect(mockState.applyBranding).toHaveBeenCalledTimes(1);
+		expect(mockState.setPublicSiteUrls).toHaveBeenCalledWith(
+			branding.site_urls,
 		);
 
 		await useFrontendConfigStore.getState().load();
@@ -147,6 +163,64 @@ describe("frontendConfigStore", () => {
 		expect(localStorage.getItem(FRONTEND_CONFIG_CACHE_KEY)).toBeNull();
 	});
 
+	it("drops cached configs with invalid branding shape", async () => {
+		localStorage.setItem(
+			"aster-cached-frontend-config:v1",
+			JSON.stringify({
+				config: {
+					...frontendConfig,
+					branding: {
+						...branding,
+						site_urls: ["https://drive.example", 42],
+					},
+				},
+				cachedAt: Date.now(),
+			}),
+		);
+
+		const { FRONTEND_CONFIG_CACHE_KEY, useFrontendConfigStore } =
+			await loadStore();
+
+		expect(useFrontendConfigStore.getState().config).toBeNull();
+		expect(useFrontendConfigStore.getState().imagePreviewPreference).toBe(
+			"original_first",
+		);
+		expect(localStorage.getItem(FRONTEND_CONFIG_CACHE_KEY)).toBeNull();
+	});
+
+	it("treats cached payloads without a finite timestamp as stale but usable", async () => {
+		const cachedConfig = {
+			...frontendConfig,
+			media: { image_preview_preference: "preview_first" },
+		};
+		localStorage.setItem(
+			"aster-cached-frontend-config:v1",
+			JSON.stringify({ config: cachedConfig, cachedAt: "yesterday" }),
+		);
+
+		const { useFrontendConfigStore } = await loadStore();
+
+		expect(useFrontendConfigStore.getState().config).toEqual(cachedConfig);
+		expect(useFrontendConfigStore.getState().imagePreviewPreference).toBe(
+			"preview_first",
+		);
+	});
+
+	it("recovers when removing a corrupt cached config also fails", async () => {
+		localStorage.setItem("aster-cached-frontend-config:v1", "{bad json");
+		const removeItemSpy = vi
+			.spyOn(Storage.prototype, "removeItem")
+			.mockImplementation(() => {
+				throw new Error("storage locked");
+			});
+
+		const { useFrontendConfigStore } = await loadStore();
+
+		expect(useFrontendConfigStore.getState().config).toBeNull();
+		expect(useFrontendConfigStore.getState().isLoaded).toBe(false);
+		removeItemSpy.mockRestore();
+	});
+
 	it("uses safe defaults when bootstrap fails without cached config", async () => {
 		mockState.get.mockRejectedValueOnce(new Error("offline"));
 
@@ -164,6 +238,63 @@ describe("frontendConfigStore", () => {
 			"original_first",
 		);
 		expect(useFrontendConfigStore.getState().isLoaded).toBe(true);
+	});
+
+	it("keeps a loaded cached config when revalidation fails", async () => {
+		localStorage.setItem(
+			"aster-cached-frontend-config:v1",
+			JSON.stringify({ config: frontendConfig, cachedAt: Date.now() }),
+		);
+		mockState.get.mockRejectedValueOnce(new Error("offline"));
+
+		const { useFrontendConfigStore } = await loadStore();
+
+		await useFrontendConfigStore.getState().load({ force: true });
+
+		expect(mockState.warn).toHaveBeenCalledTimes(1);
+		expect(useFrontendConfigStore.getState().config).toEqual(frontendConfig);
+		expect(useFrontendConfigStore.getState().isLoaded).toBe(true);
+	});
+
+	it("clears cached config and resets public frontend state on invalidate", async () => {
+		mockState.get.mockResolvedValue(frontendConfig);
+
+		const { FRONTEND_CONFIG_CACHE_KEY, useFrontendConfigStore } =
+			await loadStore();
+
+		await useFrontendConfigStore.getState().load();
+		expect(localStorage.getItem(FRONTEND_CONFIG_CACHE_KEY)).not.toBeNull();
+
+		useFrontendConfigStore.getState().invalidate();
+
+		expect(localStorage.getItem(FRONTEND_CONFIG_CACHE_KEY)).toBeNull();
+		expect(useFrontendConfigStore.getState().config).toBeNull();
+		expect(useFrontendConfigStore.getState().isLoaded).toBe(false);
+		expect(useFrontendConfigStore.getState().siteUrl).toBeNull();
+		expect(useFrontendConfigStore.getState().imagePreviewPreference).toBe(
+			"original_first",
+		);
+	});
+
+	it("reuses an in-flight frontend config load", async () => {
+		let resolveConfig: (config: typeof frontendConfig) => void = () => {};
+		mockState.get.mockImplementation(
+			() =>
+				new Promise((resolve) => {
+					resolveConfig = resolve;
+				}),
+		);
+
+		const { useFrontendConfigStore } = await loadStore();
+		const firstLoad = useFrontendConfigStore.getState().load();
+		const secondLoad = useFrontendConfigStore.getState().load();
+
+		expect(mockState.get).toHaveBeenCalledTimes(1);
+
+		resolveConfig(frontendConfig);
+		await Promise.all([firstLoad, secondLoad]);
+
+		expect(useFrontendConfigStore.getState().config).toEqual(frontendConfig);
 	});
 
 	it("starts a forced refresh instead of reusing the freshness window", async () => {

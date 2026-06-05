@@ -2,28 +2,17 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
+import { useShallow } from "zustand/react/shallow";
 import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import { handleApiError } from "@/hooks/useApiError";
 import { logger } from "@/lib/logger";
-import {
-	getPublicSiteUrls,
-	normalizePublicSiteUrl,
-	setPublicSiteUrls,
-} from "@/lib/publicSiteUrl";
+import { getPublicSiteUrls, normalizePublicSiteUrl } from "@/lib/publicSiteUrl";
+import { syncPublicSiteUrlsAndUpdateStore } from "@/lib/publicSiteUrlRuntime";
 import { adminConfigService } from "@/services/adminService";
-import {
-	setFrontendSiteUrlState,
-	useFrontendConfigStore,
-} from "@/stores/frontendConfigStore";
+import { useFrontendConfigStore } from "@/stores/frontendConfigStore";
 
 const PUBLIC_SITE_URL_KEY = "public_site_url";
 const ADMIN_SITE_SETTINGS_PATH = "/admin/settings/site";
-
-function syncPublicSiteUrlRuntime(value: string[] | null | undefined) {
-	const siteUrl = setPublicSiteUrls(value);
-	setFrontendSiteUrlState(siteUrl);
-	return getPublicSiteUrls();
-}
 
 function normalizeConfigValue(value: unknown) {
 	if (typeof value === "string") {
@@ -46,10 +35,12 @@ function normalizeConfigValue(value: unknown) {
 export function AdminSiteUrlMismatchPrompt() {
 	const { t } = useTranslation("admin");
 	const navigate = useNavigate();
-	const isFrontendConfigLoaded = useFrontendConfigStore(
-		(state) => state.isLoaded,
+	const { configuredSiteUrl, isFrontendConfigLoaded } = useFrontendConfigStore(
+		useShallow((state) => ({
+			configuredSiteUrl: state.siteUrl,
+			isFrontendConfigLoaded: state.isLoaded,
+		})),
 	);
-	const configuredSiteUrl = useFrontendConfigStore((state) => state.siteUrl);
 	const siteUrlPromptCheckedRef = useRef(false);
 	const [siteUrlMismatchDialogOpen, setSiteUrlMismatchDialogOpen] =
 		useState(false);
@@ -87,7 +78,7 @@ export function AdminSiteUrlMismatchPrompt() {
 				if (cancelled) return;
 
 				siteUrlPromptCheckedRef.current = true;
-				const configuredOrigins = syncPublicSiteUrlRuntime(
+				const configuredOrigins = syncPublicSiteUrlsAndUpdateStore(
 					normalizeConfigValue(config.value),
 				);
 				if (configuredOrigins.includes(currentOrigin)) {
@@ -133,7 +124,7 @@ export function AdminSiteUrlMismatchPrompt() {
 				PUBLIC_SITE_URL_KEY,
 				nextValue,
 			);
-			syncPublicSiteUrlRuntime(
+			syncPublicSiteUrlsAndUpdateStore(
 				Array.isArray(savedConfig.value) ? savedConfig.value : [],
 			);
 			toast.success(t("settings_saved"));
