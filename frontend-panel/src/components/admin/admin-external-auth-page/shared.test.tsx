@@ -114,6 +114,7 @@ function provider(
 		id: 1,
 		issuer_url: "https://idp.example.com",
 		key: "example",
+		options: {},
 		protocol: "oidc",
 		provider_kind: "oidc",
 		require_email_verified: true,
@@ -418,7 +419,12 @@ describe("admin external auth shared helpers", () => {
 		).toBe("");
 		expect(createPayload(form, descriptor)).toMatchObject({
 			authorization_url: null,
-			issuer_url: "https://login.microsoftonline.com/organizations/v2.0",
+			issuer_url: null,
+			options: {
+				microsoft: {
+					tenant: "organizations",
+				},
+			},
 			provider_kind: "microsoft",
 			require_email_verified: true,
 			scopes: "openid profile email",
@@ -446,8 +452,12 @@ describe("admin external auth shared helpers", () => {
 				descriptor,
 			),
 		).toMatchObject({
-			issuer_url:
-				"https://login.microsoftonline.com/11111111-2222-3333-4444-555555555555/v2.0",
+			issuer_url: null,
+			options: {
+				microsoft: {
+					tenant: "11111111-2222-3333-4444-555555555555",
+				},
+			},
 		});
 		expect(shouldShowIssuerUrl(descriptor)).toBe(false);
 		expect(formConnectionSummary(form, descriptor)).toBe(
@@ -459,7 +469,12 @@ describe("admin external auth shared helpers", () => {
 		expect(
 			formFromProvider(
 				provider({
-					issuer_url: "https://login.microsoftonline.com/common/v2.0",
+					issuer_url: null,
+					options: {
+						microsoft: {
+							tenant: "common",
+						},
+					},
 					provider_kind: "microsoft",
 				}),
 			),
@@ -471,8 +486,12 @@ describe("admin external auth shared helpers", () => {
 		expect(
 			formFromProvider(
 				provider({
-					issuer_url:
-						"https://login.microsoftonline.com/11111111-2222-3333-4444-555555555555/v2.0",
+					issuer_url: null,
+					options: {
+						microsoft: {
+							tenant: "11111111-2222-3333-4444-555555555555",
+						},
+					},
 					provider_kind: "microsoft",
 				}),
 			),

@@ -1,7 +1,10 @@
 //! 外部认证 provider driver trait。
 
 use crate::errors::{AsterError, Result};
-use crate::types::{ExternalAuthProtocol, ExternalAuthProviderKind};
+use crate::types::{
+    ExternalAuthProtocol, ExternalAuthProviderKind, ExternalAuthProviderOptions,
+    parse_external_auth_provider_options,
+};
 use async_trait::async_trait;
 use serde::Serialize;
 use std::fmt;
@@ -29,6 +32,7 @@ pub struct ExternalAuthProviderConfig {
     pub key: String,
     pub provider_kind: ExternalAuthProviderKind,
     pub protocol: ExternalAuthProtocol,
+    pub options: ExternalAuthProviderOptions,
     pub issuer_url: Option<String>,
     pub authorization_url: Option<String>,
     pub token_url: Option<String>,
@@ -52,6 +56,7 @@ impl fmt::Debug for ExternalAuthProviderConfig {
             .field("key", &self.key)
             .field("provider_kind", &self.provider_kind)
             .field("protocol", &self.protocol)
+            .field("options", &self.options)
             .field("issuer_url", &self.issuer_url)
             .field("authorization_url", &self.authorization_url)
             .field("token_url", &self.token_url)
@@ -80,6 +85,7 @@ impl ExternalAuthProviderConfig {
             key: provider.key.clone(),
             provider_kind: provider.provider_kind,
             protocol: provider.protocol,
+            options: parse_external_auth_provider_options(provider.options.as_ref()),
             issuer_url: provider.issuer_url.clone(),
             authorization_url: provider.authorization_url.clone(),
             token_url: provider.token_url.clone(),

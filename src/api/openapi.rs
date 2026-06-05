@@ -532,6 +532,8 @@ use utoipa::{Modify, OpenApi};
             crate::services::external_auth_service::ExternalAuthPasswordLinkRequest,
             crate::services::external_auth_service::ExternalAuthEmailVerificationStartResponse,
             crate::services::external_auth_service::ExternalAuthEmailVerificationConfirmQuery,
+            crate::types::ExternalAuthProviderOptions,
+            crate::types::MicrosoftExternalAuthProviderOptions,
             crate::types::ExternalAuthProviderKind,
             crate::types::ExternalAuthProtocol,
             crate::services::mfa_service::MfaChallengeVerifyRequest,

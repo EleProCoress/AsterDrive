@@ -9,6 +9,7 @@ pub mod audit;
 pub mod auth;
 pub mod config;
 pub mod entity;
+pub mod external_auth_provider;
 mod facade;
 pub mod file_category;
 pub mod mail;

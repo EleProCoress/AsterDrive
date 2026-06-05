@@ -6,7 +6,9 @@ use std::fmt;
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::ToSchema;
 
-use crate::types::{ExternalAuthProtocol, ExternalAuthProviderKind};
+use crate::types::{
+    ExternalAuthProtocol, ExternalAuthProviderKind, StoredExternalAuthProviderOptions,
+};
 
 #[derive(Clone, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
@@ -19,6 +21,8 @@ pub struct Model {
     pub icon_url: Option<String>,
     pub provider_kind: ExternalAuthProviderKind,
     pub protocol: ExternalAuthProtocol,
+    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
+    pub options: StoredExternalAuthProviderOptions,
     pub issuer_url: Option<String>,
     pub authorization_url: Option<String>,
     pub token_url: Option<String>,
@@ -54,6 +58,7 @@ impl fmt::Debug for Model {
             .field("icon_url", &self.icon_url)
             .field("provider_kind", &self.provider_kind)
             .field("protocol", &self.protocol)
+            .field("options", &self.options)
             .field("issuer_url", &self.issuer_url)
             .field("authorization_url", &self.authorization_url)
             .field("token_url", &self.token_url)

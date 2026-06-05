@@ -160,7 +160,8 @@ export function formFromProvider(
 	provider: AdminExternalAuthProviderInfo,
 ): ExternalAuthProviderFormData {
 	const microsoftTenant = isMicrosoftProviderKind(provider.provider_kind)
-		? microsoftTenantFromIssuerUrl(provider.issuer_url) ||
+		? provider.options.microsoft?.tenant ||
+			microsoftTenantFromIssuerUrl(provider.issuer_url) ||
 			MICROSOFT_DEFAULT_TENANT
 		: MICROSOFT_DEFAULT_TENANT;
 	return {
@@ -383,10 +384,26 @@ function formMicrosoftTenantValue(form: ExternalAuthProviderFormData) {
 }
 
 function formIssuerUrlForPayload(form: ExternalAuthProviderFormData) {
-	if (isMicrosoftProviderKind(form.providerKind)) {
-		return microsoftIssuerUrlForTenant(formMicrosoftTenantValue(form));
+	if (
+		isGitHubProviderKind(form.providerKind) ||
+		isGoogleProviderKind(form.providerKind) ||
+		isMicrosoftProviderKind(form.providerKind) ||
+		isQqProviderKind(form.providerKind)
+	) {
+		return null;
 	}
 	return nullableText(form.issuerUrl);
+}
+
+function formOptionsForPayload(form: ExternalAuthProviderFormData) {
+	if (!isMicrosoftProviderKind(form.providerKind)) {
+		return {};
+	}
+	return {
+		microsoft: {
+			tenant: formMicrosoftTenantValue(form) || MICROSOFT_DEFAULT_TENANT,
+		},
+	};
 }
 
 function isRedactedSecret(value: string) {
@@ -450,6 +467,7 @@ export function createPayload(
 		groups_claim: nullableText(form.groupsClaim),
 		icon_url: nullableText(form.iconUrl),
 		issuer_url: formIssuerUrlForPayload(form),
+		options: formOptionsForPayload(form),
 		provider_kind: form.providerKind,
 		require_email_verified: form.requireEmailVerified,
 		scopes: form.scopes.trim() || defaultScopesForKind(selectedKind),
@@ -483,6 +501,7 @@ export function updatePayload(
 		groups_claim: nullableText(form.groupsClaim),
 		icon_url: nullableText(form.iconUrl),
 		issuer_url: formIssuerUrlForPayload(form),
+		options: formOptionsForPayload(form),
 		require_email_verified: form.requireEmailVerified,
 		scopes: form.scopes.trim() || defaultScopesForKind(selectedKind),
 		subject_claim: nullableText(form.subjectClaim),
@@ -501,6 +520,7 @@ export function testParamsPayload(
 		client_id: form.clientId.trim(),
 		client_secret: nullableSecretText(form.clientSecret),
 		issuer_url: formIssuerUrlForPayload(form),
+		options: formOptionsForPayload(form),
 		provider_kind: form.providerKind,
 		scopes: form.scopes.trim() || defaultScopesForKind(selectedKind),
 		token_url: nullableText(form.tokenUrl),
@@ -528,13 +548,19 @@ export function formConnectionChanged(
 	selectedKind?: AdminExternalAuthProviderKindInfo | null,
 ) {
 	const defaultScopes = defaultScopesForKind(selectedKind);
-	const formIssuerUrl = isMicrosoftProviderKind(form.providerKind)
-		? microsoftIssuerUrlForTenant(formMicrosoftTenantValue(form))
-		: form.issuerUrl;
+	const formIssuerUrl = formIssuerUrlForPayload(form) ?? "";
+	const providerIssuerUrl =
+		isMicrosoftProviderKind(provider.provider_kind) &&
+		provider.options.microsoft
+			? ""
+			: (provider.issuer_url ?? "");
 	return (
 		form.providerKind !== provider.provider_kind ||
 		normalizeConnectionValue(formIssuerUrl) !==
-			normalizeConnectionValue(provider.issuer_url) ||
+			normalizeConnectionValue(providerIssuerUrl) ||
+		(isMicrosoftProviderKind(form.providerKind) &&
+			formMicrosoftTenantValue(form) !==
+				(provider.options.microsoft?.tenant || MICROSOFT_DEFAULT_TENANT)) ||
 		normalizeConnectionValue(form.authorizationUrl) !==
 			normalizeConnectionValue(provider.authorization_url) ||
 		normalizeConnectionValue(form.tokenUrl) !==

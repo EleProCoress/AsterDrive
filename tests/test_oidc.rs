@@ -214,7 +214,6 @@ async fn admin_create_and_test_google_provider_uses_oidc_defaults() {
         .set_json(serde_json::json!({
             "provider_kind": "google",
             "display_name": "Google",
-            "issuer_url": mock_provider.issuer,
             "client_id": TEST_CLIENT_ID,
             "client_secret": "super-secret",
         }))
@@ -224,7 +223,8 @@ async fn admin_create_and_test_google_provider_uses_oidc_defaults() {
     let body: Value = test::read_body_json(resp).await;
     assert_eq!(body["data"]["provider_kind"], "google");
     assert_eq!(body["data"]["protocol"], "oidc");
-    assert_eq!(body["data"]["issuer_url"], mock_provider.issuer);
+    assert_eq!(body["data"]["issuer_url"], Value::Null);
+    assert_eq!(body["data"]["options"], serde_json::json!({}));
     assert_eq!(body["data"]["authorization_url"], Value::Null);
     assert_eq!(body["data"]["token_url"], Value::Null);
     assert_eq!(body["data"]["userinfo_url"], Value::Null);
@@ -275,7 +275,7 @@ async fn admin_create_and_test_microsoft_provider_uses_oidc_defaults() {
         .set_json(serde_json::json!({
             "provider_kind": "microsoft",
             "display_name": "Microsoft",
-            "issuer_url": "organizations",
+            "options": { "microsoft": { "tenant": "organizations" } },
             "authorization_url": "https://login.microsoftonline.com/common/oauth2/v2.0/authorize",
             "client_id": TEST_CLIENT_ID,
         }))
@@ -290,7 +290,7 @@ async fn admin_create_and_test_microsoft_provider_uses_oidc_defaults() {
         .set_json(serde_json::json!({
             "provider_kind": "microsoft",
             "display_name": "Microsoft",
-            "issuer_url": "organizations",
+            "options": { "microsoft": { "tenant": "organizations" } },
             "client_id": TEST_CLIENT_ID,
             "client_secret": "super-secret",
         }))
@@ -300,9 +300,10 @@ async fn admin_create_and_test_microsoft_provider_uses_oidc_defaults() {
     let body: Value = test::read_body_json(resp).await;
     assert_eq!(body["data"]["provider_kind"], "microsoft");
     assert_eq!(body["data"]["protocol"], "oidc");
+    assert_eq!(body["data"]["issuer_url"], Value::Null);
     assert_eq!(
-        body["data"]["issuer_url"],
-        "https://login.microsoftonline.com/organizations/v2.0"
+        body["data"]["options"]["microsoft"]["tenant"],
+        "organizations"
     );
     assert_eq!(body["data"]["authorization_url"], Value::Null);
     assert_eq!(body["data"]["token_url"], Value::Null);
@@ -339,6 +340,35 @@ async fn admin_create_and_test_microsoft_provider_uses_oidc_defaults() {
     assert_eq!(body["data"]["checks"][1]["name"], "jwks");
 
     server.stop(true).await;
+}
+
+#[actix_web::test]
+async fn admin_microsoft_provider_migrates_legacy_issuer_input_to_options() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (admin_token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/admin/external-auth/providers")
+        .insert_header(("Cookie", common::access_cookie_header(&admin_token)))
+        .insert_header(common::csrf_header_for(&admin_token))
+        .set_json(serde_json::json!({
+            "provider_kind": "microsoft",
+            "display_name": "Microsoft Legacy",
+            "issuer_url": "organizations",
+            "client_id": TEST_CLIENT_ID,
+            "client_secret": "super-secret",
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["provider_kind"], "microsoft");
+    assert_eq!(body["data"]["issuer_url"], Value::Null);
+    assert_eq!(
+        body["data"]["options"]["microsoft"]["tenant"],
+        "organizations"
+    );
 }
 
 #[actix_web::test]

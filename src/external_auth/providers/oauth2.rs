@@ -601,6 +601,7 @@ mod tests {
             key: "generic".to_string(),
             provider_kind: ExternalAuthProviderKind::GenericOAuth2,
             protocol: ExternalAuthProtocol::OAuth2,
+            options: Default::default(),
             issuer_url: None,
             authorization_url: Some("https://id.example.com/oauth/authorize".to_string()),
             token_url: Some("https://id.example.com/oauth/token".to_string()),

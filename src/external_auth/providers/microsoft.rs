@@ -111,6 +111,22 @@ pub fn normalize_microsoft_tenant_or_issuer_url(value: Option<String>) -> Result
     Ok(Some(microsoft_issuer_url_for_tenant(trimmed)))
 }
 
+pub fn normalize_microsoft_tenant_input(value: Option<String>) -> Result<String> {
+    let Some(value) = value else {
+        return Ok(MICROSOFT_DEFAULT_TENANT.to_string());
+    };
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return Ok(MICROSOFT_DEFAULT_TENANT.to_string());
+    }
+    if trimmed.starts_with("http://") || trimmed.starts_with("https://") {
+        return normalize_microsoft_issuer_url(trimmed)
+            .and_then(|issuer| microsoft_tenant_from_issuer_string(&issuer));
+    }
+    validate_microsoft_tenant(trimmed)?;
+    Ok(trimmed.to_string())
+}
+
 /// Applies fixed Microsoft defaults before delegating to the generic OIDC driver.
 ///
 /// Tests may still inject a loopback issuer so local mock OIDC servers can
@@ -121,7 +137,7 @@ fn microsoft_oidc_config(
     let mut provider = provider.clone();
     provider.provider_kind = ExternalAuthProviderKind::Microsoft;
     provider.protocol = ExternalAuthProtocol::Oidc;
-    provider.issuer_url = normalize_microsoft_tenant_or_issuer_url(provider.issuer_url.clone())?;
+    provider.issuer_url = Some(microsoft_effective_issuer_url(&provider)?);
     provider.authorization_url = None;
     provider.token_url = None;
     provider.userinfo_url = None;
@@ -138,6 +154,32 @@ fn microsoft_oidc_config(
     provider.email_verified_claim = None;
     provider.avatar_url_claim = None;
     Ok(provider)
+}
+
+fn microsoft_effective_issuer_url(provider: &ExternalAuthProviderConfig) -> Result<String> {
+    if let Some(tenant) = provider
+        .options
+        .microsoft
+        .as_ref()
+        .map(|options| options.tenant.trim())
+        .filter(|tenant| !tenant.is_empty())
+    {
+        validate_microsoft_tenant(tenant)?;
+        return Ok(microsoft_issuer_url_for_tenant(tenant));
+    }
+
+    let Some(issuer_url) = provider.issuer_url.as_deref() else {
+        return Ok(microsoft_issuer_url_for_tenant(MICROSOFT_DEFAULT_TENANT));
+    };
+    let issuer_url = issuer_url.trim();
+    if issuer_url.is_empty() {
+        return Ok(microsoft_issuer_url_for_tenant(MICROSOFT_DEFAULT_TENANT));
+    }
+    if issuer_url.starts_with("http://") || issuer_url.starts_with("https://") {
+        return normalize_microsoft_issuer_url(issuer_url);
+    }
+    normalize_microsoft_tenant_or_issuer_url(Some(issuer_url.to_string()))?
+        .ok_or_else(|| AsterError::validation_error("Microsoft issuer URL is missing"))
 }
 
 async fn exchange_microsoft_callback(
@@ -394,6 +436,12 @@ fn microsoft_tenant_from_issuer_url(parsed: &reqwest::Url) -> Result<&str> {
     Ok(segments[0])
 }
 
+fn microsoft_tenant_from_issuer_string(value: &str) -> Result<String> {
+    let parsed = reqwest::Url::parse(value)
+        .map_aster_err_ctx("invalid Microsoft issuer URL", AsterError::validation_error)?;
+    microsoft_tenant_from_issuer_url(&parsed).map(str::to_string)
+}
+
 /// Validates the issuer returned by the ID token against Microsoft tenant rules.
 ///
 /// Concrete tenant issuers must match exactly. Multi-tenant aliases such as
@@ -493,6 +541,7 @@ mod tests {
             key: "microsoft".to_string(),
             provider_kind: ExternalAuthProviderKind::Microsoft,
             protocol: ExternalAuthProtocol::Oidc,
+            options: Default::default(),
             issuer_url: None,
             authorization_url: Some("https://ignored.example.com/auth".to_string()),
             token_url: Some("https://ignored.example.com/token".to_string()),

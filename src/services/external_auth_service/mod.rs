@@ -15,7 +15,9 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 
 use crate::entities::user;
-use crate::types::{ExternalAuthProtocol, ExternalAuthProviderKind, NullablePatch};
+use crate::types::{
+    ExternalAuthProtocol, ExternalAuthProviderKind, ExternalAuthProviderOptions, NullablePatch,
+};
 
 pub use links::{cleanup_expired_flows, delete_link, list_links};
 pub use login::{finish_callback, start_login};
@@ -160,6 +162,7 @@ pub struct AdminExternalAuthProviderInfo {
     pub protocol: ExternalAuthProtocol,
     pub display_name: String,
     pub icon_url: Option<String>,
+    pub options: ExternalAuthProviderOptions,
     pub issuer_url: Option<String>,
     pub authorization_url: Option<String>,
     pub token_url: Option<String>,
@@ -192,6 +195,7 @@ pub struct CreateExternalAuthProviderInput {
     pub provider_kind: ExternalAuthProviderKind,
     pub display_name: String,
     pub icon_url: Option<String>,
+    pub options: Option<ExternalAuthProviderOptions>,
     pub issuer_url: Option<String>,
     pub authorization_url: Option<String>,
     pub token_url: Option<String>,
@@ -262,6 +266,7 @@ pub struct UpdateExternalAuthProviderInput {
         schema(value_type = Option<String>)
     )]
     pub userinfo_url: Option<NullablePatch<String>>,
+    pub options: Option<ExternalAuthProviderOptions>,
     pub client_id: Option<String>,
     #[serde(
         default,
@@ -355,6 +360,7 @@ pub struct UpdateExternalAuthProviderInput {
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(utoipa::ToSchema))]
 pub struct ExternalAuthProviderTestParamsInput {
     pub provider_kind: ExternalAuthProviderKind,
+    pub options: Option<ExternalAuthProviderOptions>,
     pub issuer_url: Option<String>,
     pub authorization_url: Option<String>,
     pub token_url: Option<String>,
