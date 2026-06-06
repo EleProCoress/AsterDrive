@@ -31,9 +31,13 @@ pub async fn list_files(
     page: web::Query<LimitOffsetQuery>,
     query: web::Query<AdminFileListQuery>,
 ) -> Result<HttpResponse> {
-    let page =
-        admin_file_service::list_files(&state, page.limit_or(50, 100), page.offset(), &query)
-            .await?;
+    let page = admin_file_service::list_files(
+        state.get_ref(),
+        page.limit_or(50, 100),
+        page.offset(),
+        &query,
+    )
+    .await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(page)))
 }
 
@@ -55,7 +59,7 @@ pub async fn get_file(
     state: web::Data<PrimaryAppState>,
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
-    let file = admin_file_service::get_file(&state, *path).await?;
+    let file = admin_file_service::get_file(state.get_ref(), *path).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(file)))
 }
 
@@ -77,9 +81,13 @@ pub async fn list_file_blobs(
     page: web::Query<LimitOffsetQuery>,
     query: web::Query<AdminFileBlobListQuery>,
 ) -> Result<HttpResponse> {
-    let page =
-        admin_file_service::list_blobs(&state, page.limit_or(50, 100), page.offset(), &query)
-            .await?;
+    let page = admin_file_service::list_blobs(
+        state.get_ref(),
+        page.limit_or(50, 100),
+        page.offset(),
+        &query,
+    )
+    .await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(page)))
 }
 
@@ -101,7 +109,7 @@ pub async fn get_file_blob(
     state: web::Data<PrimaryAppState>,
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
-    let blob = admin_file_service::get_blob(&state, *path).await?;
+    let blob = admin_file_service::get_blob(state.get_ref(), *path).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(blob)))
 }
 
@@ -128,7 +136,7 @@ pub async fn create_blob_maintenance_task(
 ) -> Result<HttpResponse> {
     validate_request(&*body)?;
     let task = task_service::blob_maintenance::create_blob_maintenance_task_for_admin(
-        &state,
+        state.get_ref(),
         claims.user_id,
         body.action,
         body.blob_ids.clone(),
@@ -136,7 +144,7 @@ pub async fn create_blob_maintenance_task(
     .await?;
     let ctx = audit_service::AuditContext::from_request(&req, &claims);
     audit_service::log_with_details(
-        &state,
+        state.get_ref(),
         &ctx,
         audit_service::AuditAction::AdminCreateBlobMaintenanceTask,
         audit_service::AuditEntityType::Task,

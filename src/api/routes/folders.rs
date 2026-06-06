@@ -71,7 +71,7 @@ pub async fn create_folder(
     body: web::Json<CreateFolderReq>,
 ) -> Result<HttpResponse> {
     create_folder_response(
-        &state,
+        state.get_ref(),
         &claims,
         &req,
         WorkspaceStorageScope::Personal {
@@ -100,7 +100,7 @@ pub async fn list_root(
     query: web::Query<FolderListQuery>,
 ) -> Result<HttpResponse> {
     list_folder_response(
-        &state,
+        state.get_ref(),
         WorkspaceStorageScope::Personal {
             user_id: claims.user_id,
         },
@@ -130,7 +130,7 @@ pub async fn list_folder(
     query: web::Query<FolderListQuery>,
 ) -> Result<HttpResponse> {
     list_folder_response(
-        &state,
+        state.get_ref(),
         WorkspaceStorageScope::Personal {
             user_id: claims.user_id,
         },
@@ -159,7 +159,7 @@ pub async fn get_folder_info(
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
     get_folder_info_response(
-        &state,
+        state.get_ref(),
         WorkspaceStorageScope::Personal {
             user_id: claims.user_id,
         },
@@ -187,7 +187,7 @@ pub async fn get_ancestors(
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
     get_ancestors_response(
-        &state,
+        state.get_ref(),
         WorkspaceStorageScope::Personal {
             user_id: claims.user_id,
         },
@@ -216,7 +216,7 @@ pub async fn delete_folder(
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
     delete_folder_response(
-        &state,
+        state.get_ref(),
         &claims,
         &req,
         WorkspaceStorageScope::Personal {
@@ -249,7 +249,7 @@ pub async fn patch_folder(
     body: web::Json<PatchFolderReq>,
 ) -> Result<HttpResponse> {
     patch_folder_response(
-        &state,
+        state.get_ref(),
         &claims,
         &req,
         WorkspaceStorageScope::Personal {
@@ -285,7 +285,7 @@ pub async fn set_lock(
     body: web::Json<SetLockReq>,
 ) -> Result<HttpResponse> {
     set_lock_response(
-        &state,
+        state.get_ref(),
         &claims,
         &req,
         WorkspaceStorageScope::Personal {
@@ -321,7 +321,7 @@ pub async fn copy_folder(
     body: web::Json<CopyFolderReq>,
 ) -> Result<HttpResponse> {
     copy_folder_response(
-        &state,
+        state.get_ref(),
         &claims,
         &req,
         WorkspaceStorageScope::Personal {
@@ -355,7 +355,13 @@ pub(crate) async fn team_list_root(
     path: web::Path<i64>,
     query: web::Query<FolderListQuery>,
 ) -> Result<HttpResponse> {
-    list_folder_response(&state, team_scope(*path, claims.user_id), None, &query).await
+    list_folder_response(
+        state.get_ref(),
+        team_scope(*path, claims.user_id),
+        None,
+        &query,
+    )
+    .await
 }
 
 #[api_docs_macros::path(
@@ -380,7 +386,7 @@ pub(crate) async fn team_create_folder(
     body: web::Json<CreateFolderReq>,
 ) -> Result<HttpResponse> {
     create_folder_response(
-        &state,
+        state.get_ref(),
         &claims,
         &req,
         team_scope(*path, claims.user_id),
@@ -415,7 +421,7 @@ pub(crate) async fn team_list_folder(
 ) -> Result<HttpResponse> {
     let (team_id, folder_id) = path.into_inner();
     list_folder_response(
-        &state,
+        state.get_ref(),
         team_scope(team_id, claims.user_id),
         Some(folder_id),
         &query,
@@ -446,7 +452,12 @@ pub(crate) async fn team_get_folder_info(
     path: web::Path<(i64, i64)>,
 ) -> Result<HttpResponse> {
     let (team_id, folder_id) = path.into_inner();
-    get_folder_info_response(&state, team_scope(team_id, claims.user_id), folder_id).await
+    get_folder_info_response(
+        state.get_ref(),
+        team_scope(team_id, claims.user_id),
+        folder_id,
+    )
+    .await
 }
 
 #[api_docs_macros::path(
@@ -472,7 +483,12 @@ pub(crate) async fn team_get_ancestors(
     path: web::Path<(i64, i64)>,
 ) -> Result<HttpResponse> {
     let (team_id, folder_id) = path.into_inner();
-    get_ancestors_response(&state, team_scope(team_id, claims.user_id), folder_id).await
+    get_ancestors_response(
+        state.get_ref(),
+        team_scope(team_id, claims.user_id),
+        folder_id,
+    )
+    .await
 }
 
 #[api_docs_macros::path(
@@ -500,7 +516,7 @@ pub(crate) async fn team_delete_folder(
 ) -> Result<HttpResponse> {
     let (team_id, folder_id) = path.into_inner();
     delete_folder_response(
-        &state,
+        state.get_ref(),
         &claims,
         &req,
         team_scope(team_id, claims.user_id),
@@ -536,7 +552,7 @@ pub(crate) async fn team_patch_folder(
 ) -> Result<HttpResponse> {
     let (team_id, folder_id) = path.into_inner();
     patch_folder_response(
-        &state,
+        state.get_ref(),
         &claims,
         &req,
         team_scope(team_id, claims.user_id),
@@ -573,7 +589,7 @@ pub(crate) async fn team_copy_folder(
 ) -> Result<HttpResponse> {
     let (team_id, folder_id) = path.into_inner();
     copy_folder_response(
-        &state,
+        state.get_ref(),
         &claims,
         &req,
         team_scope(team_id, claims.user_id),
@@ -610,7 +626,7 @@ pub(crate) async fn team_set_lock(
 ) -> Result<HttpResponse> {
     let (team_id, folder_id) = path.into_inner();
     set_lock_response(
-        &state,
+        state.get_ref(),
         &claims,
         &req,
         team_scope(team_id, claims.user_id),

@@ -34,7 +34,7 @@ async fn bootstrap_public_site_url_from_setup(
     req: &HttpRequest,
     user_id: i64,
 ) {
-    if !site_url::public_site_urls(&state.runtime_config()).is_empty() {
+    if !site_url::public_site_urls(state.runtime_config()).is_empty() {
         return;
     }
 
@@ -69,8 +69,8 @@ async fn bootstrap_public_site_url_from_setup(
     ),
 )]
 pub async fn check(state: web::Data<PrimaryAppState>) -> Result<HttpResponse> {
-    let has_users = auth_service::check_auth_state(&state).await?;
-    let auth_policy = RuntimeAuthPolicy::from_runtime_config(&state.runtime_config());
+    let has_users = auth_service::check_auth_state(state.get_ref()).await?;
+    let auth_policy = RuntimeAuthPolicy::from_runtime_config(state.get_ref().runtime_config());
     Ok(HttpResponse::Ok().json(ApiResponse::ok(CheckResp {
         has_users,
         allow_user_registration: auth_policy.allow_user_registration,
@@ -96,15 +96,15 @@ pub async fn setup(
 ) -> Result<HttpResponse> {
     let audit_info = AuditRequestInfo::from_request(&req);
     let user = auth_service::setup_with_audit(
-        &state,
+        state.get_ref(),
         &body.username,
         &body.email,
         &body.password,
         &audit_info,
     )
     .await?;
-    bootstrap_public_site_url_from_setup(&state, &req, user.id).await;
-    let user_info = user_service::get_self_info(&state, user.id).await?;
+    bootstrap_public_site_url_from_setup(state.get_ref(), &req, user.id).await;
+    let user_info = user_service::get_self_info(state.get_ref(), user.id).await?;
     Ok(HttpResponse::Created().json(ApiResponse::ok(user_info)))
 }
 
@@ -126,14 +126,14 @@ pub async fn register(
 ) -> Result<HttpResponse> {
     let audit_info = AuditRequestInfo::from_request(&req);
     let user = auth_service::register_with_audit(
-        &state,
+        state.get_ref(),
         &body.username,
         &body.email,
         &body.password,
         &audit_info,
     )
     .await?;
-    let user_info = user_service::get_self_info(&state, user.id).await?;
+    let user_info = user_service::get_self_info(state.get_ref(), user.id).await?;
     Ok(HttpResponse::Created().json(ApiResponse::ok(user_info)))
 }
 
@@ -154,9 +154,12 @@ pub async fn resend_register_activation(
 ) -> Result<HttpResponse> {
     let started_at = tokio::time::Instant::now();
     let audit_info = AuditRequestInfo::from_request(&req);
-    let result =
-        auth_service::resend_register_activation_with_audit(&state, &body.identifier, &audit_info)
-            .await;
+    let result = auth_service::resend_register_activation_with_audit(
+        state.get_ref(),
+        &body.identifier,
+        &audit_info,
+    )
+    .await;
     match result {
         Ok(user) => user,
         Err(error) => {
@@ -186,7 +189,7 @@ pub async fn confirm_contact_verification(
     req: HttpRequest,
     query: web::Query<ContactVerificationConfirmQuery>,
 ) -> Result<HttpResponse> {
-    let has_active_session = request_has_active_access_session(&state, &req).await;
+    let has_active_session = request_has_active_access_session(state.get_ref(), &req).await;
     let fallback_path = if has_active_session {
         "/settings/security"
     } else {
@@ -199,7 +202,7 @@ pub async fn confirm_contact_verification(
         .filter(|token| !token.is_empty())
     else {
         return Ok(contact_verification_redirect_response(
-            &state,
+            state.get_ref(),
             fallback_path,
             ContactVerificationRedirectStatus::Missing,
             None,
@@ -207,33 +210,36 @@ pub async fn confirm_contact_verification(
     };
 
     let audit_info = AuditRequestInfo::from_request(&req);
-    let result =
-        match auth_service::confirm_contact_verification_with_audit(&state, token, &audit_info)
-            .await
-        {
-            Ok(result) => result,
-            Err(AsterError::ContactVerificationInvalid(_)) => {
-                return Ok(contact_verification_redirect_response(
-                    &state,
-                    fallback_path,
-                    ContactVerificationRedirectStatus::Invalid,
-                    None,
-                ));
-            }
-            Err(AsterError::ContactVerificationExpired(_)) => {
-                return Ok(contact_verification_redirect_response(
-                    &state,
-                    fallback_path,
-                    ContactVerificationRedirectStatus::Expired,
-                    None,
-                ));
-            }
-            Err(error) => return Err(error),
-        };
+    let result = match auth_service::confirm_contact_verification_with_audit(
+        state.get_ref(),
+        token,
+        &audit_info,
+    )
+    .await
+    {
+        Ok(result) => result,
+        Err(AsterError::ContactVerificationInvalid(_)) => {
+            return Ok(contact_verification_redirect_response(
+                state.get_ref(),
+                fallback_path,
+                ContactVerificationRedirectStatus::Invalid,
+                None,
+            ));
+        }
+        Err(AsterError::ContactVerificationExpired(_)) => {
+            return Ok(contact_verification_redirect_response(
+                state.get_ref(),
+                fallback_path,
+                ContactVerificationRedirectStatus::Expired,
+                None,
+            ));
+        }
+        Err(error) => return Err(error),
+    };
 
     if result.purpose == VerificationPurpose::PasswordReset {
         return Ok(contact_verification_redirect_response(
-            &state,
+            state.get_ref(),
             fallback_path,
             ContactVerificationRedirectStatus::Invalid,
             None,
@@ -269,7 +275,7 @@ pub async fn confirm_contact_verification(
     };
 
     Ok(contact_verification_redirect_response(
-        &state,
+        state.get_ref(),
         redirect_path,
         redirect_status,
         email,
@@ -294,7 +300,9 @@ pub async fn request_password_reset(
 ) -> Result<HttpResponse> {
     let started_at = tokio::time::Instant::now();
     let audit_info = AuditRequestInfo::from_request(&req);
-    match auth_service::request_password_reset_with_audit(&state, &body.email, &audit_info).await {
+    match auth_service::request_password_reset_with_audit(state.get_ref(), &body.email, &audit_info)
+        .await
+    {
         Ok(_) => {}
         Err(error) => {
             apply_auth_mail_response_floor(started_at).await;
@@ -327,7 +335,7 @@ pub async fn confirm_password_reset(
 ) -> Result<HttpResponse> {
     let audit_info = AuditRequestInfo::from_request(&req);
     auth_service::confirm_password_reset_with_audit(
-        &state,
+        state.get_ref(),
         &body.token,
         &body.new_password,
         &audit_info,

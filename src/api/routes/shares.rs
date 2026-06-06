@@ -67,7 +67,7 @@ pub async fn create_share(
 ) -> Result<HttpResponse> {
     let body = body.into_inner();
     create_share_response(
-        &state,
+        state.get_ref(),
         &claims,
         &req,
         WorkspaceStorageScope::Personal {
@@ -96,7 +96,7 @@ pub async fn list_shares(
     query: web::Query<LimitOffsetQuery>,
 ) -> Result<HttpResponse> {
     list_shares_response(
-        &state,
+        state.get_ref(),
         WorkspaceStorageScope::Personal {
             user_id: claims.user_id,
         },
@@ -129,7 +129,7 @@ pub async fn update_share(
 ) -> Result<HttpResponse> {
     let body = body.into_inner();
     update_share_response(
-        &state,
+        state.get_ref(),
         &claims,
         &req,
         WorkspaceStorageScope::Personal {
@@ -161,7 +161,7 @@ pub async fn delete_share(
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
     delete_share_response(
-        &state,
+        state.get_ref(),
         &claims,
         &req,
         WorkspaceStorageScope::Personal {
@@ -193,7 +193,7 @@ pub async fn batch_delete_shares(
 ) -> Result<HttpResponse> {
     let body = body.into_inner();
     batch_delete_shares_response(
-        &state,
+        state.get_ref(),
         &claims,
         &req,
         WorkspaceStorageScope::Personal {
@@ -228,7 +228,7 @@ pub(crate) async fn team_create_share(
     let team_id = *path;
     let body = body.into_inner();
     create_share_response(
-        &state,
+        state.get_ref(),
         &claims,
         &req,
         team_scope(team_id, claims.user_id),
@@ -259,7 +259,7 @@ pub(crate) async fn team_list_shares(
     path: web::Path<i64>,
     query: web::Query<LimitOffsetQuery>,
 ) -> Result<HttpResponse> {
-    list_shares_response(&state, team_scope(*path, claims.user_id), &query).await
+    list_shares_response(state.get_ref(), team_scope(*path, claims.user_id), &query).await
 }
 
 #[api_docs_macros::path(
@@ -291,7 +291,7 @@ pub(crate) async fn team_update_share(
     let (team_id, share_id) = path.into_inner();
     let body = body.into_inner();
     update_share_response(
-        &state,
+        state.get_ref(),
         &claims,
         &req,
         team_scope(team_id, claims.user_id),
@@ -326,7 +326,7 @@ pub(crate) async fn team_delete_share(
 ) -> Result<HttpResponse> {
     let (team_id, share_id) = path.into_inner();
     delete_share_response(
-        &state,
+        state.get_ref(),
         &claims,
         &req,
         team_scope(team_id, claims.user_id),
@@ -360,7 +360,7 @@ pub(crate) async fn team_batch_delete_shares(
     let team_id = *path;
     let body = body.into_inner();
     batch_delete_shares_response(
-        &state,
+        state.get_ref(),
         &claims,
         &req,
         team_scope(team_id, claims.user_id),

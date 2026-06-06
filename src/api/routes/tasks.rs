@@ -64,7 +64,7 @@ pub async fn list_tasks(
     query: web::Query<LimitOffsetQuery>,
 ) -> Result<HttpResponse> {
     list_tasks_response(
-        &state,
+        state.get_ref(),
         WorkspaceStorageScope::Personal {
             user_id: claims.user_id,
         },
@@ -92,7 +92,7 @@ pub async fn get_task(
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
     get_task_response(
-        &state,
+        state.get_ref(),
         WorkspaceStorageScope::Personal {
             user_id: claims.user_id,
         },
@@ -123,7 +123,7 @@ pub async fn retry_task(
 ) -> Result<HttpResponse> {
     let ctx = AuditContext::from_request(&req, &claims);
     retry_task_response(
-        &state,
+        state.get_ref(),
         WorkspaceStorageScope::Personal {
             user_id: claims.user_id,
         },
@@ -153,7 +153,7 @@ pub async fn create_offline_download(
     body: web::Json<task_service::types::CreateOfflineDownloadTaskParams>,
 ) -> Result<HttpResponse> {
     create_offline_download_response(
-        &state,
+        state.get_ref(),
         &claims,
         &req,
         WorkspaceStorageScope::Personal {
@@ -186,7 +186,7 @@ pub(crate) async fn team_list_tasks(
     path: web::Path<i64>,
     query: web::Query<LimitOffsetQuery>,
 ) -> Result<HttpResponse> {
-    list_tasks_response(&state, team_scope(*path, claims.user_id), &query).await
+    list_tasks_response(state.get_ref(), team_scope(*path, claims.user_id), &query).await
 }
 
 #[api_docs_macros::path(
@@ -212,7 +212,12 @@ pub(crate) async fn team_get_task(
     path: web::Path<(i64, i64)>,
 ) -> Result<HttpResponse> {
     let (team_id, task_id) = path.into_inner();
-    get_task_response(&state, team_scope(team_id, claims.user_id), task_id).await
+    get_task_response(
+        state.get_ref(),
+        team_scope(team_id, claims.user_id),
+        task_id,
+    )
+    .await
 }
 
 #[api_docs_macros::path(
@@ -241,7 +246,13 @@ pub(crate) async fn team_retry_task(
 ) -> Result<HttpResponse> {
     let (team_id, task_id) = path.into_inner();
     let ctx = AuditContext::from_request(&req, &claims);
-    retry_task_response(&state, team_scope(team_id, claims.user_id), task_id, &ctx).await
+    retry_task_response(
+        state.get_ref(),
+        team_scope(team_id, claims.user_id),
+        task_id,
+        &ctx,
+    )
+    .await
 }
 
 #[api_docs_macros::path(
@@ -267,7 +278,7 @@ pub(crate) async fn team_create_offline_download(
     body: web::Json<task_service::types::CreateOfflineDownloadTaskParams>,
 ) -> Result<HttpResponse> {
     create_offline_download_response(
-        &state,
+        state.get_ref(),
         &claims,
         &req,
         team_scope(*path, claims.user_id),

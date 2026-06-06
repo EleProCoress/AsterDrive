@@ -24,7 +24,7 @@ pub async fn get_overview(
     query: web::Query<admin_service::AdminOverviewQuery>,
 ) -> Result<HttpResponse> {
     let overview = admin_service::get_overview(
-        &state,
+        state.get_ref(),
         query.days_or_default(),
         query.timezone_name(),
         query.event_limit_or_default(),

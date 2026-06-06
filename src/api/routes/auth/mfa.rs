@@ -27,18 +27,18 @@ pub async fn verify_challenge(
 ) -> Result<HttpResponse> {
     csrf::ensure_request_source_allowed(
         &req,
-        &state.runtime_config(),
+        state.get_ref().runtime_config(),
         RequestSourceMode::OptionalWhenPresent,
     )?;
     let result = mfa_service::verify_challenge(
-        &state,
+        state.get_ref(),
         &body.flow_token,
         body.method.clone().into(),
         &body.code,
     )
     .await?;
     super::session::authenticated_login_response(
-        &state,
+        state.get_ref(),
         &result.access_token,
         &result.refresh_token,
     )
@@ -63,15 +63,15 @@ pub async fn send_email_code(
 ) -> Result<HttpResponse> {
     csrf::ensure_request_source_allowed(
         &req,
-        &state.runtime_config(),
+        state.get_ref().runtime_config(),
         RequestSourceMode::OptionalWhenPresent,
     )?;
     let audit_info = audit_service::AuditRequestInfo::from_request_with_trusted_proxies(
         &req,
-        &state.config().network_trust.trusted_proxies,
+        &state.get_ref().config().network_trust.trusted_proxies,
     );
     Ok(HttpResponse::Ok().json(ApiResponse::ok(
-        mfa_service::send_email_code(&state, &body.flow_token, &audit_info).await?,
+        mfa_service::send_email_code(state.get_ref(), &body.flow_token, &audit_info).await?,
     )))
 }
 
@@ -91,7 +91,7 @@ pub async fn status(
     claims: web::ReqData<Claims>,
 ) -> Result<HttpResponse> {
     Ok(HttpResponse::Ok().json(ApiResponse::ok(
-        mfa_service::get_status(&state, claims.user_id).await?,
+        mfa_service::get_status(state.get_ref(), claims.user_id).await?,
     )))
 }
 
@@ -111,7 +111,7 @@ pub async fn start_totp_setup(
     claims: web::ReqData<Claims>,
 ) -> Result<HttpResponse> {
     Ok(HttpResponse::Ok().json(ApiResponse::ok(
-        mfa_service::start_totp_setup(&state, claims.user_id).await?,
+        mfa_service::start_totp_setup(state.get_ref(), claims.user_id).await?,
     )))
 }
 
@@ -135,7 +135,8 @@ pub async fn finish_totp_setup(
 ) -> Result<HttpResponse> {
     let ctx = audit_service::AuditContext::from_request(&req, &claims);
     Ok(HttpResponse::Ok().json(ApiResponse::ok(
-        mfa_service::verify_totp_setup(&state, claims.user_id, body.into_inner(), &ctx).await?,
+        mfa_service::verify_totp_setup(state.get_ref(), claims.user_id, body.into_inner(), &ctx)
+            .await?,
     )))
 }
 
@@ -162,8 +163,14 @@ pub async fn delete_factor(
 ) -> Result<HttpResponse> {
     let factor_id = *path;
     let ctx = audit_service::AuditContext::from_request(&req, &claims);
-    if !mfa_service::delete_factor(&state, claims.user_id, factor_id, body.into_inner(), &ctx)
-        .await?
+    if !mfa_service::delete_factor(
+        state.get_ref(),
+        claims.user_id,
+        factor_id,
+        body.into_inner(),
+        &ctx,
+    )
+    .await?
     {
         return Err(AsterError::record_not_found(format!(
             "mfa factor #{factor_id}"
@@ -192,7 +199,12 @@ pub async fn regenerate_recovery_codes(
 ) -> Result<HttpResponse> {
     let ctx = audit_service::AuditContext::from_request(&req, &claims);
     Ok(HttpResponse::Ok().json(ApiResponse::ok(
-        mfa_service::regenerate_recovery_codes(&state, claims.user_id, body.into_inner(), &ctx)
-            .await?,
+        mfa_service::regenerate_recovery_codes(
+            state.get_ref(),
+            claims.user_id,
+            body.into_inner(),
+            &ctx,
+        )
+        .await?,
     )))
 }

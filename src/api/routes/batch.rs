@@ -73,7 +73,7 @@ pub async fn batch_delete(
 ) -> Result<HttpResponse> {
     let body = body.into_inner();
     batch_delete_response(
-        &state,
+        state.get_ref(),
         &claims,
         &req,
         WorkspaceStorageScope::Personal {
@@ -105,7 +105,7 @@ pub async fn batch_move(
 ) -> Result<HttpResponse> {
     let body = body.into_inner();
     batch_move_response(
-        &state,
+        state.get_ref(),
         &claims,
         &req,
         WorkspaceStorageScope::Personal {
@@ -137,7 +137,7 @@ pub async fn batch_copy(
 ) -> Result<HttpResponse> {
     let body = body.into_inner();
     batch_copy_response(
-        &state,
+        state.get_ref(),
         &claims,
         &req,
         WorkspaceStorageScope::Personal {
@@ -169,7 +169,7 @@ pub async fn archive_download(
 ) -> Result<HttpResponse> {
     let body = body.into_inner();
     archive_download_ticket_response(
-        &state,
+        state.get_ref(),
         &claims,
         &req,
         WorkspaceStorageScope::Personal {
@@ -201,7 +201,7 @@ pub async fn archive_compress(
 ) -> Result<HttpResponse> {
     let body = body.into_inner();
     archive_compress_response(
-        &state,
+        state.get_ref(),
         &claims,
         &req,
         WorkspaceStorageScope::Personal {
@@ -232,7 +232,7 @@ pub async fn archive_download_stream(
 ) -> Result<HttpResponse> {
     let token = path.into_inner();
     archive_download_stream_response(
-        &state,
+        state.get_ref(),
         WorkspaceStorageScope::Personal {
             user_id: claims.user_id,
         },
@@ -266,7 +266,7 @@ pub(crate) async fn team_batch_delete(
     let team_id = *path;
     let body = body.into_inner();
     batch_delete_response(
-        &state,
+        state.get_ref(),
         &claims,
         &req,
         team_scope(team_id, claims.user_id),
@@ -300,7 +300,7 @@ pub(crate) async fn team_batch_move(
     let team_id = *path;
     let body = body.into_inner();
     batch_move_response(
-        &state,
+        state.get_ref(),
         &claims,
         &req,
         team_scope(team_id, claims.user_id),
@@ -334,7 +334,7 @@ pub(crate) async fn team_batch_copy(
     let team_id = *path;
     let body = body.into_inner();
     batch_copy_response(
-        &state,
+        state.get_ref(),
         &claims,
         &req,
         team_scope(team_id, claims.user_id),
@@ -368,7 +368,7 @@ pub(crate) async fn team_archive_download(
     let team_id = *path;
     let body = body.into_inner();
     archive_download_ticket_response(
-        &state,
+        state.get_ref(),
         &claims,
         &req,
         team_scope(team_id, claims.user_id),
@@ -402,7 +402,7 @@ pub(crate) async fn team_archive_compress(
     let team_id = *path;
     let body = body.into_inner();
     archive_compress_response(
-        &state,
+        state.get_ref(),
         &claims,
         &req,
         team_scope(team_id, claims.user_id),
@@ -434,7 +434,8 @@ pub(crate) async fn team_archive_download_stream(
     path: web::Path<(i64, String)>,
 ) -> Result<HttpResponse> {
     let (team_id, token) = path.into_inner();
-    archive_download_stream_response(&state, team_scope(team_id, claims.user_id), &token).await
+    archive_download_stream_response(state.get_ref(), team_scope(team_id, claims.user_id), &token)
+        .await
 }
 
 pub(crate) async fn batch_delete_response(

@@ -483,7 +483,7 @@ pub fn spawn_primary_background_tasks(
         shutdown_token.clone(),
         state.clone(),
         |s| async move {
-            match crate::services::mail_outbox_service::dispatch_due(&s).await {
+            match crate::services::mail_outbox_service::dispatch_due(s.get_ref()).await {
                 Ok(stats) if stats.claimed > 0 || stats.failed > 0 => {
                     tracing::info!(
                         claimed = stats.claimed,
@@ -521,7 +521,7 @@ pub fn spawn_primary_background_tasks(
         shutdown_token.clone(),
         state.clone(),
         |s| async move {
-            match crate::services::upload_service::cleanup_expired(&s).await {
+            match crate::services::upload_service::cleanup_expired(s.get_ref()).await {
                 Ok(count) if count > 0 => {
                     tracing::info!("cleaned up {count} expired upload sessions");
                     crate::services::task_service::RuntimeTaskRunOutcome::succeeded(Some(format!(
@@ -548,7 +548,7 @@ pub fn spawn_primary_background_tasks(
         state.clone(),
         |s| async move {
             match crate::services::maintenance_service::cleanup_expired_completed_upload_sessions(
-                &s,
+                s.get_ref(),
             )
             .await
             {
@@ -583,7 +583,7 @@ pub fn spawn_primary_background_tasks(
         shutdown_token.clone(),
         state.clone(),
         |s| async move {
-            match crate::services::maintenance_service::reconcile_blob_state(&s).await {
+            match crate::services::maintenance_service::reconcile_blob_state(s.get_ref()).await {
                 Ok(stats) if stats.ref_count_fixed > 0 || stats.orphan_blobs_deleted > 0 => {
                     tracing::info!(
                         ref_count_fixed = stats.ref_count_fixed,
@@ -615,7 +615,8 @@ pub fn spawn_primary_background_tasks(
         state.clone(),
         |s| async move {
             let report =
-                crate::services::health_service::run_primary_system_health_checks(&s).await;
+                crate::services::health_service::run_primary_system_health_checks(s.get_ref())
+                    .await;
             if report.has_issues() {
                 tracing::warn!(
                     details = %report.details(),
@@ -638,7 +639,7 @@ pub fn spawn_primary_background_tasks(
         shutdown_token.clone(),
         state.clone(),
         |s| async move {
-            match crate::services::trash_service::cleanup_expired(&s).await {
+            match crate::services::trash_service::cleanup_expired(s.get_ref()).await {
                 Ok(count) if count > 0 => {
                     tracing::info!("cleaned up {count} expired trash entries");
                     crate::services::task_service::RuntimeTaskRunOutcome::succeeded(Some(format!(
@@ -664,7 +665,7 @@ pub fn spawn_primary_background_tasks(
         shutdown_token.clone(),
         state.clone(),
         |s| async move {
-            match crate::services::team_service::cleanup_expired_archived_teams(&s).await {
+            match crate::services::team_service::cleanup_expired_archived_teams(s.get_ref()).await {
                 Ok(count) if count > 0 => {
                     tracing::info!("cleaned up {count} expired archived teams");
                     crate::services::task_service::RuntimeTaskRunOutcome::succeeded(Some(format!(
@@ -690,7 +691,7 @@ pub fn spawn_primary_background_tasks(
         shutdown_token.clone(),
         state.clone(),
         |s| async move {
-            match crate::services::lock_service::cleanup_expired(&s).await {
+            match crate::services::lock_service::cleanup_expired(s.get_ref()).await {
                 Ok(count) if count > 0 => {
                     tracing::info!("cleaned up {count} expired locks");
                     crate::services::task_service::RuntimeTaskRunOutcome::succeeded(Some(format!(
@@ -716,7 +717,7 @@ pub fn spawn_primary_background_tasks(
         shutdown_token.clone(),
         state.clone(),
         |s| async move {
-            match crate::services::auth_service::cleanup_expired_auth_sessions(&s).await {
+            match crate::services::auth_service::cleanup_expired_auth_sessions(s.get_ref()).await {
                 Ok(count) if count > 0 => {
                     tracing::info!("cleaned up {count} expired auth sessions");
                     crate::services::task_service::RuntimeTaskRunOutcome::succeeded(Some(format!(
@@ -742,7 +743,7 @@ pub fn spawn_primary_background_tasks(
         shutdown_token.clone(),
         state.clone(),
         |s| async move {
-            match crate::services::external_auth_service::cleanup_expired_flows(&s).await {
+            match crate::services::external_auth_service::cleanup_expired_flows(s.get_ref()).await {
                 Ok(count) if count > 0 => {
                     tracing::info!("cleaned up {count} expired external auth flows");
                     crate::services::task_service::RuntimeTaskRunOutcome::succeeded(Some(format!(
@@ -768,7 +769,7 @@ pub fn spawn_primary_background_tasks(
         shutdown_token.clone(),
         state.clone(),
         |s| async move {
-            match crate::services::mfa_service::cleanup_expired_flows(&s).await {
+            match crate::services::mfa_service::cleanup_expired_flows(s.get_ref()).await {
                 Ok(count) if count > 0 => {
                     tracing::info!("cleaned up {count} expired MFA flows");
                     crate::services::task_service::RuntimeTaskRunOutcome::succeeded(Some(format!(
@@ -794,7 +795,7 @@ pub fn spawn_primary_background_tasks(
         shutdown_token.clone(),
         state.clone(),
         |s| async move {
-            match crate::services::audit_service::cleanup_expired(&s).await {
+            match crate::services::audit_service::cleanup_expired(s.get_ref()).await {
                 Ok(count) if count > 0 => {
                     crate::services::task_service::RuntimeTaskRunOutcome::succeeded(Some(format!(
                         "cleaned up {count} expired audit log entries"
@@ -821,7 +822,7 @@ pub fn spawn_primary_background_tasks(
         |s| async move {
             // task-cleanup 只清理过期任务产物，不删任务记录。
             // 也就是说 admin/tasks 里的历史事件仍然保留，只是 temp 目录会被回收。
-            match crate::services::task_service::cleanup_expired(&s).await {
+            match crate::services::task_service::cleanup_expired(s.get_ref()).await {
                 Ok(count) if count > 0 => {
                     tracing::info!("cleaned up {count} expired task artifacts");
                     crate::services::task_service::RuntimeTaskRunOutcome::succeeded(Some(format!(
@@ -847,7 +848,7 @@ pub fn spawn_primary_background_tasks(
         shutdown_token,
         state,
         |s| async move {
-            match crate::services::wopi_service::cleanup_expired(&s).await {
+            match crate::services::wopi_service::cleanup_expired(s.get_ref()).await {
                 Ok(count) if count > 0 => {
                     tracing::info!("cleaned up {count} expired WOPI sessions");
                     crate::services::task_service::RuntimeTaskRunOutcome::succeeded(Some(format!(

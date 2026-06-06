@@ -55,8 +55,13 @@ pub async fn list_props(
 ) -> Result<HttpResponse> {
     let path = path.into_inner();
     validate_request(&path)?;
-    let props =
-        property_service::list(&state, path.entity_type, path.entity_id, claims.user_id).await?;
+    let props = property_service::list(
+        state.get_ref(),
+        path.entity_type,
+        path.entity_id,
+        claims.user_id,
+    )
+    .await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(props)))
 }
 
@@ -90,7 +95,7 @@ pub async fn set_prop(
     validate_request(&path)?;
     validate_request(&body)?;
     let prop = property_service::set(
-        &state,
+        state.get_ref(),
         path.entity_type,
         path.entity_id,
         claims.user_id,
@@ -102,7 +107,7 @@ pub async fn set_prop(
     let ctx = audit_service::AuditContext::from_request(&req, &claims);
     let property_name = format!("{}:{}", body.namespace, body.name);
     audit_service::log_with_details(
-        &state,
+        state.get_ref(),
         &ctx,
         audit_service::AuditAction::PropertySet,
         audit_service::AuditEntityType::from_entity_type(path.entity_type),
@@ -148,7 +153,7 @@ pub async fn delete_prop(
     let path = path.into_inner();
     validate_request(&path)?;
     property_service::delete(
-        &state,
+        state.get_ref(),
         path.entity_type,
         path.entity_id,
         claims.user_id,
@@ -159,7 +164,7 @@ pub async fn delete_prop(
     let ctx = audit_service::AuditContext::from_request(&req, &claims);
     let property_name = format!("{}:{}", path.namespace, path.name);
     audit_service::log_with_details(
-        &state,
+        state.get_ref(),
         &ctx,
         audit_service::AuditAction::PropertyDelete,
         audit_service::AuditEntityType::from_entity_type(path.entity_type),

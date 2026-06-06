@@ -65,7 +65,7 @@ pub async fn health() -> HttpResponse {
     ),
 )]
 pub async fn primary_ready(state: web::Data<PrimaryAppState>) -> HttpResponse {
-    if let Err(error) = health_service::ping_database(state.writer_db()).await {
+    if let Err(error) = health_service::ping_database(state.get_ref().writer_db()).await {
         return ready_database_error(error);
     }
 
@@ -76,7 +76,7 @@ pub async fn primary_ready(state: web::Data<PrimaryAppState>) -> HttpResponse {
 }
 
 pub async fn follower_ready(state: web::Data<FollowerAppState>) -> HttpResponse {
-    if let Err(error) = health_service::ping_database(state.writer_db()).await {
+    if let Err(error) = health_service::ping_database(state.get_ref().writer_db()).await {
         return ready_database_error(error);
     }
 

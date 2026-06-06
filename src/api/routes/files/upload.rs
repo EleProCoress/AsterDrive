@@ -47,7 +47,7 @@ pub async fn upload(
     mut payload: actix_multipart::Multipart,
 ) -> Result<HttpResponse> {
     upload_response(
-        &state,
+        state.get_ref(),
         &claims,
         &req,
         &mut payload,
@@ -82,7 +82,7 @@ pub async fn init_chunked_upload(
 ) -> Result<HttpResponse> {
     validate_request(&*body)?;
     let resp = upload_service::init_upload_with_frontend_client(
-        &state,
+        state.get_ref(),
         claims.user_id,
         upload_service::InitUploadParams::new(
             &body.filename,
@@ -115,7 +115,7 @@ pub async fn list_recoverable_upload_sessions(
 ) -> Result<HttpResponse> {
     validate_request(&*query)?;
     let resp = upload_service::list_recoverable_sessions(
-        &state,
+        state.get_ref(),
         claims.user_id,
         query.frontend_client_id.as_deref(),
     )
@@ -147,7 +147,7 @@ pub async fn upload_chunk(
     payload: web::Payload,
 ) -> Result<HttpResponse> {
     let resp = upload_service::upload_chunk_payload(
-        &state,
+        state.get_ref(),
         &path.upload_id,
         path.chunk_number,
         claims.user_id,
@@ -188,7 +188,7 @@ pub async fn complete_upload(
         });
     let ctx = AuditContext::from_request(&req, &claims);
     let file = upload_service::complete_upload_with_audit(
-        &state,
+        state.get_ref(),
         &path.upload_id,
         claims.user_id,
         parts,
@@ -216,7 +216,8 @@ pub async fn get_upload_progress(
     claims: web::ReqData<Claims>,
     path: web::Path<UploadIdPath>,
 ) -> Result<HttpResponse> {
-    let resp = upload_service::get_progress(&state, &path.upload_id, claims.user_id).await?;
+    let resp =
+        upload_service::get_progress(state.get_ref(), &path.upload_id, claims.user_id).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(resp)))
 }
 
@@ -239,10 +240,10 @@ pub async fn cancel_upload(
     req: HttpRequest,
     path: web::Path<UploadIdPath>,
 ) -> Result<HttpResponse> {
-    upload_service::cancel_upload(&state, &path.upload_id, claims.user_id).await?;
+    upload_service::cancel_upload(state.get_ref(), &path.upload_id, claims.user_id).await?;
     let ctx = AuditContext::from_request(&req, &claims);
     crate::services::audit_service::log_with_details(
-        &state,
+        state.get_ref(),
         &ctx,
         crate::services::audit_service::AuditAction::FileUploadCancel,
         crate::services::audit_service::AuditEntityType::UploadSession,
@@ -281,7 +282,7 @@ pub async fn presign_parts(
     body: web::Json<PresignPartsReq>,
 ) -> Result<HttpResponse> {
     let urls = upload_service::presign_parts(
-        &state,
+        state.get_ref(),
         &path.upload_id,
         claims.user_id,
         body.into_inner().part_numbers,
@@ -316,7 +317,7 @@ pub(crate) async fn team_upload(
     mut payload: actix_multipart::Multipart,
 ) -> Result<HttpResponse> {
     upload_response(
-        &state,
+        state.get_ref(),
         &claims,
         &req,
         &mut payload,
@@ -352,7 +353,7 @@ pub(crate) async fn team_init_chunked_upload(
 ) -> Result<HttpResponse> {
     validate_request(&*body)?;
     let resp = upload_service::init_upload_for_team_with_frontend_client(
-        &state,
+        state.get_ref(),
         *path,
         claims.user_id,
         upload_service::InitUploadParams::new(
@@ -388,7 +389,7 @@ pub(crate) async fn team_list_recoverable_upload_sessions(
 ) -> Result<HttpResponse> {
     validate_request(&*query)?;
     let resp = upload_service::list_recoverable_sessions_for_team(
-        &state,
+        state.get_ref(),
         *path,
         claims.user_id,
         query.frontend_client_id.as_deref(),
@@ -424,7 +425,7 @@ pub(crate) async fn team_upload_chunk(
 ) -> Result<HttpResponse> {
     let (team_id, upload_id, chunk_number) = path.into_inner();
     let resp = upload_service::upload_chunk_payload_for_team(
-        &state,
+        state.get_ref(),
         team_id,
         &upload_id,
         chunk_number,
@@ -471,7 +472,7 @@ pub(crate) async fn team_complete_upload(
         });
     let ctx = AuditContext::from_request(&req, &claims);
     let file = upload_service::complete_upload_for_team_with_audit(
-        &state,
+        state.get_ref(),
         team_id,
         &upload_id,
         claims.user_id,
@@ -506,7 +507,8 @@ pub(crate) async fn team_get_upload_progress(
 ) -> Result<HttpResponse> {
     let (team_id, upload_id) = path.into_inner();
     let resp =
-        upload_service::get_progress_for_team(&state, team_id, &upload_id, claims.user_id).await?;
+        upload_service::get_progress_for_team(state.get_ref(), team_id, &upload_id, claims.user_id)
+            .await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(resp)))
 }
 
@@ -534,10 +536,11 @@ pub(crate) async fn team_cancel_upload(
     path: web::Path<(i64, String)>,
 ) -> Result<HttpResponse> {
     let (team_id, upload_id) = path.into_inner();
-    upload_service::cancel_upload_for_team(&state, team_id, &upload_id, claims.user_id).await?;
+    upload_service::cancel_upload_for_team(state.get_ref(), team_id, &upload_id, claims.user_id)
+        .await?;
     let ctx = AuditContext::from_request(&req, &claims);
     crate::services::audit_service::log_with_details(
-        &state,
+        state.get_ref(),
         &ctx,
         crate::services::audit_service::AuditAction::FileUploadCancel,
         crate::services::audit_service::AuditEntityType::UploadSession,
@@ -581,7 +584,7 @@ pub(crate) async fn team_presign_parts(
 ) -> Result<HttpResponse> {
     let (team_id, upload_id) = path.into_inner();
     let urls = upload_service::presign_parts_for_team(
-        &state,
+        state.get_ref(),
         team_id,
         &upload_id,
         claims.user_id,

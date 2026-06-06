@@ -31,7 +31,7 @@ pub async fn list_passkeys(
     state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
 ) -> Result<HttpResponse> {
-    let items = passkey_service::list_passkeys(&state, claims.user_id).await?;
+    let items = passkey_service::list_passkeys(state.get_ref(), claims.user_id).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(items)))
 }
 
@@ -53,7 +53,8 @@ pub async fn start_registration(
     body: web::Json<PasskeyRegisterStartReq>,
 ) -> Result<HttpResponse> {
     let resp =
-        passkey_service::start_registration(&state, claims.user_id, body.name.as_deref()).await?;
+        passkey_service::start_registration(state.get_ref(), claims.user_id, body.name.as_deref())
+            .await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(resp)))
 }
 
@@ -77,7 +78,7 @@ pub async fn finish_registration(
     body: web::Json<PasskeyRegisterFinishReq>,
 ) -> Result<HttpResponse> {
     let passkey = passkey_service::finish_registration(
-        &state,
+        state.get_ref(),
         claims.user_id,
         &body.flow_id,
         body.credential.clone(),
@@ -86,7 +87,7 @@ pub async fn finish_registration(
     .await?;
     let ctx = AuditContext::from_request(&req, &claims);
     audit_service::log(
-        &state,
+        state.get_ref(),
         &ctx,
         audit_service::AuditAction::UserPasskeyRegister,
         crate::services::audit_service::AuditEntityType::Passkey,
@@ -121,10 +122,11 @@ pub async fn rename_passkey(
     body: web::Json<PatchPasskeyReq>,
 ) -> Result<HttpResponse> {
     let id = path.into_inner();
-    let passkey = passkey_service::rename_passkey(&state, claims.user_id, id, &body.name).await?;
+    let passkey =
+        passkey_service::rename_passkey(state.get_ref(), claims.user_id, id, &body.name).await?;
     let ctx = AuditContext::from_request(&req, &claims);
     audit_service::log(
-        &state,
+        state.get_ref(),
         &ctx,
         audit_service::AuditAction::UserPasskeyRename,
         crate::services::audit_service::AuditEntityType::Passkey,
@@ -156,12 +158,12 @@ pub async fn delete_passkey(
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
     let id = path.into_inner();
-    if !passkey_service::delete_passkey(&state, claims.user_id, id).await? {
+    if !passkey_service::delete_passkey(state.get_ref(), claims.user_id, id).await? {
         return Err(AsterError::record_not_found(format!("passkey #{id}")));
     }
     let ctx = AuditContext::from_request(&req, &claims);
     audit_service::log(
-        &state,
+        state.get_ref(),
         &ctx,
         audit_service::AuditAction::UserPasskeyDelete,
         crate::services::audit_service::AuditEntityType::Passkey,
@@ -191,11 +193,11 @@ pub async fn start_login(
 ) -> Result<HttpResponse> {
     csrf::ensure_request_source_allowed(
         &req,
-        &state.runtime_config(),
+        state.get_ref().runtime_config(),
         RequestSourceMode::Required,
     )?;
     let resp = passkey_service::start_login(
-        &state,
+        state.get_ref(),
         body.identifier.as_deref(),
         body.conditional.unwrap_or(false),
     )
@@ -221,15 +223,15 @@ pub async fn finish_login(
 ) -> Result<HttpResponse> {
     csrf::ensure_request_source_allowed(
         &req,
-        &state.runtime_config(),
+        state.get_ref().runtime_config(),
         RequestSourceMode::OptionalWhenPresent,
     )?;
     let audit_info = AuditRequestInfo::from_request_with_trusted_proxies(
         &req,
-        &state.config().network_trust.trusted_proxies,
+        &state.get_ref().config().network_trust.trusted_proxies,
     );
     let result = passkey_service::finish_login(
-        &state,
+        state.get_ref(),
         &body.flow_id,
         body.credential.clone(),
         audit_info.ip_address.as_deref(),
@@ -238,7 +240,7 @@ pub async fn finish_login(
     .await?;
     let audit_ctx = audit_info.to_context(result.user_id);
     audit_service::log(
-        &state,
+        state.get_ref(),
         &audit_ctx,
         audit_service::AuditAction::UserPasskeyLogin,
         audit_service::AuditEntityType::Passkey,
@@ -248,7 +250,7 @@ pub async fn finish_login(
     )
     .await;
 
-    let auth_policy = RuntimeAuthPolicy::from_runtime_config(&state.runtime_config());
+    let auth_policy = RuntimeAuthPolicy::from_runtime_config(state.get_ref().runtime_config());
     let secure = auth_policy.cookie_secure;
     let csrf_token = csrf::build_csrf_token();
     let access_ttl = u64_to_i64(auth_policy.access_token_ttl_secs, "access token ttl")?;

@@ -39,9 +39,14 @@ pub async fn create_user(
 ) -> Result<HttpResponse> {
     validate_request(&*body)?;
     let ctx = audit_service::AuditContext::from_request(&req, &claims);
-    let user =
-        user_service::create_with_audit(&state, &body.username, &body.email, &body.password, &ctx)
-            .await?;
+    let user = user_service::create_with_audit(
+        state.get_ref(),
+        &body.username,
+        &body.email,
+        &body.password,
+        &ctx,
+    )
+    .await?;
     Ok(HttpResponse::Created().json(ApiResponse::ok(user)))
 }
 
@@ -64,7 +69,7 @@ pub async fn list_users(
     query: web::Query<AdminUserListQuery>,
 ) -> Result<HttpResponse> {
     let users = user_service::list_paginated(
-        &state,
+        state.get_ref(),
         page.limit_or(50, 100),
         page.offset(),
         user_service::UserListFilters::from_inputs(
@@ -97,7 +102,7 @@ pub async fn get_user(
     state: web::Data<PrimaryAppState>,
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
-    let user = user_service::get(&state, *path).await?;
+    let user = user_service::get(state.get_ref(), *path).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(user)))
 }
 
@@ -122,7 +127,7 @@ pub async fn revoke_user_sessions(
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
     let ctx = audit_service::AuditContext::from_request(&req, &claims);
-    auth_service::revoke_user_sessions_with_audit(&state, *path, &ctx).await?;
+    auth_service::revoke_user_sessions_with_audit(state.get_ref(), *path, &ctx).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
 }
 
@@ -154,7 +159,7 @@ pub async fn update_user(
     let body = body.into_inner();
     let ctx = audit_service::AuditContext::from_request(&req, &claims);
     let user = user_service::update_with_audit(
-        &state,
+        state.get_ref(),
         user_service::UpdateUserInput {
             id: target_id,
             email_verified: body.email_verified,
@@ -194,7 +199,7 @@ pub async fn reset_user_password(
 ) -> Result<HttpResponse> {
     validate_request(&*body)?;
     let ctx = audit_service::AuditContext::from_request(&req, &claims);
-    auth_service::set_password_with_audit(&state, *path, &body.password, &ctx).await?;
+    auth_service::set_password_with_audit(state.get_ref(), *path, &body.password, &ctx).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
 }
 
@@ -219,7 +224,7 @@ pub async fn reset_user_mfa(
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
     let ctx = audit_service::AuditContext::from_request(&req, &claims);
-    mfa_service::reset_user_mfa(&state, *path, &ctx).await?;
+    mfa_service::reset_user_mfa(state.get_ref(), *path, &ctx).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
 }
 
@@ -245,7 +250,7 @@ pub async fn force_delete_user(
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
     let ctx = audit_service::AuditContext::from_request(&req, &claims);
-    user_service::force_delete_with_audit(&state, *path, &ctx).await?;
+    user_service::force_delete_with_audit(state.get_ref(), *path, &ctx).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
 }
 
@@ -271,6 +276,6 @@ pub async fn get_user_avatar(
     path: web::Path<(i64, u32)>,
 ) -> Result<HttpResponse> {
     let (user_id, size) = path.into_inner();
-    let bytes = profile_service::get_avatar_bytes(&state, user_id, size).await?;
+    let bytes = profile_service::get_avatar_bytes(state.get_ref(), user_id, size).await?;
     Ok(profile_service::avatar_image_response(bytes))
 }

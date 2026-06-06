@@ -34,7 +34,7 @@ pub async fn create_empty(
     body: web::Json<CreateEmptyRequest>,
 ) -> Result<HttpResponse> {
     create_empty_response(
-        &state,
+        state.get_ref(),
         &claims,
         &req,
         WorkspaceStorageScope::Personal {
@@ -68,7 +68,7 @@ pub async fn extract_archive(
     body: web::Json<ExtractArchiveRequest>,
 ) -> Result<HttpResponse> {
     extract_archive_response(
-        &state,
+        state.get_ref(),
         &claims,
         &req,
         WorkspaceStorageScope::Personal {
@@ -100,7 +100,7 @@ pub async fn delete_file(
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
     delete_file_response(
-        &state,
+        state.get_ref(),
         &claims,
         &req,
         WorkspaceStorageScope::Personal {
@@ -133,7 +133,7 @@ pub async fn patch_file(
     body: web::Json<PatchFileReq>,
 ) -> Result<HttpResponse> {
     patch_file_response(
-        &state,
+        state.get_ref(),
         &claims,
         &req,
         WorkspaceStorageScope::Personal {
@@ -169,7 +169,7 @@ pub async fn update_content(
     mut payload: web::Payload,
 ) -> Result<HttpResponse> {
     update_content_response(
-        &state,
+        state.get_ref(),
         &claims,
         &req,
         WorkspaceStorageScope::Personal {
@@ -203,7 +203,7 @@ pub async fn set_lock(
     body: web::Json<SetLockReq>,
 ) -> Result<HttpResponse> {
     set_lock_response(
-        &state,
+        state.get_ref(),
         &claims,
         &req,
         WorkspaceStorageScope::Personal {
@@ -237,7 +237,7 @@ pub async fn copy_file(
     body: web::Json<CopyFileReq>,
 ) -> Result<HttpResponse> {
     copy_file_response(
-        &state,
+        state.get_ref(),
         &claims,
         &req,
         WorkspaceStorageScope::Personal {
@@ -271,7 +271,7 @@ pub(crate) async fn team_create_empty(
     body: web::Json<CreateEmptyRequest>,
 ) -> Result<HttpResponse> {
     create_empty_response(
-        &state,
+        state.get_ref(),
         &claims,
         &req,
         team_scope(*path, claims.user_id),
@@ -309,7 +309,7 @@ pub(crate) async fn team_update_content(
 ) -> Result<HttpResponse> {
     let (team_id, file_id) = path.into_inner();
     update_content_response(
-        &state,
+        state.get_ref(),
         &claims,
         &req,
         team_scope(team_id, claims.user_id),
@@ -347,7 +347,7 @@ pub(crate) async fn team_extract_archive(
 ) -> Result<HttpResponse> {
     let (team_id, file_id) = path.into_inner();
     extract_archive_response(
-        &state,
+        state.get_ref(),
         &claims,
         &req,
         team_scope(team_id, claims.user_id),
@@ -384,7 +384,7 @@ pub(crate) async fn team_set_lock(
 ) -> Result<HttpResponse> {
     let (team_id, file_id) = path.into_inner();
     set_lock_response(
-        &state,
+        state.get_ref(),
         &claims,
         &req,
         team_scope(team_id, claims.user_id),
@@ -421,7 +421,7 @@ pub(crate) async fn team_patch_file(
 ) -> Result<HttpResponse> {
     let (team_id, file_id) = path.into_inner();
     patch_file_response(
-        &state,
+        state.get_ref(),
         &claims,
         &req,
         team_scope(team_id, claims.user_id),
@@ -458,7 +458,7 @@ pub(crate) async fn team_copy_file(
 ) -> Result<HttpResponse> {
     let (team_id, file_id) = path.into_inner();
     copy_file_response(
-        &state,
+        state.get_ref(),
         &claims,
         &req,
         team_scope(team_id, claims.user_id),
@@ -493,7 +493,7 @@ pub(crate) async fn team_delete_file(
 ) -> Result<HttpResponse> {
     let (team_id, file_id) = path.into_inner();
     delete_file_response(
-        &state,
+        state.get_ref(),
         &claims,
         &req,
         team_scope(team_id, claims.user_id),

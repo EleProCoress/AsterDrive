@@ -29,7 +29,7 @@ pub async fn list_all_shares(
     query: web::Query<AdminShareListQuery>,
 ) -> Result<HttpResponse> {
     let shares = share_service::list_paginated(
-        &state,
+        state.get_ref(),
         page.limit_or(50, 100),
         page.offset(),
         query.sort_by(),
@@ -59,10 +59,10 @@ pub async fn admin_delete_share(
     req: HttpRequest,
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
-    share_service::admin_delete_share(&state, *path).await?;
+    share_service::admin_delete_share(state.get_ref(), *path).await?;
     let ctx = audit_service::AuditContext::from_request(&req, &claims);
     audit_service::log(
-        &state,
+        state.get_ref(),
         &ctx,
         audit_service::AuditAction::AdminDeleteShare,
         crate::services::audit_service::AuditEntityType::Share,

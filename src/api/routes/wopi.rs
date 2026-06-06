@@ -53,10 +53,10 @@ pub async fn check_file_info(
         return protocol_error_response(error);
     }
     match wopi_service::check_file_info(
-        &state,
+        state.get_ref(),
         *path,
         &query.access_token,
-        request_source(&state, &req),
+        request_source(state.get_ref(), &req),
     )
     .await
     {
@@ -81,13 +81,13 @@ pub async fn get_file_contents(
         .and_then(|value| value.to_str().ok());
     let max_expected_size = optional_header_value(&req, "X-WOPI-MaxExpectedSize");
     match wopi_service::get_file_contents(
-        &state,
+        state.get_ref(),
         *path,
         &query.access_token,
         if_none_match,
         max_expected_size,
         &audit_info,
-        request_source(&state, &req),
+        request_source(state.get_ref(), &req),
     )
     .await
     {
@@ -125,7 +125,7 @@ pub async fn put_file_contents(
     }
 
     match wopi_service::put_file_contents(
-        &state,
+        state.get_ref(),
         wopi_service::WopiPutFileRequest {
             file_id: *path,
             access_token: &query.access_token,
@@ -133,7 +133,7 @@ pub async fn put_file_contents(
             content_length: request_content_length(&req),
             requested_lock: optional_header_value(&req, "X-WOPI-Lock"),
             audit_info: &audit_info,
-            request_source: request_source(&state, &req),
+            request_source: request_source(state.get_ref(), &req),
         },
     )
     .await
@@ -163,7 +163,7 @@ pub async fn file_operation(
 
     if override_value.eq_ignore_ascii_case("PUT_RELATIVE") {
         return match wopi_service::put_relative_file(
-            &state,
+            state.get_ref(),
             wopi_service::WopiPutRelativeRequest {
                 file_id: *path,
                 access_token: &query.access_token,
@@ -177,7 +177,7 @@ pub async fn file_operation(
                 size_header: optional_header_value(&req, "X-WOPI-Size"),
                 content_length: request_content_length(&req),
                 audit_info: &audit_info,
-                request_source: request_source(&state, &req),
+                request_source: request_source(state.get_ref(), &req),
             },
         )
         .await
@@ -194,10 +194,10 @@ pub async fn file_operation(
 
     if override_value.eq_ignore_ascii_case("GET_LOCK") {
         return match wopi_service::get_lock(
-            &state,
+            state.get_ref(),
             *path,
             &query.access_token,
-            request_source(&state, &req),
+            request_source(state.get_ref(), &req),
         )
         .await
         {
@@ -211,13 +211,13 @@ pub async fn file_operation(
 
     if override_value.eq_ignore_ascii_case("RENAME_FILE") {
         return match wopi_service::rename_file(
-            &state,
+            state.get_ref(),
             *path,
             &query.access_token,
             optional_header_value(&req, "X-WOPI-RequestedName"),
             optional_header_value(&req, "X-WOPI-Lock"),
             &audit_info,
-            request_source(&state, &req),
+            request_source(state.get_ref(), &req),
         )
         .await
         {
@@ -236,12 +236,12 @@ pub async fn file_operation(
 
     if override_value.eq_ignore_ascii_case("PUT_USER_INFO") {
         return match wopi_service::put_user_info(
-            &state,
+            state.get_ref(),
             *path,
             &query.access_token,
             &mut payload,
             &audit_info,
-            request_source(&state, &req),
+            request_source(state.get_ref(), &req),
         )
         .await
         {
@@ -252,43 +252,43 @@ pub async fn file_operation(
 
     let result = if override_value.eq_ignore_ascii_case("LOCK") && !old_lock.is_empty() {
         wopi_service::unlock_and_relock_file(
-            &state,
+            state.get_ref(),
             *path,
             &query.access_token,
             requested_lock,
             old_lock,
             &audit_info,
-            request_source(&state, &req),
+            request_source(state.get_ref(), &req),
         )
         .await
     } else if override_value.eq_ignore_ascii_case("LOCK") {
         wopi_service::lock_file(
-            &state,
+            state.get_ref(),
             *path,
             &query.access_token,
             requested_lock,
             &audit_info,
-            request_source(&state, &req),
+            request_source(state.get_ref(), &req),
         )
         .await
     } else if override_value.eq_ignore_ascii_case("UNLOCK") {
         wopi_service::unlock_file(
-            &state,
+            state.get_ref(),
             *path,
             &query.access_token,
             requested_lock,
             &audit_info,
-            request_source(&state, &req),
+            request_source(state.get_ref(), &req),
         )
         .await
     } else if override_value.eq_ignore_ascii_case("REFRESH_LOCK") {
         wopi_service::refresh_lock(
-            &state,
+            state.get_ref(),
             *path,
             &query.access_token,
             requested_lock,
             &audit_info,
-            request_source(&state, &req),
+            request_source(state.get_ref(), &req),
         )
         .await
     } else {
@@ -366,13 +366,13 @@ fn request_source<'a>(
         proof_old: optional_header_value(req, "X-WOPI-ProofOld"),
         timestamp: optional_header_value(req, "X-WOPI-TimeStamp"),
         public_url: site_url::public_app_url_for_request(
-            &state.runtime_config(),
+            state.runtime_config(),
             &req.uri().to_string(),
             conn.scheme(),
             conn.host(),
         ),
         public_origin: site_url::public_site_url_for_request(
-            &state.runtime_config(),
+            state.runtime_config(),
             conn.scheme(),
             conn.host(),
         ),

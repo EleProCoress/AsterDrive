@@ -53,7 +53,7 @@ pub async fn search(
 ) -> Result<HttpResponse> {
     let query = query.into_inner();
     search_response(
-        &state,
+        state.get_ref(),
         WorkspaceStorageScope::Personal {
             user_id: claims.user_id,
         },
@@ -85,7 +85,7 @@ pub(crate) async fn team_search(
     query: web::Query<SearchParams>,
 ) -> Result<HttpResponse> {
     let query = query.into_inner();
-    search_response(&state, team_scope(*path, claims.user_id), &query).await
+    search_response(state.get_ref(), team_scope(*path, claims.user_id), &query).await
 }
 
 pub(crate) async fn search_response(

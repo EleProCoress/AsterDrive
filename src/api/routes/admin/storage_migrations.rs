@@ -30,7 +30,7 @@ pub async fn create_storage_policy_migration(
 ) -> Result<HttpResponse> {
     validate_request(&*body)?;
     let task = task_service::storage_migration::create_storage_policy_migration_task(
-        &state,
+        state.get_ref(),
         task_service::storage_migration::CreateStoragePolicyMigrationInput {
             source_policy_id: body.source_policy_id,
             target_policy_id: body.target_policy_id,
@@ -63,7 +63,7 @@ pub async fn dry_run_storage_policy_migration(
 ) -> Result<HttpResponse> {
     validate_request(&*body)?;
     let dry_run = task_service::storage_migration::dry_run_storage_policy_migration(
-        &state,
+        state.get_ref(),
         task_service::storage_migration::CreateStoragePolicyMigrationInput {
             source_policy_id: body.source_policy_id,
             target_policy_id: body.target_policy_id,
@@ -98,7 +98,9 @@ pub async fn resume_storage_policy_migration(
 ) -> Result<HttpResponse> {
     let ctx = AuditContext::from_request(&req, &claims);
     let task = task_service::storage_migration::resume_storage_policy_migration_for_admin(
-        &state, *path, &ctx,
+        state.get_ref(),
+        *path,
+        &ctx,
     )
     .await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(task)))

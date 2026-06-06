@@ -31,7 +31,7 @@ pub async fn list_audit_logs(
 ) -> Result<HttpResponse> {
     let filters = audit_service::AuditLogFilters::from_query(&query);
     let page = audit_service::query(
-        &state,
+        state.get_ref(),
         filters,
         page.limit_or(50, 200),
         page.offset(),

@@ -37,7 +37,7 @@ fn parse_provider_kind(value: &str) -> Result<ExternalAuthProviderKind> {
     ),
 )]
 pub async fn list_providers(state: web::Data<PrimaryAppState>) -> Result<HttpResponse> {
-    let providers = external_auth_service::list_public_providers(&state).await?;
+    let providers = external_auth_service::list_public_providers(state.get_ref()).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(providers)))
 }
 
@@ -65,13 +65,13 @@ pub async fn start_login(
 ) -> Result<HttpResponse> {
     csrf::ensure_request_source_allowed(
         &req,
-        &state.runtime_config(),
+        state.get_ref().runtime_config(),
         RequestSourceMode::Required,
     )?;
     let (kind, provider) = path.into_inner();
     let provider_kind = parse_provider_kind(&kind)?;
     let response = external_auth_service::start_login(
-        &state,
+        state.get_ref(),
         &req,
         provider_kind,
         &provider,
@@ -104,15 +104,20 @@ pub async fn finish_login(
 ) -> Result<HttpResponse> {
     let audit_info = AuditRequestInfo::from_request_with_trusted_proxies(
         &req,
-        &state.config().network_trust.trusted_proxies,
+        &state.get_ref().config().network_trust.trusted_proxies,
     );
     let (kind, provider) = path.into_inner();
     let provider_kind = match parse_provider_kind(&kind) {
         Ok(provider_kind) => provider_kind,
-        Err(error) => return Ok(external_auth_error_redirect_response(&state, &error)),
+        Err(error) => {
+            return Ok(external_auth_error_redirect_response(
+                state.get_ref(),
+                &error,
+            ));
+        }
     };
     let result = match external_auth_service::finish_callback(
-        &state,
+        state.get_ref(),
         provider_kind,
         &provider,
         &query,
@@ -124,15 +129,20 @@ pub async fn finish_login(
         Ok(ExternalAuthCallbackOutcome::Login(result)) => result,
         Ok(ExternalAuthCallbackOutcome::EmailVerificationRequired(pending)) => {
             return Ok(external_auth_email_required_redirect_response(
-                &state,
+                state.get_ref(),
                 &pending.flow_token,
                 &pending.return_path,
             ));
         }
-        Err(error) => return Ok(external_auth_error_redirect_response(&state, &error)),
+        Err(error) => {
+            return Ok(external_auth_error_redirect_response(
+                state.get_ref(),
+                &error,
+            ));
+        }
     };
 
-    external_auth_login_redirect_response(&state, &audit_info, result).await
+    external_auth_login_redirect_response(state.get_ref(), &audit_info, result).await
 }
 
 #[api_docs_macros::path(
@@ -154,11 +164,11 @@ pub async fn start_email_verification(
 ) -> Result<HttpResponse> {
     csrf::ensure_request_source_allowed(
         &req,
-        &state.runtime_config(),
+        state.get_ref().runtime_config(),
         RequestSourceMode::Required,
     )?;
     let response =
-        external_auth_service::start_email_verification(&state, body.into_inner()).await?;
+        external_auth_service::start_email_verification(state.get_ref(), body.into_inner()).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(response)))
 }
 
@@ -181,21 +191,21 @@ pub async fn link_with_password(
 ) -> Result<HttpResponse> {
     csrf::ensure_request_source_allowed(
         &req,
-        &state.runtime_config(),
+        state.get_ref().runtime_config(),
         RequestSourceMode::Required,
     )?;
     let audit_info = AuditRequestInfo::from_request_with_trusted_proxies(
         &req,
-        &state.config().network_trust.trusted_proxies,
+        &state.get_ref().config().network_trust.trusted_proxies,
     );
     let result = external_auth_service::link_with_password(
-        &state,
+        state.get_ref(),
         body.into_inner(),
         audit_info.ip_address.as_deref(),
         audit_info.user_agent.as_deref(),
     )
     .await?;
-    external_auth_login_json_response(&state, &audit_info, result).await
+    external_auth_login_json_response(state.get_ref(), &audit_info, result).await
 }
 
 #[api_docs_macros::path(
@@ -220,17 +230,17 @@ pub async fn confirm_email_verification(
         .filter(|token| !token.is_empty())
     else {
         return Ok(external_auth_status_redirect_response(
-            &state,
+            state.get_ref(),
             "email_verification_missing",
         ));
     };
 
     let audit_info = AuditRequestInfo::from_request_with_trusted_proxies(
         &req,
-        &state.config().network_trust.trusted_proxies,
+        &state.get_ref().config().network_trust.trusted_proxies,
     );
     let result = match external_auth_service::confirm_email_verification(
-        &state,
+        state.get_ref(),
         token,
         audit_info.ip_address.as_deref(),
         audit_info.user_agent.as_deref(),
@@ -240,20 +250,25 @@ pub async fn confirm_email_verification(
         Ok(result) => result,
         Err(AsterError::ContactVerificationExpired(_)) => {
             return Ok(external_auth_status_redirect_response(
-                &state,
+                state.get_ref(),
                 "email_verification_expired",
             ));
         }
         Err(AsterError::ContactVerificationInvalid(_)) => {
             return Ok(external_auth_status_redirect_response(
-                &state,
+                state.get_ref(),
                 "email_verification_invalid",
             ));
         }
-        Err(error) => return Ok(external_auth_error_redirect_response(&state, &error)),
+        Err(error) => {
+            return Ok(external_auth_error_redirect_response(
+                state.get_ref(),
+                &error,
+            ));
+        }
     };
 
-    external_auth_login_redirect_response(&state, &audit_info, result).await
+    external_auth_login_redirect_response(state.get_ref(), &audit_info, result).await
 }
 
 async fn external_auth_login_json_response(
@@ -344,13 +359,13 @@ fn external_auth_redirect_completion_response(
 ) -> Result<HttpResponse> {
     match completion {
         PrimaryLoginCompletion::Authenticated(result) => {
-            let auth_policy = RuntimeAuthPolicy::from_runtime_config(&state.runtime_config());
+            let auth_policy = RuntimeAuthPolicy::from_runtime_config(state.runtime_config());
             let secure = auth_policy.cookie_secure;
             let csrf_token = csrf::build_csrf_token();
             let access_ttl = u64_to_i64(auth_policy.access_token_ttl_secs, "access token ttl")?;
             let refresh_ttl = u64_to_i64(auth_policy.refresh_token_ttl_secs, "refresh token ttl")?;
             let redirect_url =
-                site_url::public_app_url_or_path(&state.runtime_config(), return_path);
+                site_url::public_app_url_or_path(state.runtime_config(), return_path);
 
             Ok(HttpResponse::Found()
                 .append_header((header::LOCATION, redirect_url))
@@ -381,7 +396,7 @@ fn external_auth_redirect_completion_response(
                 urlencoding::encode(&methods),
                 urlencoding::encode(return_path)
             );
-            let redirect_url = site_url::public_app_url_or_path(&state.runtime_config(), &path);
+            let redirect_url = site_url::public_app_url_or_path(state.runtime_config(), &path);
             Ok(HttpResponse::Found()
                 .append_header((header::LOCATION, redirect_url))
                 .finish())
@@ -432,7 +447,7 @@ pub async fn list_links(
     state: web::Data<PrimaryAppState>,
     claims: web::ReqData<Claims>,
 ) -> Result<HttpResponse> {
-    let links = external_auth_service::list_links(&state, claims.user_id).await?;
+    let links = external_auth_service::list_links(state.get_ref(), claims.user_id).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(links)))
 }
 
@@ -456,14 +471,14 @@ pub async fn delete_link(
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
     let id = path.into_inner();
-    if !external_auth_service::delete_link(&state, claims.user_id, id).await? {
+    if !external_auth_service::delete_link(state.get_ref(), claims.user_id, id).await? {
         return Err(AsterError::record_not_found(format!(
             "external auth identity link #{id}"
         )));
     }
     let ctx = AuditContext::from_request(&req, &claims);
     audit_service::log(
-        &state,
+        state.get_ref(),
         &ctx,
         audit_service::AuditAction::UserExternalAuthUnlink,
         crate::services::audit_service::AuditEntityType::ExternalAuthIdentity,
@@ -488,7 +503,7 @@ fn external_auth_error_redirect_response(
             ErrorCode::from(error) as u32
         )
     };
-    let redirect_url = site_url::public_app_url_or_path(&state.runtime_config(), &path);
+    let redirect_url = site_url::public_app_url_or_path(state.runtime_config(), &path);
     HttpResponse::Found()
         .append_header((header::LOCATION, redirect_url))
         .finish()
@@ -504,7 +519,7 @@ fn external_auth_email_required_redirect_response(
         urlencoding::encode(flow_token),
         urlencoding::encode(return_path)
     );
-    let redirect_url = site_url::public_app_url_or_path(&state.runtime_config(), &path);
+    let redirect_url = site_url::public_app_url_or_path(state.runtime_config(), &path);
     HttpResponse::Found()
         .append_header((header::LOCATION, redirect_url))
         .finish()
@@ -512,7 +527,7 @@ fn external_auth_email_required_redirect_response(
 
 fn external_auth_status_redirect_response(state: &PrimaryAppState, status: &str) -> HttpResponse {
     let path = format!("/login?external_auth={}", urlencoding::encode(status));
-    let redirect_url = site_url::public_app_url_or_path(&state.runtime_config(), &path);
+    let redirect_url = site_url::public_app_url_or_path(state.runtime_config(), &path);
     HttpResponse::Found()
         .append_header((header::LOCATION, redirect_url))
         .finish()

@@ -71,7 +71,7 @@ pub async fn run_follower_tunnel_worker(
             break;
         }
         reconcile_binding_workers(
-            &state,
+            state.get_ref(),
             &client,
             &local_base_url,
             &shutdown_token,
@@ -90,7 +90,7 @@ pub async fn run_follower_tunnel_worker(
 }
 
 async fn reconcile_binding_workers(
-    state: &actix_web::web::Data<FollowerAppState>,
+    state: &FollowerAppState,
     client: &reqwest::Client,
     local_base_url: &str,
     parent_shutdown: &CancellationToken,

@@ -39,7 +39,7 @@ pub async fn poll_remote_tunnel(
         .and_then(|value| value.to_str().ok())
         .and_then(|value| value.parse::<u64>().ok());
     let remote_node = tunnel::authorize_tunnel_request(
-        &state,
+        state.get_ref(),
         req.method(),
         tunnel::REMOTE_TUNNEL_POLL_PATH,
         req.headers(),
@@ -51,7 +51,7 @@ pub async fn poll_remote_tunnel(
             "reverse tunnel poll access_key does not match signed credentials",
         ));
     }
-    let response = tunnel::poll(&state, &remote_node).await?;
+    let response = tunnel::poll(state.get_ref(), &remote_node).await?;
     Ok(tunnel::envelope_response(response))
 }
 
@@ -66,14 +66,14 @@ pub async fn complete_remote_tunnel(
         .and_then(|value| value.to_str().ok())
         .and_then(|value| value.parse::<u64>().ok());
     let remote_node = tunnel::authorize_tunnel_request(
-        &state,
+        state.get_ref(),
         req.method(),
         tunnel::REMOTE_TUNNEL_COMPLETE_PATH,
         req.headers(),
         content_length,
     )
     .await?;
-    tunnel::complete(&state, &remote_node, body.into_inner()).await?;
+    tunnel::complete(state.get_ref(), &remote_node, body.into_inner()).await?;
     Ok(tunnel::empty_envelope_response())
 }
 
@@ -83,7 +83,7 @@ pub async fn connect_remote_tunnel(
     body: web::Payload,
 ) -> Result<HttpResponse> {
     let remote_node = tunnel::authorize_tunnel_request(
-        &state,
+        state.get_ref(),
         req.method(),
         tunnel::REMOTE_TUNNEL_CONNECT_PATH,
         req.headers(),
@@ -96,7 +96,9 @@ pub async fn connect_remote_tunnel(
         })?;
     let stream = stream.max_frame_size(REMOTE_TUNNEL_STREAM_FRAME_LIMIT);
     actix_web::rt::spawn(async move {
-        if let Err(error) = tunnel::connect_stream(&state, remote_node, session, stream).await {
+        if let Err(error) =
+            tunnel::connect_stream(state.get_ref(), remote_node, session, stream).await
+        {
             tracing::warn!("reverse tunnel streaming connection ended with error: {error}");
         }
     });

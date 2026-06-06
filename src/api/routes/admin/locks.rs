@@ -28,7 +28,7 @@ pub async fn list_locks(
     query: web::Query<AdminLockListQuery>,
 ) -> Result<HttpResponse> {
     let locks = lock_service::list_paginated(
-        &state,
+        state.get_ref(),
         page.limit_or(50, 100),
         page.offset(),
         query.sort_by(),
@@ -58,7 +58,7 @@ pub async fn force_unlock(
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
     let ctx = audit_service::AuditContext::from_request(&req, &claims);
-    lock_service::force_unlock_with_audit(&state, *path, &ctx).await?;
+    lock_service::force_unlock_with_audit(state.get_ref(), *path, &ctx).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
 }
 
@@ -79,6 +79,6 @@ pub async fn cleanup_expired_locks(
     req: HttpRequest,
 ) -> Result<HttpResponse> {
     let ctx = audit_service::AuditContext::from_request(&req, &claims);
-    let count = lock_service::cleanup_expired_with_audit(&state, &ctx).await?;
+    let count = lock_service::cleanup_expired_with_audit(state.get_ref(), &ctx).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(RemovedCountResponse { removed: count })))
 }

@@ -33,13 +33,13 @@ pub async fn request_email_change(
 ) -> Result<HttpResponse> {
     let ctx = AuditContext::from_request(&req, &claims);
     let user = auth_service::request_email_change_with_audit(
-        &state,
+        state.get_ref(),
         claims.user_id,
         &body.new_email,
         &ctx,
     )
     .await?;
-    let user_info = user_service::get_self_info(&state, user.id).await?;
+    let user_info = user_service::get_self_info(state.get_ref(), user.id).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(user_info)))
 }
 
@@ -61,7 +61,8 @@ pub async fn resend_email_change(
 ) -> Result<HttpResponse> {
     let started_at = tokio::time::Instant::now();
     let ctx = AuditContext::from_request(&req, &claims);
-    let result = auth_service::resend_email_change_with_audit(&state, claims.user_id, &ctx).await;
+    let result =
+        auth_service::resend_email_change_with_audit(state.get_ref(), claims.user_id, &ctx).await;
     match result {
         Ok(_) => {}
         Err(error) => {
@@ -97,10 +98,12 @@ pub async fn patch_preferences(
     claims: web::ReqData<Claims>,
     body: web::Json<UpdatePreferencesReq>,
 ) -> Result<HttpResponse> {
-    let prefs = user_service::update_preferences(&state, claims.user_id, body.into_inner()).await?;
+    let prefs =
+        user_service::update_preferences(state.get_ref(), claims.user_id, body.into_inner())
+            .await?;
     let ctx = AuditContext::from_request(&req, &claims);
     audit_service::log(
-        &state,
+        state.get_ref(),
         &ctx,
         audit_service::AuditAction::UserUpdatePreferences,
         crate::services::audit_service::AuditEntityType::User,
@@ -132,10 +135,11 @@ pub async fn patch_profile(
     body: web::Json<UpdateProfileReq>,
 ) -> Result<HttpResponse> {
     let profile =
-        profile_service::update_profile(&state, claims.user_id, body.display_name.clone()).await?;
+        profile_service::update_profile(state.get_ref(), claims.user_id, body.display_name.clone())
+            .await?;
     let ctx = AuditContext::from_request(&req, &claims);
     audit_service::log_with_details(
-        &state,
+        state.get_ref(),
         &ctx,
         audit_service::AuditAction::UserUpdateProfile,
         crate::services::audit_service::AuditEntityType::User,
@@ -170,10 +174,11 @@ pub async fn upload_avatar(
     claims: web::ReqData<Claims>,
     mut payload: actix_multipart::Multipart,
 ) -> Result<HttpResponse> {
-    let profile = profile_service::upload_avatar(&state, claims.user_id, &mut payload).await?;
+    let profile =
+        profile_service::upload_avatar(state.get_ref(), claims.user_id, &mut payload).await?;
     let ctx = AuditContext::from_request(&req, &claims);
     audit_service::log(
-        &state,
+        state.get_ref(),
         &ctx,
         audit_service::AuditAction::UserUploadAvatar,
         crate::services::audit_service::AuditEntityType::User,
@@ -204,10 +209,11 @@ pub async fn put_avatar_source(
     claims: web::ReqData<Claims>,
     body: web::Json<UpdateAvatarSourceReq>,
 ) -> Result<HttpResponse> {
-    let profile = profile_service::set_avatar_source(&state, claims.user_id, body.source).await?;
+    let profile =
+        profile_service::set_avatar_source(state.get_ref(), claims.user_id, body.source).await?;
     let ctx = AuditContext::from_request(&req, &claims);
     audit_service::log_with_details(
-        &state,
+        state.get_ref(),
         &ctx,
         audit_service::AuditAction::UserSetAvatarSource,
         crate::services::audit_service::AuditEntityType::User,
@@ -245,6 +251,6 @@ pub async fn get_self_avatar(
     claims: web::ReqData<Claims>,
     path: web::Path<u32>,
 ) -> Result<HttpResponse> {
-    let bytes = profile_service::get_avatar_bytes(&state, claims.user_id, *path).await?;
+    let bytes = profile_service::get_avatar_bytes(state.get_ref(), claims.user_id, *path).await?;
     Ok(profile_service::avatar_image_response(bytes))
 }

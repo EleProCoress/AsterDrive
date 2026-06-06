@@ -28,7 +28,7 @@ use super::cookies::{
 fn refresh_cookie_jti(state: &PrimaryAppState, req: &HttpRequest) -> Option<String> {
     let refresh_token = req.cookie(REFRESH_COOKIE)?.value().to_string();
     let claims =
-        auth_service::verify_token(&refresh_token, &state.config().auth.jwt_secret).ok()?;
+        auth_service::verify_token(&refresh_token, state.config().auth.jwt_secret.as_str()).ok()?;
     if claims.token_type != TokenType::Refresh {
         return None;
     }
@@ -40,7 +40,7 @@ pub(super) fn authenticated_login_response(
     access_token: &str,
     refresh_token: &str,
 ) -> Result<HttpResponse> {
-    let auth_policy = RuntimeAuthPolicy::from_runtime_config(&state.runtime_config());
+    let auth_policy = RuntimeAuthPolicy::from_runtime_config(state.runtime_config());
     let secure = auth_policy.cookie_secure;
     let csrf_token = csrf::build_csrf_token();
     let access_ttl = u64_to_i64(auth_policy.access_token_ttl_secs, "access token ttl")?;
@@ -122,10 +122,11 @@ pub async fn get_storage_events(
             .finish());
     }
 
-    let visible_team_ids = revalidate_storage_event_stream(&state, user_id, session_version, true)
-        .await?
-        .expect("visible teams should be loaded on initial SSE auth check");
-    let mut rx = state.storage_change_tx().subscribe();
+    let visible_team_ids =
+        revalidate_storage_event_stream(state.get_ref(), user_id, session_version, true)
+            .await?
+            .expect("visible teams should be loaded on initial SSE auth check");
+    let mut rx = state.get_ref().storage_change_tx().subscribe();
 
     let stream = async_stream::stream! {
         let mut heartbeat = tokio::time::interval(std::time::Duration::from_secs(15));
@@ -143,7 +144,7 @@ pub async fn get_storage_events(
                     break;
                 }
                 _ = heartbeat.tick() => {
-                    match revalidate_storage_event_stream(&state, user_id, session_version, true).await {
+                    match revalidate_storage_event_stream(state.get_ref(), user_id, session_version, true).await {
                         Ok(Some(updated_team_ids)) => {
                             visible_team_ids = updated_team_ids;
                         }
@@ -166,7 +167,7 @@ pub async fn get_storage_events(
                             let refresh_visible_teams =
                                 matches!(event.workspace, Some(StorageChangeWorkspace::Team { .. }));
                             match revalidate_storage_event_stream(
-                                &state,
+                                state.get_ref(),
                                 user_id,
                                 session_version,
                                 refresh_visible_teams,
@@ -197,7 +198,7 @@ pub async fn get_storage_events(
                         Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
                             tracing::warn!(user_id, skipped, "storage change event stream lagged");
                             if let Err(error) =
-                                revalidate_storage_event_stream(&state, user_id, session_version, false).await
+                                revalidate_storage_event_stream(state.get_ref(), user_id, session_version, false).await
                             {
                                 tracing::info!(
                                     user_id,
@@ -247,17 +248,21 @@ pub async fn login(
 ) -> Result<HttpResponse> {
     csrf::ensure_request_source_allowed(
         &req,
-        &state.runtime_config(),
+        state.get_ref().runtime_config(),
         RequestSourceMode::OptionalWhenPresent,
     )?;
     let audit_info = AuditRequestInfo::from_request_with_trusted_proxies(
         &req,
-        &state.config().network_trust.trusted_proxies,
+        &state.get_ref().config().network_trust.trusted_proxies,
     );
-    let result =
-        auth_service::login_with_audit(&state, &body.identifier, &body.password, &audit_info)
-            .await?;
-    login_completion_response(&state, result)
+    let result = auth_service::login_with_audit(
+        state.get_ref(),
+        &body.identifier,
+        &body.password,
+        &audit_info,
+    )
+    .await?;
+    login_completion_response(state.get_ref(), result)
 }
 
 #[api_docs_macros::path(
@@ -273,22 +278,22 @@ pub async fn login(
 pub async fn refresh(state: web::Data<PrimaryAppState>, req: HttpRequest) -> Result<HttpResponse> {
     csrf::ensure_request_source_allowed(
         &req,
-        &state.runtime_config(),
+        state.get_ref().runtime_config(),
         RequestSourceMode::OptionalWhenPresent,
     )?;
     csrf::ensure_double_submit_token(&req)?;
     let audit_info = AuditRequestInfo::from_request_with_trusted_proxies(
         &req,
-        &state.config().network_trust.trusted_proxies,
+        &state.get_ref().config().network_trust.trusted_proxies,
     );
-    let auth_policy = RuntimeAuthPolicy::from_runtime_config(&state.runtime_config());
+    let auth_policy = RuntimeAuthPolicy::from_runtime_config(state.get_ref().runtime_config());
     let refresh_tok = req
         .cookie(REFRESH_COOKIE)
         .map(|c| c.value().to_string())
         .ok_or_else(|| AsterError::auth_token_invalid("missing refresh cookie"))?;
 
     let (access, refresh_token) = auth_service::refresh_tokens(
-        &state,
+        state.get_ref(),
         &refresh_tok,
         audit_info.ip_address.as_deref(),
         audit_info.user_agent.as_deref(),
@@ -321,7 +326,7 @@ pub async fn logout(state: web::Data<PrimaryAppState>, req: HttpRequest) -> Http
     if access_cookie_token(&req).is_some() || req.cookie(REFRESH_COOKIE).is_some() {
         if let Err(error) = csrf::ensure_request_source_allowed(
             &req,
-            &state.runtime_config(),
+            state.get_ref().runtime_config(),
             RequestSourceMode::OptionalWhenPresent,
         ) {
             return actix_web::ResponseError::error_response(&error);
@@ -333,12 +338,13 @@ pub async fn logout(state: web::Data<PrimaryAppState>, req: HttpRequest) -> Http
 
     let audit_info = AuditRequestInfo::from_request_with_trusted_proxies(
         &req,
-        &state.config().network_trust.trusted_proxies,
+        &state.get_ref().config().network_trust.trusted_proxies,
     );
     if let Some(refresh_token) = req
         .cookie(REFRESH_COOKIE)
         .map(|cookie| cookie.value().to_string())
-        && let Err(error) = auth_service::revoke_refresh_token(&state, &refresh_token).await
+        && let Err(error) =
+            auth_service::revoke_refresh_token(state.get_ref(), &refresh_token).await
     {
         tracing::warn!("failed to revoke refresh token on logout: {error}");
     }
@@ -351,12 +357,13 @@ pub async fn logout(state: web::Data<PrimaryAppState>, req: HttpRequest) -> Http
     .into_iter()
     .flatten()
     {
-        if auth_service::log_logout_for_token(&state, &token, &audit_info).await {
+        if auth_service::log_logout_for_token(state.get_ref(), &token, &audit_info).await {
             break;
         }
     }
 
-    let secure = RuntimeAuthPolicy::from_runtime_config(&state.runtime_config()).cookie_secure;
+    let secure =
+        RuntimeAuthPolicy::from_runtime_config(state.get_ref().runtime_config()).cookie_secure;
     HttpResponse::Ok()
         .cookie(clear_access_cookie(secure))
         .cookie(clear_refresh_cookie(secure))
@@ -385,7 +392,7 @@ pub async fn me(
     match query.selected_fields()? {
         Some(fields) => {
             let resp = user_service::get_me_partial(
-                &state,
+                state.get_ref(),
                 claims.user_id,
                 access_token_expires_at,
                 fields,
@@ -395,7 +402,8 @@ pub async fn me(
         }
         None => {
             let resp =
-                user_service::get_me(&state, claims.user_id, access_token_expires_at).await?;
+                user_service::get_me(state.get_ref(), claims.user_id, access_token_expires_at)
+                    .await?;
             Ok(HttpResponse::Ok().json(ApiResponse::ok(resp)))
         }
     }
@@ -418,9 +426,9 @@ pub async fn list_sessions(
     claims: web::ReqData<Claims>,
 ) -> Result<HttpResponse> {
     let sessions = auth_service::list_auth_sessions(
-        &state,
+        state.get_ref(),
         claims.user_id,
-        refresh_cookie_jti(&state, &req).as_deref(),
+        refresh_cookie_jti(state.get_ref(), &req).as_deref(),
     )
     .await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(sessions)))
@@ -442,18 +450,21 @@ pub async fn delete_other_sessions(
     req: HttpRequest,
     claims: web::ReqData<Claims>,
 ) -> Result<HttpResponse> {
-    let current_refresh_jti = refresh_cookie_jti(&state, &req)
+    let current_refresh_jti = refresh_cookie_jti(state.get_ref(), &req)
         .ok_or_else(|| AsterError::auth_token_invalid("missing current refresh session"))?;
-    let removed =
-        auth_service::revoke_other_auth_sessions(&state, claims.user_id, &current_refresh_jti)
-            .await?;
+    let removed = auth_service::revoke_other_auth_sessions(
+        state.get_ref(),
+        claims.user_id,
+        &current_refresh_jti,
+    )
+    .await?;
     let ctx = AuditContext::from_request_with_trusted_proxies(
         &req,
         &claims,
-        &state.config().network_trust.trusted_proxies,
+        &state.get_ref().config().network_trust.trusted_proxies,
     );
     audit_service::log_with_details(
-        &state,
+        state.get_ref(),
         &ctx,
         audit_service::AuditAction::UserRevokeOtherSessions,
         crate::services::audit_service::AuditEntityType::AuthSession,
@@ -490,9 +501,9 @@ pub async fn delete_session(
     claims: web::ReqData<Claims>,
     path: web::Path<String>,
 ) -> Result<HttpResponse> {
-    let current_refresh_jti = refresh_cookie_jti(&state, &req);
+    let current_refresh_jti = refresh_cookie_jti(state.get_ref(), &req);
     let revoked_current = auth_service::revoke_auth_session(
-        &state,
+        state.get_ref(),
         claims.user_id,
         path.as_str(),
         current_refresh_jti.as_deref(),
@@ -501,10 +512,10 @@ pub async fn delete_session(
     let ctx = AuditContext::from_request_with_trusted_proxies(
         &req,
         &claims,
-        &state.config().network_trust.trusted_proxies,
+        &state.get_ref().config().network_trust.trusted_proxies,
     );
     audit_service::log_with_details(
-        &state,
+        state.get_ref(),
         &ctx,
         audit_service::AuditAction::UserRevokeSession,
         crate::services::audit_service::AuditEntityType::AuthSession,
@@ -520,7 +531,8 @@ pub async fn delete_session(
     )
     .await;
 
-    let secure = RuntimeAuthPolicy::from_runtime_config(&state.runtime_config()).cookie_secure;
+    let secure =
+        RuntimeAuthPolicy::from_runtime_config(state.get_ref().runtime_config()).cookie_secure;
     let mut response = HttpResponse::Ok();
     if revoked_current {
         response
@@ -553,19 +565,19 @@ pub async fn put_password(
     let ctx = AuditContext::from_request_with_trusted_proxies(
         &req,
         &claims,
-        &state.config().network_trust.trusted_proxies,
+        &state.get_ref().config().network_trust.trusted_proxies,
     );
     let user = auth_service::change_password_with_audit(
-        &state,
+        state.get_ref(),
         claims.user_id,
         &body.current_password,
         &body.new_password,
         &ctx,
     )
     .await?;
-    let auth_policy = RuntimeAuthPolicy::from_runtime_config(&state.runtime_config());
+    let auth_policy = RuntimeAuthPolicy::from_runtime_config(state.get_ref().runtime_config());
     let (access_token, refresh_token) = auth_service::issue_tokens_for_session(
-        &state,
+        state.get_ref(),
         user.id,
         user.session_version,
         ctx.ip_address.as_deref(),

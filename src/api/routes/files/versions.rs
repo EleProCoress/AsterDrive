@@ -24,7 +24,7 @@ pub async fn list_versions(
     claims: web::ReqData<Claims>,
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
-    let versions = version_service::list_versions(&state, *path, claims.user_id).await?;
+    let versions = version_service::list_versions(state.get_ref(), *path, claims.user_id).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(versions)))
 }
 
@@ -52,7 +52,7 @@ pub async fn restore_version(
 ) -> Result<HttpResponse> {
     let ctx = AuditContext::from_request(&req, &claims);
     let file = version_service::restore_version_with_audit(
-        &state,
+        state.get_ref(),
         path.id,
         path.version_id,
         claims.user_id,
@@ -86,7 +86,7 @@ pub async fn delete_version(
 ) -> Result<HttpResponse> {
     let ctx = AuditContext::from_request(&req, &claims);
     version_service::delete_version_with_audit(
-        &state,
+        state.get_ref(),
         path.id,
         path.version_id,
         claims.user_id,
@@ -119,7 +119,8 @@ pub(crate) async fn team_list_versions(
 ) -> Result<HttpResponse> {
     let (team_id, file_id) = path.into_inner();
     let versions =
-        version_service::list_versions_for_team(&state, team_id, file_id, claims.user_id).await?;
+        version_service::list_versions_for_team(state.get_ref(), team_id, file_id, claims.user_id)
+            .await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(versions)))
 }
 
@@ -150,7 +151,7 @@ pub(crate) async fn team_restore_version(
     let (team_id, file_id, version_id) = path.into_inner();
     let ctx = AuditContext::from_request(&req, &claims);
     let file = version_service::restore_version_for_team_with_audit(
-        &state,
+        state.get_ref(),
         team_id,
         file_id,
         version_id,
@@ -188,7 +189,7 @@ pub(crate) async fn team_delete_version(
     let (team_id, file_id, version_id) = path.into_inner();
     let ctx = AuditContext::from_request(&req, &claims);
     version_service::delete_version_for_team_with_audit(
-        &state,
+        state.get_ref(),
         team_id,
         file_id,
         version_id,

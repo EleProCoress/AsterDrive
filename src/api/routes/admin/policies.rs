@@ -153,7 +153,7 @@ pub async fn list_policies(
     query: web::Query<AdminPolicyListQuery>,
 ) -> Result<HttpResponse> {
     let policies = policy_service::list_paginated(
-        &state,
+        state.get_ref(),
         page.limit_or(50, 100),
         page.offset(),
         query.sort_by(),
@@ -184,7 +184,8 @@ pub async fn create_policy(
 ) -> Result<HttpResponse> {
     validate_request(&*body)?;
     let ctx = audit_service::AuditContext::from_request(&req, &claims);
-    let policy = policy_service::create_with_audit(&state, body.into_inner().into(), &ctx).await?;
+    let policy =
+        policy_service::create_with_audit(state.get_ref(), body.into_inner().into(), &ctx).await?;
     Ok(HttpResponse::Created().json(ApiResponse::ok(policy)))
 }
 
@@ -206,7 +207,7 @@ pub async fn get_policy(
     state: web::Data<PrimaryAppState>,
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
-    let policy = policy_service::get(&state, *path).await?;
+    let policy = policy_service::get(state.get_ref(), *path).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(policy)))
 }
 
@@ -228,7 +229,7 @@ pub async fn get_policy_capacity(
     state: web::Data<PrimaryAppState>,
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
-    let capacity = policy_service::capacity_info(&state, *path).await?;
+    let capacity = policy_service::capacity_info(state.get_ref(), *path).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(capacity)))
 }
 
@@ -257,7 +258,8 @@ pub async fn update_policy(
     validate_request(&*body)?;
     let ctx = audit_service::AuditContext::from_request(&req, &claims);
     let policy =
-        policy_service::update_with_audit(&state, *path, body.into_inner().into(), &ctx).await?;
+        policy_service::update_with_audit(state.get_ref(), *path, body.into_inner().into(), &ctx)
+            .await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(policy)))
 }
 
@@ -283,7 +285,7 @@ pub async fn delete_policy(
     query: web::Query<DeletePolicyQuery>,
 ) -> Result<HttpResponse> {
     let ctx = audit_service::AuditContext::from_request(&req, &claims);
-    policy_service::delete_with_audit(&state, *path, query.force, &ctx).await?;
+    policy_service::delete_with_audit(state.get_ref(), *path, query.force, &ctx).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
 }
 
@@ -304,7 +306,7 @@ pub async fn test_policy_connection(
     state: web::Data<PrimaryAppState>,
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
-    policy_service::test_connection(&state, *path).await?;
+    policy_service::test_connection(state.get_ref(), *path).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
 }
 
@@ -326,7 +328,7 @@ pub async fn test_policy_params(
     body: web::Json<TestPolicyParamsReq>,
 ) -> Result<HttpResponse> {
     validate_request(&*body)?;
-    policy_service::test_connection_params(&state, body.into_inner().into()).await?;
+    policy_service::test_connection_params(state.get_ref(), body.into_inner().into()).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
 }
 
@@ -349,7 +351,7 @@ pub async fn list_policy_groups(
     query: web::Query<AdminPolicyGroupListQuery>,
 ) -> Result<HttpResponse> {
     let groups = policy_service::list_groups_paginated(
-        &state,
+        state.get_ref(),
         page.limit_or(50, 100),
         page.offset(),
         query.sort_by(),
@@ -382,7 +384,8 @@ pub async fn create_policy_group(
     validate_request(&*body)?;
     let ctx = audit_service::AuditContext::from_request(&req, &claims);
     let group =
-        policy_service::create_group_with_audit(&state, body.into_inner().into(), &ctx).await?;
+        policy_service::create_group_with_audit(state.get_ref(), body.into_inner().into(), &ctx)
+            .await?;
     Ok(HttpResponse::Created().json(ApiResponse::ok(group)))
 }
 
@@ -404,7 +407,7 @@ pub async fn get_policy_group(
     state: web::Data<PrimaryAppState>,
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
-    let group = policy_service::get_group(&state, *path).await?;
+    let group = policy_service::get_group(state.get_ref(), *path).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(group)))
 }
 
@@ -433,9 +436,13 @@ pub async fn update_policy_group(
 ) -> Result<HttpResponse> {
     validate_request(&*body)?;
     let ctx = audit_service::AuditContext::from_request(&req, &claims);
-    let group =
-        policy_service::update_group_with_audit(&state, *path, body.into_inner().into(), &ctx)
-            .await?;
+    let group = policy_service::update_group_with_audit(
+        state.get_ref(),
+        *path,
+        body.into_inner().into(),
+        &ctx,
+    )
+    .await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(group)))
 }
 
@@ -461,7 +468,7 @@ pub async fn delete_policy_group(
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
     let ctx = audit_service::AuditContext::from_request(&req, &claims);
-    policy_service::delete_group_with_audit(&state, *path, &ctx).await?;
+    policy_service::delete_group_with_audit(state.get_ref(), *path, &ctx).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
 }
 
@@ -491,7 +498,7 @@ pub async fn migrate_policy_group_assignments(
     validate_request(&*body)?;
     let ctx = audit_service::AuditContext::from_request(&req, &claims);
     let result = policy_service::migrate_group_assignments_with_audit(
-        &state,
+        state.get_ref(),
         *path,
         body.target_group_id,
         &ctx,

@@ -59,7 +59,7 @@ pub async fn get_settings(
     Ok(HttpResponse::Ok().json(ApiResponse::ok(WebdavSettingsInfo {
         prefix: state.config().webdav.prefix.clone(),
         endpoint: site_url::public_app_url_or_path_for_request(
-            &state.runtime_config(),
+            state.get_ref().runtime_config(),
             &endpoint_path,
             conn.scheme(),
             conn.host(),
@@ -85,7 +85,7 @@ pub async fn list_accounts(
     query: web::Query<LimitOffsetQuery>,
 ) -> Result<HttpResponse> {
     let accounts = webdav_account_service::list_paginated(
-        &state,
+        state.get_ref(),
         claims.user_id,
         query.limit_or(50, 100),
         query.offset(),
@@ -114,7 +114,7 @@ pub async fn create_account(
 ) -> Result<HttpResponse> {
     validate_request(&*body)?;
     let result = webdav_account_service::create(
-        &state,
+        state.get_ref(),
         claims.user_id,
         &body.username,
         body.password.as_deref(),
@@ -123,7 +123,7 @@ pub async fn create_account(
     .await?;
     let ctx = audit_service::AuditContext::from_request(&req, &claims);
     audit_service::log(
-        &state,
+        state.get_ref(),
         &ctx,
         audit_service::AuditAction::WebdavAccountCreate,
         crate::services::audit_service::AuditEntityType::WebdavAccount,
@@ -165,7 +165,7 @@ pub async fn list_team_accounts(
     query: web::Query<LimitOffsetQuery>,
 ) -> Result<HttpResponse> {
     let accounts = webdav_account_service::list_team_paginated(
-        &state,
+        state.get_ref(),
         claims.user_id,
         path.team_id,
         query.limit_or(50, 100),
@@ -197,7 +197,7 @@ pub async fn create_team_account(
 ) -> Result<HttpResponse> {
     validate_request(&*body)?;
     let result = webdav_account_service::create_for_team(
-        &state,
+        state.get_ref(),
         claims.user_id,
         path.team_id,
         &body.username,
@@ -207,7 +207,7 @@ pub async fn create_team_account(
     .await?;
     let ctx = audit_service::AuditContext::from_request(&req, &claims);
     audit_service::log_with_details(
-        &state,
+        state.get_ref(),
         &ctx,
         audit_service::AuditAction::TeamWebdavAccountCreate,
         crate::services::audit_service::AuditEntityType::WebdavAccount,
@@ -245,11 +245,16 @@ pub async fn delete_team_account(
     req: HttpRequest,
     path: web::Path<TeamWebdavAccountIdPath>,
 ) -> Result<HttpResponse> {
-    webdav_account_service::delete_for_team(&state, path.account_id, claims.user_id, path.team_id)
-        .await?;
+    webdav_account_service::delete_for_team(
+        state.get_ref(),
+        path.account_id,
+        claims.user_id,
+        path.team_id,
+    )
+    .await?;
     let ctx = audit_service::AuditContext::from_request(&req, &claims);
     audit_service::log_with_details(
-        &state,
+        state.get_ref(),
         &ctx,
         audit_service::AuditAction::TeamWebdavAccountDelete,
         crate::services::audit_service::AuditEntityType::WebdavAccount,
@@ -288,7 +293,7 @@ pub async fn toggle_team_account(
     path: web::Path<TeamWebdavAccountIdPath>,
 ) -> Result<HttpResponse> {
     let account = webdav_account_service::toggle_team_active(
-        &state,
+        state.get_ref(),
         path.account_id,
         claims.user_id,
         path.team_id,
@@ -296,7 +301,7 @@ pub async fn toggle_team_account(
     .await?;
     let ctx = audit_service::AuditContext::from_request(&req, &claims);
     audit_service::log_with_details(
-        &state,
+        state.get_ref(),
         &ctx,
         audit_service::AuditAction::TeamWebdavAccountToggle,
         crate::services::audit_service::AuditEntityType::WebdavAccount,
@@ -332,10 +337,10 @@ pub async fn delete_account(
     req: HttpRequest,
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
-    webdav_account_service::delete(&state, *path, claims.user_id).await?;
+    webdav_account_service::delete(state.get_ref(), *path, claims.user_id).await?;
     let ctx = audit_service::AuditContext::from_request(&req, &claims);
     audit_service::log(
-        &state,
+        state.get_ref(),
         &ctx,
         audit_service::AuditAction::WebdavAccountDelete,
         crate::services::audit_service::AuditEntityType::WebdavAccount,
@@ -366,10 +371,11 @@ pub async fn toggle_account(
     req: HttpRequest,
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
-    let account = webdav_account_service::toggle_active(&state, *path, claims.user_id).await?;
+    let account =
+        webdav_account_service::toggle_active(state.get_ref(), *path, claims.user_id).await?;
     let ctx = audit_service::AuditContext::from_request(&req, &claims);
     audit_service::log_with_details(
-        &state,
+        state.get_ref(),
         &ctx,
         audit_service::AuditAction::WebdavAccountToggle,
         crate::services::audit_service::AuditEntityType::WebdavAccount,
@@ -402,6 +408,7 @@ pub async fn test_connection(
     body: web::Json<TestConnectionReq>,
 ) -> Result<HttpResponse> {
     validate_request(&*body)?;
-    webdav_account_service::test_credentials(&state, &body.username, &body.password).await?;
+    webdav_account_service::test_credentials(state.get_ref(), &body.username, &body.password)
+        .await?;
     Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
 }

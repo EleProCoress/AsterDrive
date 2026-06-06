@@ -15,7 +15,6 @@ use crate::services::{
     storage_change_service::StorageChangeEvent,
 };
 use crate::storage::{DriverRegistry, PolicySnapshot, remote_protocol::RemoteProtocolRuntime};
-use actix_web::web;
 use sea_orm::DatabaseConnection;
 use std::sync::Arc;
 use tokio::sync::Notify;
@@ -226,82 +225,12 @@ impl SharedRuntimeState for FollowerAppState {
 
 impl FollowerRuntimeState for FollowerAppState {}
 
-impl<T: SharedRuntimeState> SharedRuntimeState for web::Data<T> {
-    fn writer_db(&self) -> &DatabaseConnection {
-        self.get_ref().writer_db()
-    }
-
-    fn reader_db(&self) -> &DatabaseConnection {
-        self.get_ref().reader_db()
-    }
-
-    fn driver_registry(&self) -> &Arc<DriverRegistry> {
-        self.get_ref().driver_registry()
-    }
-
-    fn runtime_config(&self) -> &Arc<RuntimeConfig> {
-        self.get_ref().runtime_config()
-    }
-
-    fn policy_snapshot(&self) -> &Arc<PolicySnapshot> {
-        self.get_ref().policy_snapshot()
-    }
-
-    fn config(&self) -> &Arc<Config> {
-        self.get_ref().config()
-    }
-
-    fn cache(&self) -> &Arc<dyn CacheBackend> {
-        self.get_ref().cache()
-    }
-
-    fn metrics(&self) -> &SharedMetricsRecorder {
-        self.get_ref().metrics()
-    }
-}
-
-impl<T: MailRuntimeState> MailRuntimeState for web::Data<T> {
-    fn mail_sender(&self) -> &Arc<dyn MailSender> {
-        self.get_ref().mail_sender()
-    }
-}
-
-impl<T: StorageChangeRuntimeState> StorageChangeRuntimeState for web::Data<T> {
-    fn storage_change_tx(&self) -> &tokio::sync::broadcast::Sender<StorageChangeEvent> {
-        self.get_ref().storage_change_tx()
-    }
-}
-
-impl<T: ShareDownloadRuntimeState> ShareDownloadRuntimeState for web::Data<T> {
-    fn share_download_rollback(&self) -> &ShareDownloadRollbackQueue {
-        self.get_ref().share_download_rollback()
-    }
-}
-
-impl<T: RemoteProtocolRuntimeState> RemoteProtocolRuntimeState for web::Data<T> {
-    fn remote_protocol(&self) -> &Arc<RemoteProtocolRuntime> {
-        self.get_ref().remote_protocol()
-    }
-}
-
-impl<T: TaskRuntimeState> TaskRuntimeState for web::Data<T> {
-    fn wake_background_task_dispatcher(&self) {
-        self.get_ref().wake_background_task_dispatcher();
-    }
-}
-
-impl<T: FollowerRuntimeState> FollowerRuntimeState for web::Data<T> {}
-
 #[cfg(test)]
 mod tests {
-    use super::{
-        FollowerRuntimeState, MailRuntimeState, PrimaryAppState, RemoteProtocolRuntimeState,
-        ShareDownloadRuntimeState, SharedRuntimeState, StorageChangeRuntimeState, TaskRuntimeState,
-    };
+    use super::{PrimaryAppState, SharedRuntimeState, TaskRuntimeState};
     use crate::config::{CacheConfig, Config, RuntimeConfig};
     use crate::services::share_service::build_share_download_rollback_queue;
     use crate::storage::{DriverRegistry, PolicySnapshot};
-    use actix_web::web;
     use migration::Migrator;
     use std::sync::Arc;
 
@@ -393,79 +322,6 @@ mod tests {
             SharedRuntimeState::reader_db(&state).get_database_backend(),
             SharedRuntimeState::reader_db(&follower).get_database_backend()
         );
-    }
-
-    #[tokio::test]
-    async fn web_data_forwards_runtime_state_traits() {
-        let state = setup_state().await;
-        let data = web::Data::new(state.clone());
-
-        assert_eq!(
-            SharedRuntimeState::writer_db(&data).get_database_backend(),
-            state.writer_db().get_database_backend()
-        );
-        assert_eq!(
-            SharedRuntimeState::writer_db(&data).get_database_backend(),
-            state.writer_db().get_database_backend()
-        );
-        assert_eq!(
-            SharedRuntimeState::reader_db(&data).get_database_backend(),
-            state.reader_db().get_database_backend()
-        );
-        assert!(Arc::ptr_eq(&state.runtime_config, data.runtime_config()));
-        assert!(Arc::ptr_eq(&state.mail_sender, data.mail_sender()));
-        assert!(Arc::ptr_eq(
-            &state.mail_sender,
-            MailRuntimeState::mail_sender(&data)
-        ));
-        assert!(Arc::ptr_eq(&state.driver_registry, data.driver_registry()));
-        assert!(Arc::ptr_eq(
-            &state.policy_snapshot,
-            SharedRuntimeState::policy_snapshot(&data)
-        ));
-        assert!(Arc::ptr_eq(
-            &state.config,
-            SharedRuntimeState::config(&data)
-        ));
-        assert_eq!(
-            state.storage_change_tx.receiver_count(),
-            data.storage_change_tx().receiver_count()
-        );
-        assert_eq!(
-            state.storage_change_tx.receiver_count(),
-            StorageChangeRuntimeState::storage_change_tx(&data).receiver_count()
-        );
-        let _ = data.share_download_rollback();
-        let _ = ShareDownloadRuntimeState::share_download_rollback(&data);
-        assert!(Arc::ptr_eq(
-            &state.remote_protocol,
-            RemoteProtocolRuntimeState::remote_protocol(&data)
-        ));
-
-        let notified = state.background_task_dispatch_wakeup.notified();
-        TaskRuntimeState::wake_background_task_dispatcher(&data);
-        tokio::time::timeout(std::time::Duration::from_secs(1), notified)
-            .await
-            .expect("web::Data task runtime state should notify dispatcher");
-    }
-
-    #[tokio::test]
-    async fn web_data_forwards_follower_runtime_state_trait() {
-        fn assert_follower_state<S: FollowerRuntimeState>(state: &S) {
-            assert_eq!(state.cache().backend_name(), "noop");
-        }
-
-        let follower = setup_state().await.follower_view();
-        let data = web::Data::new(follower);
-        assert_eq!(
-            SharedRuntimeState::writer_db(&data).get_database_backend(),
-            data.get_ref().writer_db().get_database_backend()
-        );
-        assert_eq!(
-            SharedRuntimeState::reader_db(&data).get_database_backend(),
-            data.get_ref().reader_db().get_database_backend()
-        );
-        assert_follower_state(&data);
     }
 
     #[tokio::test]

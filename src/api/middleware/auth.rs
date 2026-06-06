@@ -65,7 +65,7 @@ where
             if cookie_token.is_some() && csrf::is_unsafe_method(req.method()) {
                 csrf::ensure_service_request_source_allowed(
                     &req,
-                    &state.runtime_config(),
+                    state.get_ref().runtime_config(),
                     RequestSourceMode::OptionalWhenPresent,
                 )?;
                 csrf::ensure_service_double_submit_token(&req)?;
@@ -75,7 +75,8 @@ where
 
             match token {
                 None => Err(AsterError::auth_token_missing("missing token").into()),
-                Some(t) => match auth_service::authenticate_access_token(state, &t).await {
+                Some(t) => match auth_service::authenticate_access_token(state.get_ref(), &t).await
+                {
                     Ok((claims, snapshot)) => {
                         tracing::Span::current().record("user_id", claims.user_id);
                         req.extensions_mut().insert(claims);

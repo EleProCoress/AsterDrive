@@ -31,7 +31,7 @@ pub async fn list_teams(
     query: web::Query<AdminTeamListQuery>,
 ) -> Result<HttpResponse> {
     let teams = team_service::list_admin_teams(
-        &state,
+        state.get_ref(),
         page.limit_or(50, 100),
         page.offset(),
         query.keyword.as_deref(),
@@ -66,7 +66,7 @@ pub async fn create_team(
     validate_request(&*body)?;
     let ctx = audit_service::AuditContext::from_request(&req, &claims);
     let team = team_service::create_admin_team_with_audit(
-        &state,
+        state.get_ref(),
         claims.user_id,
         team_service::AdminCreateTeamInput {
             name: body.name.clone(),
@@ -100,7 +100,7 @@ pub async fn get_team(
     state: web::Data<PrimaryAppState>,
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
-    let team = team_service::get_admin_team(&state, *path).await?;
+    let team = team_service::get_admin_team(state.get_ref(), *path).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(team)))
 }
 
@@ -130,7 +130,7 @@ pub async fn update_team(
     validate_request(&*body)?;
     let ctx = audit_service::AuditContext::from_request(&req, &claims);
     let team = team_service::update_admin_team_with_audit(
-        &state,
+        state.get_ref(),
         *path,
         team_service::AdminUpdateTeamInput {
             name: body.name.clone(),
@@ -165,7 +165,7 @@ pub async fn delete_team(
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
     let ctx = audit_service::AuditContext::from_request(&req, &claims);
-    team_service::archive_admin_team_with_audit(&state, *path, &ctx).await?;
+    team_service::archive_admin_team_with_audit(state.get_ref(), *path, &ctx).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
 }
 
@@ -190,7 +190,7 @@ pub async fn restore_team(
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
     let ctx = audit_service::AuditContext::from_request(&req, &claims);
-    let team = team_service::restore_admin_team_with_audit(&state, *path, &ctx).await?;
+    let team = team_service::restore_admin_team_with_audit(state.get_ref(), *path, &ctx).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(team)))
 }
 
@@ -219,7 +219,7 @@ pub async fn list_team_audit_logs(
     query: web::Query<audit_service::AuditLogFilterQuery>,
 ) -> Result<HttpResponse> {
     let page = team_service::list_admin_team_audit_entries(
-        &state,
+        state.get_ref(),
         *path,
         audit_service::AuditLogFilters::from_query(&query),
         page.limit_or(20, 200),
@@ -255,7 +255,7 @@ pub async fn list_team_members(
     query: web::Query<ListTeamMembersQuery>,
 ) -> Result<HttpResponse> {
     let members = team_service::list_admin_members(
-        &state,
+        state.get_ref(),
         *path,
         {
             let mut filters = team_service::TeamMemberListFilters::from_inputs(
@@ -299,7 +299,7 @@ pub async fn add_team_member(
     validate_request(&*body)?;
     let ctx = audit_service::AuditContext::from_request(&req, &claims);
     let member = team_service::add_admin_member_with_audit(
-        &state,
+        state.get_ref(),
         *path,
         team_service::AddTeamMemberInput {
             user_id: body.user_id,
@@ -340,7 +340,7 @@ pub async fn patch_team_member(
     let (team_id, member_user_id) = path.into_inner();
     let ctx = audit_service::AuditContext::from_request(&req, &claims);
     let member = team_service::update_admin_member_role_with_audit(
-        &state,
+        state.get_ref(),
         team_id,
         member_user_id,
         body.role,
@@ -375,6 +375,7 @@ pub async fn delete_team_member(
 ) -> Result<HttpResponse> {
     let (team_id, member_user_id) = path.into_inner();
     let ctx = audit_service::AuditContext::from_request(&req, &claims);
-    team_service::remove_admin_member_with_audit(&state, team_id, member_user_id, &ctx).await?;
+    team_service::remove_admin_member_with_audit(state.get_ref(), team_id, member_user_id, &ctx)
+        .await?;
     Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
 }

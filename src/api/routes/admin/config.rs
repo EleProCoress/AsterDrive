@@ -28,7 +28,8 @@ pub async fn list_config(
     query: web::Query<LimitOffsetQuery>,
 ) -> Result<HttpResponse> {
     let configs =
-        config_service::list_paginated(&state, query.limit_or(50, 100), query.offset()).await?;
+        config_service::list_paginated(state.get_ref(), query.limit_or(50, 100), query.offset())
+            .await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(configs)))
 }
 
@@ -84,7 +85,7 @@ pub async fn get_config(
     state: web::Data<PrimaryAppState>,
     path: web::Path<String>,
 ) -> Result<HttpResponse> {
-    let config = config_service::get_by_key(&state, &path).await?;
+    let config = config_service::get_by_key(state.get_ref(), &path).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(config)))
 }
 
@@ -112,7 +113,7 @@ pub async fn set_config(
 ) -> Result<HttpResponse> {
     let ctx = audit_service::AuditContext::from_request(&req, &claims);
     let config = config_service::set_with_audit_and_visibility(
-        &state,
+        state.get_ref(),
         &path,
         &body.value,
         body.visibility,
@@ -144,7 +145,7 @@ pub async fn delete_config(
     path: web::Path<String>,
 ) -> Result<HttpResponse> {
     let ctx = audit_service::AuditContext::from_request(&req, &claims);
-    config_service::delete_with_audit(&state, &path, &ctx).await?;
+    config_service::delete_with_audit(state.get_ref(), &path, &ctx).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
 }
 
@@ -176,7 +177,7 @@ pub async fn execute_config_action(
     let key = path.into_inner();
     let ctx = audit_service::AuditContext::from_request(&req, &claims);
     let action_result = config_service::execute_action_with_audit(
-        &state,
+        state.get_ref(),
         config_service::ExecuteConfigActionInput {
             key: &key,
             action: body.action,

@@ -102,7 +102,7 @@ pub async fn list_remote_nodes(
     query: web::Query<AdminRemoteNodeListQuery>,
 ) -> Result<HttpResponse> {
     let nodes = managed_follower_service::list_paginated(
-        &state,
+        state.get_ref(),
         page.limit_or(50, 100),
         page.offset(),
         query.sort_by(),
@@ -132,10 +132,10 @@ pub async fn create_remote_node(
     body: web::Json<CreateRemoteNodeReq>,
 ) -> Result<HttpResponse> {
     validate_request(&*body)?;
-    let node = managed_follower_service::create(&state, body.into_inner().into()).await?;
+    let node = managed_follower_service::create(state.get_ref(), body.into_inner().into()).await?;
     let ctx = audit_service::AuditContext::from_request(&req, &claims);
     audit_service::log_with_details(
-        &state,
+        state.get_ref(),
         &ctx,
         audit_service::AuditAction::AdminCreateRemoteNode,
         crate::services::audit_service::AuditEntityType::RemoteNode,
@@ -165,7 +165,7 @@ pub async fn get_remote_node(
     state: web::Data<PrimaryAppState>,
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
-    let node = managed_follower_service::get(&state, *path).await?;
+    let node = managed_follower_service::get(state.get_ref(), *path).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(node)))
 }
 
@@ -192,10 +192,11 @@ pub async fn update_remote_node(
     body: web::Json<PatchRemoteNodeReq>,
 ) -> Result<HttpResponse> {
     validate_request(&*body)?;
-    let node = managed_follower_service::update(&state, *path, body.into_inner().into()).await?;
+    let node =
+        managed_follower_service::update(state.get_ref(), *path, body.into_inner().into()).await?;
     let ctx = audit_service::AuditContext::from_request(&req, &claims);
     audit_service::log_with_details(
-        &state,
+        state.get_ref(),
         &ctx,
         audit_service::AuditAction::AdminUpdateRemoteNode,
         crate::services::audit_service::AuditEntityType::RemoteNode,
@@ -227,11 +228,11 @@ pub async fn delete_remote_node(
     req: HttpRequest,
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
-    let node = managed_follower_service::get(&state, *path).await?;
-    managed_follower_service::delete(&state, *path).await?;
+    let node = managed_follower_service::get(state.get_ref(), *path).await?;
+    managed_follower_service::delete(state.get_ref(), *path).await?;
     let ctx = audit_service::AuditContext::from_request(&req, &claims);
     audit_service::log_with_details(
-        &state,
+        state.get_ref(),
         &ctx,
         audit_service::AuditAction::AdminDeleteRemoteNode,
         crate::services::audit_service::AuditEntityType::RemoteNode,
@@ -265,10 +266,10 @@ pub async fn test_remote_node(
     req: HttpRequest,
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
-    let node = managed_follower_service::test_connection(&state, *path).await?;
+    let node = managed_follower_service::test_connection(state.get_ref(), *path).await?;
     let ctx = audit_service::AuditContext::from_request(&req, &claims);
     audit_service::log_with_details(
-        &state,
+        state.get_ref(),
         &ctx,
         audit_service::AuditAction::AdminTestRemoteNode,
         crate::services::audit_service::AuditEntityType::RemoteNode,
@@ -324,10 +325,11 @@ pub async fn create_remote_node_enrollment_token(
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
     let command =
-        managed_follower_enrollment_service::create_enrollment_command(&state, *path).await?;
+        managed_follower_enrollment_service::create_enrollment_command(state.get_ref(), *path)
+            .await?;
     let ctx = audit_service::AuditContext::from_request(&req, &claims);
     audit_service::log_with_details(
-        &state,
+        state.get_ref(),
         &ctx,
         audit_service::AuditAction::AdminCreateRemoteNodeEnrollmentToken,
         crate::services::audit_service::AuditEntityType::RemoteNode,
@@ -362,7 +364,7 @@ pub async fn list_remote_node_ingress_profiles(
     state: web::Data<PrimaryAppState>,
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
-    let profiles = managed_ingress_profile_service::list_remote(&state, *path).await?;
+    let profiles = managed_ingress_profile_service::list_remote(state.get_ref(), *path).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(profiles)))
 }
 
@@ -390,10 +392,11 @@ pub async fn create_remote_node_ingress_profile(
     body: web::Json<RemoteCreateIngressProfileRequest>,
 ) -> Result<HttpResponse> {
     let profile =
-        managed_ingress_profile_service::create_remote(&state, *path, body.into_inner()).await?;
+        managed_ingress_profile_service::create_remote(state.get_ref(), *path, body.into_inner())
+            .await?;
     let ctx = audit_service::AuditContext::from_request(&req, &claims);
     audit_service::log_with_details(
-        &state,
+        state.get_ref(),
         &ctx,
         audit_service::AuditAction::AdminCreateRemoteIngressProfile,
         crate::services::audit_service::AuditEntityType::RemoteIngressProfile,
@@ -438,12 +441,16 @@ pub async fn update_remote_node_ingress_profile(
     body: web::Json<RemoteUpdateIngressProfileRequest>,
 ) -> Result<HttpResponse> {
     let (id, profile_key) = path.into_inner();
-    let profile =
-        managed_ingress_profile_service::update_remote(&state, id, &profile_key, body.into_inner())
-            .await?;
+    let profile = managed_ingress_profile_service::update_remote(
+        state.get_ref(),
+        id,
+        &profile_key,
+        body.into_inner(),
+    )
+    .await?;
     let ctx = audit_service::AuditContext::from_request(&req, &claims);
     audit_service::log_with_details(
-        &state,
+        state.get_ref(),
         &ctx,
         audit_service::AuditAction::AdminUpdateRemoteIngressProfile,
         crate::services::audit_service::AuditEntityType::RemoteIngressProfile,
@@ -486,10 +493,10 @@ pub async fn delete_remote_node_ingress_profile(
     path: web::Path<(i64, String)>,
 ) -> Result<HttpResponse> {
     let (id, profile_key) = path.into_inner();
-    managed_ingress_profile_service::delete_remote(&state, id, &profile_key).await?;
+    managed_ingress_profile_service::delete_remote(state.get_ref(), id, &profile_key).await?;
     let ctx = audit_service::AuditContext::from_request(&req, &claims);
     audit_service::log_with_details(
-        &state,
+        state.get_ref(),
         &ctx,
         audit_service::AuditAction::AdminDeleteRemoteIngressProfile,
         crate::services::audit_service::AuditEntityType::RemoteIngressProfile,

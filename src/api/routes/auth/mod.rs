@@ -380,7 +380,7 @@ fn contact_verification_redirect_url(
         redirect_path.push_str(&urlencoding::encode(email));
     }
 
-    site_url::public_app_url_or_path(&state.runtime_config(), &redirect_path)
+    site_url::public_app_url_or_path(state.runtime_config(), &redirect_path)
 }
 
 fn contact_verification_redirect_response(

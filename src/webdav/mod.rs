@@ -67,11 +67,15 @@ pub async fn webdav_handler(
     state: web::Data<PrimaryAppState>,
     webdav: web::Data<WebDavState>,
 ) -> HttpResponse {
-    if !state.runtime_config().get_bool_or("webdav_enabled", true) {
+    if !state
+        .get_ref()
+        .runtime_config()
+        .get_bool_or("webdav_enabled", true)
+    {
         return responses::webdav_disabled();
     }
 
-    let auth_result = match auth::authenticate_webdav(req.headers(), &state).await {
+    let auth_result = match auth::authenticate_webdav(req.headers(), state.get_ref()).await {
         Ok(result) => result,
         Err(_) => return responses::unauthorized(),
     };
@@ -102,7 +106,7 @@ pub async fn webdav_handler(
                 deltav::handle_report(
                     req.uri(),
                     &body,
-                    state.writer_db(),
+                    state.get_ref().writer_db(),
                     &auth_result,
                     &webdav.prefix,
                 )
@@ -113,7 +117,7 @@ pub async fn webdav_handler(
         "VERSION-CONTROL" => {
             deltav::handle_version_control(
                 req.uri(),
-                state.writer_db(),
+                state.get_ref().writer_db(),
                 &auth_result,
                 &webdav.prefix,
             )
@@ -142,8 +146,9 @@ pub async fn webdav_handler(
                 .await
         }
         "PUT" => {
-            let system_file_policy =
-                system_file::SystemFileBlockPolicy::from_runtime_config(state.runtime_config());
+            let system_file_policy = system_file::SystemFileBlockPolicy::from_runtime_config(
+                state.get_ref().runtime_config(),
+            );
             transfer::handle_put(
                 &req,
                 &dav_fs,
@@ -155,8 +160,9 @@ pub async fn webdav_handler(
             .await
         }
         "MKCOL" => {
-            let system_file_policy =
-                system_file::SystemFileBlockPolicy::from_runtime_config(state.runtime_config());
+            let system_file_policy = system_file::SystemFileBlockPolicy::from_runtime_config(
+                state.get_ref().runtime_config(),
+            );
             resources::handle_mkcol(
                 &req,
                 &dav_fs,
@@ -175,8 +181,9 @@ pub async fn webdav_handler(
         },
         "COPY" => match resources::ensure_empty_body(&mut payload).await {
             Ok(()) => {
-                let system_file_policy =
-                    system_file::SystemFileBlockPolicy::from_runtime_config(state.runtime_config());
+                let system_file_policy = system_file::SystemFileBlockPolicy::from_runtime_config(
+                    state.get_ref().runtime_config(),
+                );
                 resources::handle_copy_move(
                     &req,
                     &dav_fs,
@@ -191,8 +198,9 @@ pub async fn webdav_handler(
         },
         "MOVE" => match resources::ensure_empty_body(&mut payload).await {
             Ok(()) => {
-                let system_file_policy =
-                    system_file::SystemFileBlockPolicy::from_runtime_config(state.runtime_config());
+                let system_file_policy = system_file::SystemFileBlockPolicy::from_runtime_config(
+                    state.get_ref().runtime_config(),
+                );
                 resources::handle_copy_move(
                     &req,
                     &dav_fs,

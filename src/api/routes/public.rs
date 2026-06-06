@@ -57,7 +57,7 @@ pub fn routes() -> impl actix_web::dev::HttpServiceFactory + use<> {
 )]
 // TODO(0.3.0): remove this legacy endpoint after clients migrate to /public/frontend-config.
 pub async fn get_branding(state: web::Data<PrimaryAppState>) -> Result<HttpResponse> {
-    let branding = config_service::get_public_branding(&state);
+    let branding = config_service::get_public_branding(state.get_ref());
     Ok(public_config_response(branding))
 }
 
@@ -71,7 +71,7 @@ pub async fn get_branding(state: web::Data<PrimaryAppState>) -> Result<HttpRespo
     ),
 )]
 pub async fn get_frontend_config(state: web::Data<PrimaryAppState>) -> Result<HttpResponse> {
-    let config = config_service::get_public_frontend_config(&state);
+    let config = config_service::get_public_frontend_config(state.get_ref());
     Ok(public_config_response(config))
 }
 
@@ -85,7 +85,7 @@ pub async fn get_frontend_config(state: web::Data<PrimaryAppState>) -> Result<Ht
     ),
 )]
 pub async fn get_preview_apps(state: web::Data<PrimaryAppState>) -> Result<HttpResponse> {
-    let preview_apps = config_service::get_public_preview_apps(&state);
+    let preview_apps = config_service::get_public_preview_apps(state.get_ref());
     Ok(public_config_response(preview_apps))
 }
 
@@ -103,9 +103,9 @@ pub async fn get_custom_config(
     state: web::Data<PrimaryAppState>,
     req: HttpRequest,
 ) -> Result<HttpResponse> {
-    let include_authenticated = request_has_valid_access_token(&state, &req).await?;
+    let include_authenticated = request_has_valid_access_token(state.get_ref(), &req).await?;
     let custom_config =
-        config_service::get_public_custom_config(&state, include_authenticated).await?;
+        config_service::get_public_custom_config(state.get_ref(), include_authenticated).await?;
     if include_authenticated {
         return Ok(HttpResponse::Ok()
             .insert_header((header::CACHE_CONTROL, "private, max-age=60"))
@@ -125,7 +125,7 @@ pub async fn get_custom_config(
     ),
 )]
 pub async fn get_thumbnail_support(state: web::Data<PrimaryAppState>) -> Result<HttpResponse> {
-    let support = config_service::get_public_thumbnail_support(&state).await;
+    let support = config_service::get_public_thumbnail_support(state.get_ref()).await;
     Ok(public_config_response(support))
 }
 
@@ -139,7 +139,7 @@ pub async fn get_thumbnail_support(state: web::Data<PrimaryAppState>) -> Result<
     ),
 )]
 pub async fn get_media_data_support(state: web::Data<PrimaryAppState>) -> Result<HttpResponse> {
-    let support = config_service::get_public_media_data_support(&state).await;
+    let support = config_service::get_public_media_data_support(state.get_ref()).await;
     Ok(public_config_response(support))
 }
 
@@ -183,11 +183,12 @@ pub async fn redeem_remote_enrollment(
 ) -> Result<HttpResponse> {
     validate_request(&*body)?;
     let bootstrap =
-        managed_follower_enrollment_service::redeem_enrollment_token(&state, &body.token).await?;
+        managed_follower_enrollment_service::redeem_enrollment_token(state.get_ref(), &body.token)
+            .await?;
     let audit_info = audit_service::AuditRequestInfo::from_request(&req);
     let ctx = audit_info.to_context(0);
     audit_service::log(
-        &state,
+        state.get_ref(),
         &ctx,
         audit_service::AuditAction::RemoteEnrollmentRedeem,
         crate::services::audit_service::AuditEntityType::RemoteNode,
@@ -215,11 +216,12 @@ pub async fn ack_remote_enrollment(
     body: web::Json<AckRemoteEnrollmentReq>,
 ) -> Result<HttpResponse> {
     validate_request(&*body)?;
-    managed_follower_enrollment_service::ack_enrollment_token(&state, &body.ack_token).await?;
+    managed_follower_enrollment_service::ack_enrollment_token(state.get_ref(), &body.ack_token)
+        .await?;
     let audit_info = audit_service::AuditRequestInfo::from_request(&req);
     let ctx = audit_info.to_context(0);
     audit_service::log(
-        &state,
+        state.get_ref(),
         &ctx,
         audit_service::AuditAction::RemoteEnrollmentAck,
         crate::services::audit_service::AuditEntityType::RemoteNode,

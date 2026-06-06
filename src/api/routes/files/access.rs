@@ -40,7 +40,7 @@ pub async fn get_file(
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
     get_file_response(
-        &state,
+        state.get_ref(),
         WorkspaceStorageScope::Personal {
             user_id: claims.user_id,
         },
@@ -74,7 +74,7 @@ pub async fn get_archive_preview(
     query: web::Query<ArchivePreviewQuery>,
 ) -> Result<HttpResponse> {
     archive_preview_response(
-        &state,
+        state.get_ref(),
         &req,
         WorkspaceStorageScope::Personal {
             user_id: claims.user_id,
@@ -105,7 +105,7 @@ pub async fn get_direct_link(
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
     direct_link_response(
-        &state,
+        state.get_ref(),
         &claims,
         &req,
         WorkspaceStorageScope::Personal {
@@ -136,7 +136,7 @@ pub async fn get_preview_link(
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
     preview_link_response(
-        &state,
+        state.get_ref(),
         &claims,
         &req,
         WorkspaceStorageScope::Personal {
@@ -169,7 +169,7 @@ pub async fn open_wopi(
     body: web::Json<OpenWopiRequest>,
 ) -> Result<HttpResponse> {
     open_wopi_response(
-        &state,
+        state.get_ref(),
         &claims,
         &req,
         WorkspaceStorageScope::Personal {
@@ -202,7 +202,7 @@ pub async fn download(
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
     download_response(
-        &state,
+        state.get_ref(),
         &claims,
         &req,
         WorkspaceStorageScope::Personal {
@@ -238,7 +238,7 @@ pub async fn get_thumbnail(
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
     get_thumbnail_response(
-        &state,
+        state.get_ref(),
         &req,
         WorkspaceStorageScope::Personal {
             user_id: claims.user_id,
@@ -268,7 +268,7 @@ pub async fn get_media_metadata(
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
     get_media_metadata_response(
-        &state,
+        state.get_ref(),
         WorkspaceStorageScope::Personal {
             user_id: claims.user_id,
         },
@@ -302,7 +302,7 @@ pub async fn get_image_preview(
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
     get_image_preview_response(
-        &state,
+        state.get_ref(),
         &req,
         WorkspaceStorageScope::Personal {
             user_id: claims.user_id,
@@ -335,7 +335,12 @@ pub(crate) async fn team_get_file(
     path: web::Path<(i64, i64)>,
 ) -> Result<HttpResponse> {
     let (team_id, file_id) = path.into_inner();
-    get_file_response(&state, team_scope(team_id, claims.user_id), file_id).await
+    get_file_response(
+        state.get_ref(),
+        team_scope(team_id, claims.user_id),
+        file_id,
+    )
+    .await
 }
 
 #[api_docs_macros::path(
@@ -368,7 +373,7 @@ pub(crate) async fn team_get_archive_preview(
 ) -> Result<HttpResponse> {
     let (team_id, file_id) = path.into_inner();
     archive_preview_response(
-        &state,
+        state.get_ref(),
         &req,
         team_scope(team_id, claims.user_id),
         file_id,
@@ -402,7 +407,7 @@ pub(crate) async fn team_get_direct_link(
 ) -> Result<HttpResponse> {
     let (team_id, file_id) = path.into_inner();
     direct_link_response(
-        &state,
+        state.get_ref(),
         &claims,
         &req,
         team_scope(team_id, claims.user_id),
@@ -436,7 +441,7 @@ pub(crate) async fn team_get_preview_link(
 ) -> Result<HttpResponse> {
     let (team_id, file_id) = path.into_inner();
     preview_link_response(
-        &state,
+        state.get_ref(),
         &claims,
         &req,
         team_scope(team_id, claims.user_id),
@@ -472,7 +477,7 @@ pub(crate) async fn team_open_wopi(
 ) -> Result<HttpResponse> {
     let (team_id, file_id) = path.into_inner();
     open_wopi_response(
-        &state,
+        state.get_ref(),
         &claims,
         &req,
         team_scope(team_id, claims.user_id),
@@ -511,7 +516,13 @@ pub(crate) async fn team_get_thumbnail(
     path: web::Path<(i64, i64)>,
 ) -> Result<HttpResponse> {
     let (team_id, file_id) = path.into_inner();
-    get_thumbnail_response(&state, &req, team_scope(team_id, claims.user_id), file_id).await
+    get_thumbnail_response(
+        state.get_ref(),
+        &req,
+        team_scope(team_id, claims.user_id),
+        file_id,
+    )
+    .await
 }
 
 #[api_docs_macros::path(
@@ -543,7 +554,13 @@ pub(crate) async fn team_get_image_preview(
     path: web::Path<(i64, i64)>,
 ) -> Result<HttpResponse> {
     let (team_id, file_id) = path.into_inner();
-    get_image_preview_response(&state, &req, team_scope(team_id, claims.user_id), file_id).await
+    get_image_preview_response(
+        state.get_ref(),
+        &req,
+        team_scope(team_id, claims.user_id),
+        file_id,
+    )
+    .await
 }
 
 #[api_docs_macros::path(
@@ -570,7 +587,12 @@ pub(crate) async fn team_get_media_metadata(
     path: web::Path<(i64, i64)>,
 ) -> Result<HttpResponse> {
     let (team_id, file_id) = path.into_inner();
-    get_media_metadata_response(&state, team_scope(team_id, claims.user_id), file_id).await
+    get_media_metadata_response(
+        state.get_ref(),
+        team_scope(team_id, claims.user_id),
+        file_id,
+    )
+    .await
 }
 
 #[api_docs_macros::path(
@@ -599,7 +621,7 @@ pub(crate) async fn team_download(
 ) -> Result<HttpResponse> {
     let (team_id, file_id) = path.into_inner();
     download_response(
-        &state,
+        state.get_ref(),
         &claims,
         &req,
         team_scope(team_id, claims.user_id),

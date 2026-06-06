@@ -30,7 +30,7 @@ pub async fn list_tasks(
     query: web::Query<AdminTaskListQuery>,
 ) -> Result<HttpResponse> {
     let page = task_service::list_tasks_paginated_for_admin(
-        &state,
+        state.get_ref(),
         page.limit_or(20, 100),
         page.offset(),
         task_service::AdminTaskListFilters {
@@ -66,7 +66,7 @@ pub async fn cleanup_tasks(
 ) -> Result<HttpResponse> {
     validate_request(&*body)?;
     let removed = task_service::cleanup_tasks_for_admin(
-        &state,
+        state.get_ref(),
         task_service::AdminTaskCleanupFilters {
             finished_before: body.finished_before,
             kind: body.kind,
@@ -76,7 +76,7 @@ pub async fn cleanup_tasks(
     .await?;
     let ctx = audit_service::AuditContext::from_request(&req, &claims);
     audit_service::log_with_details(
-        &state,
+        state.get_ref(),
         &ctx,
         audit_service::AuditAction::AdminCleanupTasks,
         crate::services::audit_service::AuditEntityType::Task,
