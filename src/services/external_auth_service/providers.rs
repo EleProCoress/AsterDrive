@@ -127,10 +127,13 @@ fn admin_provider_options(
     legacy_issuer_url: Option<&str>,
 ) -> Result<ExternalAuthProviderOptions> {
     let mut options = crate::types::parse_external_auth_provider_options(raw_options);
-    if provider_kind == ExternalAuthProviderKind::Microsoft
-        && options.microsoft.is_none()
-        && let Some(tenant) = legacy_issuer_url.and_then(microsoft_tenant_from_legacy_issuer_url)
-    {
+    if provider_kind == ExternalAuthProviderKind::Microsoft && options.microsoft.is_none() {
+        let Some(legacy_issuer_url) = legacy_issuer_url else {
+            return normalize_provider_options(provider_kind, options);
+        };
+        let Some(tenant) = microsoft_tenant_from_legacy_issuer_url(legacy_issuer_url) else {
+            return Ok(options);
+        };
         options.microsoft = Some(MicrosoftExternalAuthProviderOptions::new(tenant));
     }
     normalize_provider_options(provider_kind, options)

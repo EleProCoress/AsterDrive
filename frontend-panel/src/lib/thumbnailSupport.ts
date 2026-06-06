@@ -29,7 +29,16 @@ function normalizeExtension(value: string) {
 	return value.trim().replace(/^\./, "").toLowerCase();
 }
 
-export const supportsImagePreviewExtension = supportsThumbnailExtension;
+// Image preview currently shares the thumbnail extension allowlist because the
+// backend advertises image preview support through thumbnailSupport. TODO:
+// keep this wrapper separate so preview and thumbnail semantics can diverge
+// later without changing call sites.
+export function supportsImagePreviewExtension(
+	fileName: string,
+	extensions: string[] | undefined,
+) {
+	return supportsThumbnailExtension(fileName, extensions);
+}
 
 export function imagePreviewExtensionCandidatesFromMime(mimeType: string) {
 	const mime = mimeType.trim().toLowerCase().split(";", 1)[0] ?? "";

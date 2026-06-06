@@ -177,10 +177,15 @@ export function classifySharedFile(
 ): FileCategory {
 	const extension = extensionFromName(name);
 	const mime = mimeType.trim().toLowerCase();
+	// MIME-derived candidates let browser-native image MIME handling participate
+	// without treating every image/* value as previewable.
 	const mimeImageExtensions = imagePreviewExtensionCandidatesFromMime(mime);
+	// Browser support is limited to formats the share page can render directly.
 	const browserImageMimeSupported = mimeImageExtensions.some((candidate) =>
 		BROWSER_IMAGE_EXTENSIONS.has(candidate),
 	);
+	// Backend support reflects the server-advertised image preview allowlist,
+	// including extension candidates inferred from MIME when the name is weak.
 	const backendImageSupported = supportsImagePreviewFile(
 		name,
 		mime,
@@ -192,10 +197,14 @@ export function classifySharedFile(
 	if (CODE_EXTENSIONS.has(extension)) return "code";
 	if (VIDEO_EXTENSIONS.has(extension)) return "video";
 	if (AUDIO_EXTENSIONS.has(extension)) return "audio";
+	// Extension/backend-supported images can use either browser-native rendering
+	// or a generated preview advertised by thumbnailSupport.
 	if (BROWSER_IMAGE_EXTENSIONS.has(extension) || backendImageSupported) {
 		return "image";
 	}
 	if (DOCUMENT_EXTENSIONS.has(extension)) return "document";
+	// MIME-only fallback is deliberately browser-native only: it catches files
+	// without useful suffixes while avoiding unsupported image/* formats.
 	if (mime.startsWith("image/") && browserImageMimeSupported) return "image";
 	if (mime.startsWith("video/")) return "video";
 	if (mime.startsWith("audio/")) return "audio";

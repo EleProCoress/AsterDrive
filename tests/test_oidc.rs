@@ -533,6 +533,64 @@ async fn admin_microsoft_provider_rejects_issuer_url_configuration() {
 }
 
 #[actix_web::test]
+async fn admin_microsoft_legacy_issuer_preserves_unparseable_values() {
+    let state = common::setup().await;
+    let app = create_test_app!(state.clone());
+    let (admin_token, _) = register_and_login!(app);
+
+    let valid_legacy = microsoft_external_auth_provider_model(
+        "microsoft-legacy-valid",
+        "https://login.microsoftonline.com/Organizations/v2.0/",
+        true,
+    )
+    .insert(state.writer_db())
+    .await
+    .expect("valid legacy Microsoft provider should insert");
+    let invalid_legacy = microsoft_external_auth_provider_model(
+        "microsoft-legacy-invalid",
+        "https://idp.example.com/organizations/v2.0",
+        true,
+    )
+    .insert(state.writer_db())
+    .await
+    .expect("invalid legacy Microsoft provider should insert");
+
+    let req = test::TestRequest::get()
+        .uri(&format!(
+            "/api/v1/admin/external-auth/providers/{}",
+            valid_legacy.id
+        ))
+        .insert_header(("Cookie", common::access_cookie_header(&admin_token)))
+        .insert_header(common::csrf_header_for(&admin_token))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["issuer_url"], Value::Null);
+    assert_eq!(
+        body["data"]["options"]["microsoft"]["tenant"],
+        "organizations"
+    );
+
+    let req = test::TestRequest::get()
+        .uri(&format!(
+            "/api/v1/admin/external-auth/providers/{}",
+            invalid_legacy.id
+        ))
+        .insert_header(("Cookie", common::access_cookie_header(&admin_token)))
+        .insert_header(common::csrf_header_for(&admin_token))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(
+        body["data"]["issuer_url"],
+        "https://idp.example.com/organizations/v2.0"
+    );
+    assert_eq!(body["data"]["options"], serde_json::json!({}));
+}
+
+#[actix_web::test]
 async fn admin_tests_external_auth_provider_draft_params_without_persisting() {
     let (mock_provider, server) = start_mock_external_auth_provider().await;
     let state = common::setup().await;
