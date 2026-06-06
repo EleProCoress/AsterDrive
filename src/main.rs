@@ -14,11 +14,27 @@ const HTTP_SHUTDOWN_TIMEOUT_SECS: u64 = 8;
 #[global_allocator]
 static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
+#[cfg(all(feature = "jemalloc", not(target_env = "msvc"), target_os = "linux"))]
+#[allow(non_upper_case_globals)]
+#[unsafe(export_name = "_rjem_malloc_conf")]
+pub static malloc_conf: Option<&'static std::ffi::c_char> = Some(unsafe {
+    union Conf {
+        bytes: &'static u8,
+        ptr: &'static std::ffi::c_char,
+    }
+
+    // `narenas:1` lowers idle memory for the self-hosted default profile, but
+    // can become allocator contention under high concurrency.
+    Conf {
+        bytes: &b"narenas:1,dirty_decay_ms:1000,muzzy_decay_ms:1000,background_thread:true\0"[0],
+    }
+    .ptr
+});
+
 #[cfg(all(
     feature = "jemalloc",
     not(target_env = "msvc"),
     any(
-        target_os = "linux",
         target_os = "macos",
         target_os = "freebsd",
         target_os = "netbsd",
@@ -33,10 +49,8 @@ pub static malloc_conf: Option<&'static std::ffi::c_char> = Some(unsafe {
         ptr: &'static std::ffi::c_char,
     }
 
-    // `narenas:1` lowers idle memory for the self-hosted default profile, but
-    // can become allocator contention under high concurrency.
     Conf {
-        bytes: &b"narenas:1,dirty_decay_ms:1000,muzzy_decay_ms:1000,background_thread:true\0"[0],
+        bytes: &b"narenas:1,dirty_decay_ms:1000,muzzy_decay_ms:1000\0"[0],
     }
     .ptr
 });

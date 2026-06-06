@@ -99,8 +99,8 @@ pub(super) async fn process_archive_extract_task(
             workspace_storage_service::verify_folder_access(state, scope, target_folder_id).await?;
         }
         let max_staging_bytes =
-            operations::archive_extract_max_staging_bytes(&state.runtime_config());
-        let extract_limits = ArchiveExtractLimits::from_runtime_config(&state.runtime_config());
+            operations::archive_extract_max_staging_bytes(state.runtime_config());
+        let extract_limits = ArchiveExtractLimits::from_runtime_config(state.runtime_config());
         let policy_resolver = resolve_archive_extract_policy_resolver(state, scope).await?;
 
         set_task_step_active(

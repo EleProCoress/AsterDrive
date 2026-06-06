@@ -123,7 +123,7 @@ pub(super) async fn process_archive_preview_task(
         let archive_format =
             archive_preview_service::ensure_archive_preview_source_supported(&source_file)?;
         let limits = archive_preview_service::ArchivePreviewLimits::from_runtime_config(
-            &state.runtime_config(),
+            state.runtime_config(),
             crate::types::ArchiveFilenameEncoding::Auto,
             archive_format,
         )?;

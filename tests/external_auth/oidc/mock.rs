@@ -289,6 +289,7 @@ pub async fn start_mock_external_auth_provider() -> (MockOidcProvider, actix_web
             .route("/token", web::post().to(mock_token))
             .route("/jwks", web::get().to(mock_jwks))
     })
+    .workers(1)
     .listen(listener)
     .expect("mock OIDC server should listen")
     .run();

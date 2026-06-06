@@ -271,6 +271,7 @@ pub async fn start_mock_oauth2_provider() -> (MockOAuth2Provider, actix_web::dev
             .route("/qq/me", web::get().to(mock_qq_openid))
             .route("/qq/get_user_info", web::get().to(mock_qq_userinfo))
     })
+    .workers(1)
     .listen(listener)
     .expect("mock OAuth2 server should listen")
     .run();

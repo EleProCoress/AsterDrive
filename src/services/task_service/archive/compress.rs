@@ -118,7 +118,7 @@ pub(super) async fn process_archive_compress_task(
         )
         .await?;
         ensure_archive_selection_active(scope, &selection)?;
-        let limits = ArchiveBuildLimits::from_runtime_config(&state.runtime_config());
+        let limits = ArchiveBuildLimits::from_runtime_config(state.runtime_config());
         let collected =
             collect_archive_entries_from_selection_in_scope(state, scope, &selection, limits)
                 .await?;

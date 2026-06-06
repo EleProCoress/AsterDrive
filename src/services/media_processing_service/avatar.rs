@@ -79,7 +79,7 @@ pub async fn process_avatar_upload(
     file_name: &str,
     data: Vec<u8>,
 ) -> Result<ProcessedAvatar> {
-    let processor = resolve_avatar_processor(&state.runtime_config(), file_name)?;
+    let processor = resolve_avatar_processor(state.runtime_config(), file_name)?;
     let source_extension = media_processing_config::file_extension(file_name);
     tracing::debug!(
         operation = MediaOperation::Avatar.as_str(),

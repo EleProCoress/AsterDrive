@@ -8,12 +8,26 @@ use aster_drive::runtime::SharedRuntimeState;
 use chrono::Utc;
 use sea_orm::{ActiveModelTrait, ActiveValue::Set, EntityTrait, IntoActiveModel};
 use serde_json::Value;
+use std::time::Duration as StdDuration;
 
 use crate::common;
 
 pub const TEST_BROWSER_ORIGIN: &str = "http://localhost:8080";
 pub const TEST_CLIENT_ID: &str = "aster-test-client";
 pub const TEST_CLIENT_SECRET: &str = "super-secret";
+const MOCK_AUTHORIZE_TIMEOUT: StdDuration = StdDuration::from_secs(5);
+
+async fn request_mock_authorize(auth_url: &str) {
+    let client = reqwest::Client::builder()
+        .timeout(MOCK_AUTHORIZE_TIMEOUT)
+        .build()
+        .expect("mock authorize reqwest client should build");
+    client
+        .get(auth_url)
+        .send()
+        .await
+        .expect("mock authorize request should succeed");
+}
 
 pub struct TestOAuth2ProviderOptions {
     pub base_url: String,
@@ -128,9 +142,7 @@ where
     let auth_url = body["data"]["authorization_url"]
         .as_str()
         .expect("authorization url should be returned");
-    reqwest::get(auth_url)
-        .await
-        .expect("mock authorize request should succeed");
+    request_mock_authorize(auth_url).await;
     mock_provider.last_authorize_request().state
 }
 
@@ -186,9 +198,7 @@ where
     let auth_url = body["data"]["authorization_url"]
         .as_str()
         .expect("authorization url should be returned");
-    reqwest::get(auth_url)
-        .await
-        .expect("mock authorize request should succeed");
+    request_mock_authorize(auth_url).await;
     mock_provider.last_authorize_request().state
 }
 
@@ -244,9 +254,7 @@ where
     let auth_url = body["data"]["authorization_url"]
         .as_str()
         .expect("authorization url should be returned");
-    reqwest::get(auth_url)
-        .await
-        .expect("mock authorize request should succeed");
+    request_mock_authorize(auth_url).await;
     mock_provider.last_authorize_request().state
 }
 

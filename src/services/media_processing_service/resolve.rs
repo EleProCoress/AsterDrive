@@ -55,7 +55,7 @@ pub(super) fn build_thumbnail_context_with_processor(
     source_file_name: &str,
     processor_kind: MediaProcessorKind,
 ) -> Result<ThumbnailContext> {
-    let registry = media_processing_config::media_processing_registry(&state.runtime_config());
+    let registry = media_processing_config::media_processing_registry(state.runtime_config());
     let processor_config =
         media_processing_config::processor_config_for_kind(&registry, processor_kind)
             .cloned()
@@ -106,7 +106,7 @@ fn resolve_thumbnail_processor_for_policy(
     source_mime_type: &str,
 ) -> Result<ResolvedMediaProcessor> {
     let candidates = collect_thumbnail_processor_candidates(
-        &state.runtime_config(),
+        state.runtime_config(),
         policy,
         file_name,
         source_mime_type,

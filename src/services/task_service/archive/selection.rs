@@ -93,7 +93,7 @@ pub(crate) async fn stream_archive_download_in_scope(
 ) -> Result<HttpResponse> {
     let resolved = resolve_archive_download_in_scope(state, scope, &params).await?;
     let archive_name = resolved.archive_name.clone();
-    let limits = ArchiveBuildLimits::from_runtime_config(&state.runtime_config());
+    let limits = ArchiveBuildLimits::from_runtime_config(state.runtime_config());
     let collected =
         collect_archive_entries_from_selection_in_scope(state, scope, &resolved.selection, limits)
             .await?;

@@ -47,38 +47,14 @@ impl RemoteTunnelRegistry {
     }
 
     pub fn is_online(&self, remote_node: &managed_follower::Model) -> bool {
-        let has_registered_lane = self
-            .connections
-            .get(&remote_node.access_key)
-            .map(|connection| connection.remote_node_id == remote_node.id)
+        self.last_seen_at
+            .get(&remote_node.id)
+            .and_then(|last_seen_at| {
+                chrono::Duration::from_std(REMOTE_TUNNEL_ONLINE_TTL)
+                    .ok()
+                    .map(|ttl| *last_seen_at.value() + ttl > chrono::Utc::now())
+            })
             .unwrap_or(false)
-            || self
-                .stream_lanes
-                .get(&remote_node.access_key)
-                .map(|lanes| {
-                    lanes
-                        .iter()
-                        .any(|lane| lane.remote_node_id == remote_node.id)
-                })
-                .unwrap_or(false)
-            || self
-                .pending
-                .iter()
-                .any(|entry| entry.remote_node_id == remote_node.id)
-            || self
-                .stream_pending
-                .iter()
-                .any(|entry| entry.remote_node_id == remote_node.id);
-        has_registered_lane
-            && self
-                .last_seen_at
-                .get(&remote_node.id)
-                .and_then(|last_seen_at| {
-                    chrono::Duration::from_std(REMOTE_TUNNEL_ONLINE_TTL)
-                        .ok()
-                        .map(|ttl| *last_seen_at.value() + ttl > chrono::Utc::now())
-                })
-                .unwrap_or(false)
     }
 
     pub(crate) fn update_last_seen(&self, remote_node_id: i64) {

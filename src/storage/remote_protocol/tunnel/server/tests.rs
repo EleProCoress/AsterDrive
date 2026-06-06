@@ -285,6 +285,19 @@ async fn registry_send_dispatches_to_poll_connection_and_completes_response() {
 }
 
 #[tokio::test]
+async fn poll_last_seen_keeps_tunnel_online_between_poll_cycles() {
+    let registry = RemoteTunnelRegistry::new();
+    let node = build_remote_node(43, "poll-online-gap");
+    let (_request_rx, registration) = registry.register_poll(&node);
+    drop(registration);
+
+    assert!(
+        registry.is_online(&node),
+        "single-dispatch poll workers have a brief reconnect gap after each request"
+    );
+}
+
+#[tokio::test]
 async fn stale_poll_registration_guard_does_not_remove_newer_connection() {
     let registry = Arc::new(RemoteTunnelRegistry::new());
     let node = build_remote_node(50, "poll-reconnect");

@@ -812,9 +812,7 @@ async fn start_login_persists_pkce_flow_and_rejects_replayed_state() {
         .expect("authorization url should be returned");
     assert!(auth_url.starts_with(&format!("{}/authorize?", mock_provider.issuer)));
 
-    reqwest::get(auth_url)
-        .await
-        .expect("mock authorize request should succeed");
+    request_mock_authorize(auth_url).await;
     let authorize_request = mock_provider.last_authorize_request();
     assert_eq!(authorize_request.response_type, "code");
     assert_eq!(authorize_request.client_id, TEST_CLIENT_ID);
@@ -2246,9 +2244,7 @@ async fn finish_callback_rejects_issuer_mismatch_after_id_token_verification() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
     let body: Value = test::read_body_json(resp).await;
-    reqwest::get(body["data"]["authorization_url"].as_str().unwrap())
-        .await
-        .expect("mock authorize request should succeed");
+    request_mock_authorize(body["data"]["authorization_url"].as_str().unwrap()).await;
     let state_value = mock_provider.last_authorize_request().state;
 
     let callback = format!(

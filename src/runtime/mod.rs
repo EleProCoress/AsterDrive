@@ -307,10 +307,6 @@ mod tests {
             follower.writer_db().get_database_backend()
         );
         assert_eq!(
-            state.writer_db().get_database_backend(),
-            follower.writer_db().get_database_backend()
-        );
-        assert_eq!(
             state.reader_db().get_database_backend(),
             follower.reader_db().get_database_backend()
         );

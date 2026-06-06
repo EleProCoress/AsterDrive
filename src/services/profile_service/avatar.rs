@@ -54,7 +54,7 @@ pub async fn upload_avatar(
     let existing = user_profile_repo::find_by_user_id(state.writer_db(), user_id).await?;
     let upload_data = read_avatar_upload(
         payload,
-        operations::avatar_max_upload_size_bytes(&state.runtime_config()),
+        operations::avatar_max_upload_size_bytes(state.runtime_config()),
     )
     .await?;
     let processed_avatar = media_processing_service::process_avatar_upload(
@@ -74,7 +74,7 @@ pub async fn upload_avatar(
         .as_ref()
         .map(|profile| profile.avatar_version.saturating_add(1))
         .unwrap_or(1);
-    let avatar_root_dir = avatar::resolve_local_avatar_root_dir(&state.runtime_config())?;
+    let avatar_root_dir = avatar::resolve_local_avatar_root_dir(state.runtime_config())?;
     let prefix_key = user_avatar_prefix(user_id, version);
     let prefix = user_avatar_dir(&avatar_root_dir, user_id, version);
     let small_path = avatar_variant_file_path(&prefix, AVATAR_SIZE_SM);
