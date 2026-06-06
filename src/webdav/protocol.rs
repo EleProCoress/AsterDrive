@@ -4,7 +4,7 @@ use actix_web::HttpResponse;
 use actix_web::http::header;
 
 use crate::webdav::dav::{DavFileSystem, DavLockSystem, DavPath, FsError};
-use crate::webdav::decode_relative_path;
+use crate::webdav::{decode_relative_path, responses};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Depth {
@@ -59,7 +59,7 @@ pub(crate) fn parse_copy_depth(headers: &header::HeaderMap) -> Result<Depth, Htt
     match parse_depth_header(headers)? {
         Some(Depth::Zero) => Ok(Depth::Zero),
         Some(Depth::Infinity) | None => Ok(Depth::Infinity),
-        Some(Depth::One) => Err(HttpResponse::BadRequest().finish()),
+        Some(Depth::One) => Err(responses::bad_request()),
     }
 }
 
@@ -75,7 +75,7 @@ pub(crate) fn parse_lock_depth(headers: &header::HeaderMap) -> Result<Depth, Htt
     match parse_depth_header(headers)? {
         None | Some(Depth::Infinity) => Ok(Depth::Infinity),
         Some(Depth::Zero) => Ok(Depth::Zero),
-        Some(Depth::One) => Err(HttpResponse::BadRequest().finish()),
+        Some(Depth::One) => Err(responses::bad_request()),
     }
 }
 
@@ -83,15 +83,13 @@ fn parse_depth_header(headers: &header::HeaderMap) -> Result<Option<Depth>, Http
     let Some(value) = headers.get("Depth") else {
         return Ok(None);
     };
-    let value = value
-        .to_str()
-        .map_err(|_| HttpResponse::BadRequest().finish())?;
+    let value = value.to_str().map_err(|_| responses::bad_request())?;
 
     match value {
         value if value.eq_ignore_ascii_case("0") => Ok(Some(Depth::Zero)),
         value if value.eq_ignore_ascii_case("1") => Ok(Some(Depth::One)),
         value if value.eq_ignore_ascii_case("infinity") => Ok(Some(Depth::Infinity)),
-        _ => Err(HttpResponse::BadRequest().finish()),
+        _ => Err(responses::bad_request()),
     }
 }
 
@@ -101,14 +99,14 @@ pub(crate) fn parse_overwrite(headers: &header::HeaderMap) -> Result<bool, HttpR
     };
     let value = value
         .to_str()
-        .map_err(|_| HttpResponse::BadRequest().body("Invalid Overwrite header"))?
+        .map_err(|_| invalid_overwrite_header())?
         .trim();
     if value.eq_ignore_ascii_case("T") {
         Ok(true)
     } else if value.eq_ignore_ascii_case("F") {
         Ok(false)
     } else {
-        Err(HttpResponse::BadRequest().body("Invalid Overwrite header"))
+        Err(invalid_overwrite_header())
     }
 }
 
@@ -120,29 +118,27 @@ pub(crate) fn destination_relative_path(
 ) -> Result<String, HttpResponse> {
     let raw = headers
         .get("Destination")
-        .ok_or_else(|| HttpResponse::BadRequest().body("Missing Destination header"))?
+        .ok_or_else(|| responses::bad_request_text("Missing Destination header"))?
         .to_str()
-        .map_err(|_| HttpResponse::BadRequest().body("Invalid Destination header"))?
+        .map_err(|_| invalid_destination_header())?
         .trim();
-    let uri: http::Uri = raw
-        .parse()
-        .map_err(|_| HttpResponse::BadRequest().body("Invalid Destination header"))?;
+    let uri: http::Uri = raw.parse().map_err(|_| invalid_destination_header())?;
     match (uri.scheme_str(), uri.authority()) {
         (Some(scheme), Some(authority)) => {
             if !scheme.eq_ignore_ascii_case(request_scheme)
                 || !authority.as_str().eq_ignore_ascii_case(request_host)
             {
-                return Err(
-                    HttpResponse::BadGateway().body("Destination must stay on this WebDAV server")
-                );
+                return Err(responses::bad_gateway_text(
+                    "Destination must stay on this WebDAV server",
+                ));
             }
         }
         (None, None) => {
             if !raw.starts_with('/') {
-                return Err(HttpResponse::BadRequest().body("Invalid Destination header"));
+                return Err(invalid_destination_header());
             }
         }
-        _ => return Err(HttpResponse::BadRequest().body("Invalid Destination header")),
+        _ => return Err(invalid_destination_header()),
     };
     let path = uri.path().to_string();
     let relative = path
@@ -154,9 +150,7 @@ pub(crate) fn destination_relative_path(
                     .get(prefix.len())
                     .is_some_and(|byte| *byte == b'/')
         })
-        .ok_or_else(|| {
-            HttpResponse::BadRequest().body("Destination must stay under WebDAV prefix")
-        })?;
+        .ok_or_else(|| responses::bad_request_text("Destination must stay under WebDAV prefix"))?;
     decode_relative_path(relative).map(|(_, relative)| relative)
 }
 
@@ -230,7 +224,7 @@ pub(crate) async fn ensure_if_header(
     {
         Ok(())
     } else {
-        Err(HttpResponse::PreconditionFailed().finish())
+        Err(responses::precondition_failed())
     }
 }
 
@@ -241,23 +235,19 @@ pub(crate) fn evaluate_http_etag_preconditions(
     safe_method: bool,
 ) -> Result<HttpEtagPrecondition, HttpResponse> {
     if let Some(value) = headers.get(header::IF_MATCH) {
-        let raw = value
-            .to_str()
-            .map_err(|_| HttpResponse::BadRequest().body("Invalid If-Match header"))?;
+        let raw = value.to_str().map_err(|_| invalid_if_match_header())?;
         if !if_match_header_matches(raw, resource_exists, current_etag)? {
-            return Err(HttpResponse::PreconditionFailed().finish());
+            return Err(responses::precondition_failed());
         }
     }
 
     if let Some(value) = headers.get(header::IF_NONE_MATCH) {
-        let raw = value
-            .to_str()
-            .map_err(|_| HttpResponse::BadRequest().body("Invalid If-None-Match header"))?;
+        let raw = value.to_str().map_err(|_| invalid_if_none_match_header())?;
         if if_none_match_header_matches(raw, resource_exists, current_etag)? {
             return if safe_method {
                 Ok(HttpEtagPrecondition::NotModified)
             } else {
-                Err(HttpResponse::PreconditionFailed().finish())
+                Err(responses::precondition_failed())
             };
         }
     }
@@ -351,9 +341,7 @@ fn parse_if_header(headers: &header::HeaderMap) -> Result<Option<IfHeader>, Http
     let Some(value) = headers.get("If") else {
         return Ok(None);
     };
-    let raw = value
-        .to_str()
-        .map_err(|_| HttpResponse::BadRequest().body("Invalid If header"))?;
+    let raw = value.to_str().map_err(|_| invalid_if_header())?;
 
     let mut parser = IfHeaderParser::new(raw);
     parser.parse().map(Some)
@@ -372,9 +360,7 @@ fn tagged_dav_path(
     request_scheme: &str,
     request_host: &str,
 ) -> Result<Option<DavPath>, HttpResponse> {
-    let uri: http::Uri = tagged_path
-        .parse()
-        .map_err(|_| HttpResponse::BadRequest().body("Invalid If header"))?;
+    let uri: http::Uri = tagged_path.parse().map_err(|_| invalid_if_header())?;
     let path = match (uri.scheme_str(), uri.authority()) {
         (Some(scheme), Some(authority)) => {
             if !scheme.eq_ignore_ascii_case(request_scheme)
@@ -385,10 +371,10 @@ fn tagged_dav_path(
             uri.path().to_string()
         }
         (None, None) => uri.path().to_string(),
-        _ => return Err(HttpResponse::BadRequest().body("Invalid If header")),
+        _ => return Err(invalid_if_header()),
     };
     if !path.starts_with('/') {
-        return Err(HttpResponse::BadRequest().body("Invalid If header"));
+        return Err(invalid_if_header());
     }
 
     let Some(relative) = path.strip_prefix(prefix).filter(|_| {
@@ -441,7 +427,7 @@ fn if_match_header_matches(
     if saw_tag {
         Ok(false)
     } else {
-        Err(HttpResponse::BadRequest().body("Invalid If-Match header"))
+        Err(invalid_if_match_header())
     }
 }
 
@@ -471,7 +457,7 @@ fn if_none_match_header_matches(
     if saw_tag {
         Ok(false)
     } else {
-        Err(HttpResponse::BadRequest().body("Invalid If-None-Match header"))
+        Err(invalid_if_none_match_header())
     }
 }
 
@@ -503,6 +489,26 @@ fn strip_etag_quotes(value: &str) -> &str {
         .unwrap_or(value)
 }
 
+fn invalid_destination_header() -> HttpResponse {
+    responses::bad_request_text("Invalid Destination header")
+}
+
+fn invalid_if_header() -> HttpResponse {
+    responses::bad_request_text("Invalid If header")
+}
+
+fn invalid_if_match_header() -> HttpResponse {
+    responses::bad_request_text("Invalid If-Match header")
+}
+
+fn invalid_if_none_match_header() -> HttpResponse {
+    responses::bad_request_text("Invalid If-None-Match header")
+}
+
+fn invalid_overwrite_header() -> HttpResponse {
+    responses::bad_request_text("Invalid Overwrite header")
+}
+
 struct IfHeaderParser<'a> {
     input: &'a str,
     pos: usize,
@@ -516,7 +522,7 @@ impl<'a> IfHeaderParser<'a> {
     fn parse(&mut self) -> Result<IfHeader, HttpResponse> {
         self.skip_lws();
         if self.is_eof() {
-            return Err(HttpResponse::BadRequest().body("Invalid If header"));
+            return Err(invalid_if_header());
         }
 
         let first_is_tagged = self.peek_char() == Some('<');
@@ -533,7 +539,7 @@ impl<'a> IfHeaderParser<'a> {
                     lists.push(self.parse_state_list()?);
                 }
                 if lists.is_empty() {
-                    return Err(HttpResponse::BadRequest().body("Invalid If header"));
+                    return Err(invalid_if_header());
                 }
                 groups.push(IfResourceGroup {
                     tagged_path: Some(tagged_path),
@@ -544,7 +550,7 @@ impl<'a> IfHeaderParser<'a> {
                     break;
                 }
                 if self.peek_char() != Some('<') {
-                    return Err(HttpResponse::BadRequest().body("Invalid If header"));
+                    return Err(invalid_if_header());
                 }
             }
         } else {
@@ -553,7 +559,7 @@ impl<'a> IfHeaderParser<'a> {
                 lists.push(self.parse_state_list()?);
                 self.skip_lws();
                 if self.peek_char() == Some('<') {
-                    return Err(HttpResponse::BadRequest().body("Invalid If header"));
+                    return Err(invalid_if_header());
                 }
             }
             groups.push(IfResourceGroup {
@@ -575,7 +581,7 @@ impl<'a> IfHeaderParser<'a> {
                 break;
             }
             if self.is_eof() {
-                return Err(HttpResponse::BadRequest().body("Invalid If header"));
+                return Err(invalid_if_header());
             }
 
             let negated = self.consume_not();
@@ -589,13 +595,13 @@ impl<'a> IfHeaderParser<'a> {
                     value: self.parse_bracket_value()?,
                     negated,
                 },
-                _ => return Err(HttpResponse::BadRequest().body("Invalid If header")),
+                _ => return Err(invalid_if_header()),
             };
             conditions.push(condition);
         }
 
         if conditions.is_empty() {
-            return Err(HttpResponse::BadRequest().body("Invalid If header"));
+            return Err(invalid_if_header());
         }
         Ok(IfStateList { conditions })
     }
@@ -608,13 +614,13 @@ impl<'a> IfHeaderParser<'a> {
                 let value = self.input[start..self.pos].trim();
                 self.pos += 1;
                 if value.is_empty() {
-                    return Err(HttpResponse::BadRequest().body("Invalid If header"));
+                    return Err(invalid_if_header());
                 }
                 return Ok(value.to_string());
             }
             self.pos += ch.len_utf8();
         }
-        Err(HttpResponse::BadRequest().body("Invalid If header"))
+        Err(invalid_if_header())
     }
 
     fn parse_bracket_value(&mut self) -> Result<String, HttpResponse> {
@@ -625,13 +631,13 @@ impl<'a> IfHeaderParser<'a> {
                 let value = self.input[start..self.pos].trim();
                 self.pos += 1;
                 if value.is_empty() {
-                    return Err(HttpResponse::BadRequest().body("Invalid If header"));
+                    return Err(invalid_if_header());
                 }
                 return Ok(value.to_string());
             }
             self.pos += ch.len_utf8();
         }
-        Err(HttpResponse::BadRequest().body("Invalid If header"))
+        Err(invalid_if_header())
     }
 
     fn consume_not(&mut self) -> bool {
@@ -659,7 +665,7 @@ impl<'a> IfHeaderParser<'a> {
             self.pos += expected.len_utf8();
             Ok(())
         } else {
-            Err(HttpResponse::BadRequest().body("Invalid If header"))
+            Err(invalid_if_header())
         }
     }
 
