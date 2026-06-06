@@ -3861,6 +3861,7 @@ export interface components {
             id: number;
             issuer_url?: string | null;
             key: string;
+            options: components["schemas"]["ExternalAuthProviderOptions"];
             protocol: components["schemas"]["ExternalAuthProtocol"];
             provider_kind: components["schemas"]["ExternalAuthProviderKind"];
             require_email_verified: boolean;
@@ -4702,6 +4703,7 @@ export interface components {
             groups_claim?: string | null;
             icon_url?: string | null;
             issuer_url?: string | null;
+            options?: null | components["schemas"]["ExternalAuthProviderOptions"];
             provider_kind: components["schemas"]["ExternalAuthProviderKind"];
             require_email_verified?: boolean | null;
             scopes?: string | null;
@@ -4930,6 +4932,9 @@ export interface components {
          * @enum {string}
          */
         ExternalAuthProviderKind: "oidc" | "generic_oauth2" | "github" | "google" | "microsoft" | "qq";
+        ExternalAuthProviderOptions: {
+            microsoft?: null | components["schemas"]["MicrosoftExternalAuthProviderOptions"];
+        };
         ExternalAuthProviderTestCheck: {
             message: string;
             name: string;
@@ -4940,6 +4945,7 @@ export interface components {
             client_id: string;
             client_secret?: string | null;
             issuer_url?: string | null;
+            options?: null | components["schemas"]["ExternalAuthProviderOptions"];
             provider_kind: components["schemas"]["ExternalAuthProviderKind"];
             scopes?: string | null;
             token_url?: string | null;
@@ -5500,6 +5506,9 @@ export interface components {
             /** Format: int64 */
             recovery_codes_remaining: number;
         };
+        MicrosoftExternalAuthProviderOptions: {
+            tenant: string;
+        };
         /** @description Migrate all user and team assignments from one policy group to another. */
         MigratePolicyGroupAssignmentsReq: {
             /** Format: int64 */
@@ -5590,6 +5599,7 @@ export interface components {
                 id: number;
                 issuer_url?: string | null;
                 key: string;
+                options: components["schemas"]["ExternalAuthProviderOptions"];
                 protocol: components["schemas"]["ExternalAuthProtocol"];
                 provider_kind: components["schemas"]["ExternalAuthProviderKind"];
                 require_email_verified: boolean;
@@ -6178,6 +6188,10 @@ export interface components {
             wordmark_dark_url: string;
             wordmark_light_url: string;
         };
+        PublicExtensionSupport: {
+            enabled: boolean;
+            extensions?: string[];
+        };
         PublicFrontendConfig: {
             branding: components["schemas"]["PublicBranding"];
             media: components["schemas"]["PublicFrontendMediaConfig"];
@@ -6191,7 +6205,7 @@ export interface components {
         PublicImagePreviewPreference: "preview_first" | "original_first";
         PublicMediaDataKindSupport: {
             enabled: boolean;
-            extensions: string[];
+            extensions?: string[];
             match: components["schemas"]["PublicMediaDataSupportMatch"];
         };
         PublicMediaDataKindsSupport: {
@@ -6248,9 +6262,13 @@ export interface components {
             version?: number;
         };
         PublicThumbnailSupport: {
+            audio_thumbnail: components["schemas"]["PublicExtensionSupport"];
             extensions?: string[];
+            image_preview: components["schemas"]["PublicExtensionSupport"];
+            image_thumbnail: components["schemas"]["PublicExtensionSupport"];
             /** Format: int32 */
             version: number;
+            video_thumbnail: components["schemas"]["PublicExtensionSupport"];
         };
         PurgedCountResponse: {
             /** Format: int32 */
@@ -7209,6 +7227,7 @@ export interface components {
             groups_claim?: string | null;
             icon_url?: string | null;
             issuer_url?: string | null;
+            options?: null | components["schemas"]["ExternalAuthProviderOptions"];
             require_email_verified?: boolean | null;
             scopes?: string | null;
             subject_claim?: string | null;
@@ -8063,6 +8082,7 @@ export interface operations {
                                 id: number;
                                 issuer_url?: string | null;
                                 key: string;
+                                options: components["schemas"]["ExternalAuthProviderOptions"];
                                 protocol: components["schemas"]["ExternalAuthProtocol"];
                                 provider_kind: components["schemas"]["ExternalAuthProviderKind"];
                                 require_email_verified: boolean;
@@ -8143,6 +8163,7 @@ export interface operations {
                             id: number;
                             issuer_url?: string | null;
                             key: string;
+                            options: components["schemas"]["ExternalAuthProviderOptions"];
                             protocol: components["schemas"]["ExternalAuthProtocol"];
                             provider_kind: components["schemas"]["ExternalAuthProviderKind"];
                             require_email_verified: boolean;
@@ -8280,6 +8301,7 @@ export interface operations {
                             id: number;
                             issuer_url?: string | null;
                             key: string;
+                            options: components["schemas"]["ExternalAuthProviderOptions"];
                             protocol: components["schemas"]["ExternalAuthProtocol"];
                             provider_kind: components["schemas"]["ExternalAuthProviderKind"];
                             require_email_verified: boolean;
@@ -8405,6 +8427,7 @@ export interface operations {
                             id: number;
                             issuer_url?: string | null;
                             key: string;
+                            options: components["schemas"]["ExternalAuthProviderOptions"];
                             protocol: components["schemas"]["ExternalAuthProtocol"];
                             provider_kind: components["schemas"]["ExternalAuthProviderKind"];
                             require_email_verified: boolean;
@@ -16967,9 +16990,13 @@ export interface operations {
                     "application/json": {
                         code: components["schemas"]["ErrorCode"];
                         data?: {
+                            audio_thumbnail: components["schemas"]["PublicExtensionSupport"];
                             extensions?: string[];
+                            image_preview: components["schemas"]["PublicExtensionSupport"];
+                            image_thumbnail: components["schemas"]["PublicExtensionSupport"];
                             /** Format: int32 */
                             version: number;
+                            video_thumbnail: components["schemas"]["PublicExtensionSupport"];
                         };
                         error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;

@@ -316,6 +316,7 @@ function provider(
 		id: 1,
 		issuer_url: "https://idp.example.com",
 		key: "example",
+		options: {},
 		protocol: "oidc",
 		provider_kind: "oidc",
 		require_email_verified: true,

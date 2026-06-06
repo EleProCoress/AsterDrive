@@ -114,6 +114,7 @@ function provider(
 		id: 1,
 		issuer_url: "https://idp.example.com",
 		key: "example",
+		options: {},
 		protocol: "oidc",
 		provider_kind: "oidc",
 		require_email_verified: true,
@@ -326,17 +327,34 @@ describe("admin external auth shared helpers", () => {
 		const descriptor = githubKind();
 		const form = {
 			...emptyForm,
+			authorizationUrl: "https://stale.example.com/authorize",
 			clientId: "client-123",
 			displayName: "GitHub",
+			issuerUrl: "https://stale.example.com",
 			providerKind: "github",
 			scopes: " ",
+			tokenUrl: "https://stale.example.com/token",
+			userinfoUrl: "https://stale.example.com/userinfo",
 		};
 
 		expect(defaultScopesForKind(descriptor)).toBe("read:user user:email");
 		expect(createPayload(form, descriptor)).toMatchObject({
 			authorization_url: null,
+			issuer_url: null,
 			provider_kind: "github",
 			scopes: "read:user user:email",
+			token_url: null,
+			userinfo_url: null,
+		});
+		expect(updatePayload(form, descriptor)).toMatchObject({
+			authorization_url: null,
+			issuer_url: null,
+			token_url: null,
+			userinfo_url: null,
+		});
+		expect(testParamsPayload(form, descriptor)).toMatchObject({
+			authorization_url: null,
+			issuer_url: null,
 			token_url: null,
 			userinfo_url: null,
 		});
@@ -400,6 +418,9 @@ describe("admin external auth shared helpers", () => {
 		expect(microsoftIssuerUrlForTenant("organizations")).toBe(
 			"https://login.microsoftonline.com/organizations/v2.0",
 		);
+		expect(microsoftIssuerUrlForTenant(" Organizations ")).toBe(
+			"https://login.microsoftonline.com/organizations/v2.0",
+		);
 		expect(microsoftIssuerUrlForTenant(" ")).toBe(
 			"https://login.microsoftonline.com/common/v2.0",
 		);
@@ -414,11 +435,36 @@ describe("admin external auth shared helpers", () => {
 			),
 		).toBe("consumers");
 		expect(
+			microsoftTenantFromIssuerUrl(
+				"HTTPS://LOGIN.MICROSOFTONLINE.COM/Organizations/V2.0/",
+			),
+		).toBe("organizations");
+		expect(
+			microsoftTenantFromIssuerUrl(
+				"https://login.microsoftonline.com/AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE/v2.0",
+			),
+		).toBe("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+		expect(
 			microsoftTenantFromIssuerUrl("https://example.com/common/v2.0"),
+		).toBe("");
+		expect(
+			microsoftTenantFromIssuerUrl(
+				"https://login.microsoftonline.com/common/v2.0?x=1",
+			),
+		).toBe("");
+		expect(
+			microsoftTenantFromIssuerUrl(
+				"https://login.microsoftonline.com/common/v2.0#fragment",
+			),
 		).toBe("");
 		expect(createPayload(form, descriptor)).toMatchObject({
 			authorization_url: null,
-			issuer_url: "https://login.microsoftonline.com/organizations/v2.0",
+			issuer_url: null,
+			options: {
+				microsoft: {
+					tenant: "organizations",
+				},
+			},
 			provider_kind: "microsoft",
 			require_email_verified: true,
 			scopes: "openid profile email",
@@ -446,8 +492,29 @@ describe("admin external auth shared helpers", () => {
 				descriptor,
 			),
 		).toMatchObject({
-			issuer_url:
-				"https://login.microsoftonline.com/11111111-2222-3333-4444-555555555555/v2.0",
+			issuer_url: null,
+			options: {
+				microsoft: {
+					tenant: "11111111-2222-3333-4444-555555555555",
+				},
+			},
+		});
+		expect(
+			createPayload(
+				{
+					...form,
+					microsoftTenant: "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE",
+					microsoftTenantMode: "custom",
+				},
+				descriptor,
+			),
+		).toMatchObject({
+			issuer_url: null,
+			options: {
+				microsoft: {
+					tenant: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+				},
+			},
 		});
 		expect(shouldShowIssuerUrl(descriptor)).toBe(false);
 		expect(formConnectionSummary(form, descriptor)).toBe(
@@ -459,7 +526,12 @@ describe("admin external auth shared helpers", () => {
 		expect(
 			formFromProvider(
 				provider({
-					issuer_url: "https://login.microsoftonline.com/common/v2.0",
+					issuer_url: null,
+					options: {
+						microsoft: {
+							tenant: "Common",
+						},
+					},
 					provider_kind: "microsoft",
 				}),
 			),
@@ -471,14 +543,31 @@ describe("admin external auth shared helpers", () => {
 		expect(
 			formFromProvider(
 				provider({
-					issuer_url:
-						"https://login.microsoftonline.com/11111111-2222-3333-4444-555555555555/v2.0",
+					issuer_url: null,
+					options: {
+						microsoft: {
+							tenant: "11111111-2222-3333-4444-555555555555",
+						},
+					},
 					provider_kind: "microsoft",
 				}),
 			),
 		).toMatchObject({
 			microsoftTenantMode: "custom",
 			microsoftTenant: "11111111-2222-3333-4444-555555555555",
+		});
+		expect(
+			formFromProvider(
+				provider({
+					issuer_url: "HTTPS://LOGIN.MICROSOFTONLINE.COM/Organizations/V2.0",
+					options: undefined,
+					provider_kind: "microsoft",
+				}),
+			),
+		).toMatchObject({
+			microsoftTenantMode: "organizations",
+			microsoftTenant: "organizations",
+			providerKind: "microsoft",
 		});
 		expect(callbackUrl("microsoft", "microsoft")).toBe(
 			"https://app.example.com/api/v1/auth/external-auth/microsoft/microsoft/callback",
@@ -517,6 +606,42 @@ describe("admin external auth shared helpers", () => {
 		expect(callbackUrl("qq", "qq")).toBe(
 			"https://app.example.com/api/v1/auth/external-auth/qq/qq/callback",
 		);
+	});
+
+	it("drops stale URL fields from fixed provider payloads", () => {
+		for (const [providerKind, descriptor] of [
+			["github", githubKind()],
+			["google", googleKind()],
+			["microsoft", microsoftKind()],
+			["qq", qqKind()],
+		] as const) {
+			const form = {
+				...emptyForm,
+				authorizationUrl: "https://stale.example.com/authorize",
+				clientId: "client-123",
+				displayName: descriptor.display_name,
+				issuerUrl: "https://stale.example.com",
+				microsoftTenant: "organizations",
+				microsoftTenantMode: "organizations" as const,
+				providerKind,
+				scopes: descriptor.default_scopes,
+				tokenUrl: "https://stale.example.com/token",
+				userinfoUrl: "https://stale.example.com/userinfo",
+			};
+
+			for (const payload of [
+				createPayload(form, descriptor),
+				updatePayload(form, descriptor),
+				testParamsPayload(form, descriptor),
+			]) {
+				expect(payload).toMatchObject({
+					authorization_url: null,
+					issuer_url: null,
+					token_url: null,
+					userinfo_url: null,
+				});
+			}
+		}
 	});
 
 	it("maps saved providers into editable forms and detects connection changes", () => {
@@ -562,6 +687,85 @@ describe("admin external auth shared helpers", () => {
 				oauth2Kind(),
 			),
 		).toBe(false);
+		expect(
+			formConnectionChanged(
+				{
+					...emptyForm,
+					clientId: "client-123",
+					clientSecret: "***REDACTED***",
+					displayName: "Microsoft",
+					microsoftTenant: "organizations",
+					microsoftTenantMode: "organizations",
+					providerKind: "microsoft",
+					scopes: "openid email profile",
+				},
+				provider({
+					issuer_url: "https://login.microsoftonline.com/organizations/v2.0",
+					options: undefined,
+					provider_kind: "microsoft",
+					scopes: "openid email profile",
+				}),
+				microsoftKind(),
+			),
+		).toBe(false);
+		expect(
+			formConnectionChanged(
+				{
+					...emptyForm,
+					clientId: "client-123",
+					clientSecret: "***REDACTED***",
+					displayName: "Microsoft",
+					microsoftTenant: "organizations",
+					microsoftTenantMode: "organizations",
+					providerKind: "microsoft",
+					scopes: "openid email profile",
+				},
+				provider({
+					issuer_url: null,
+					options: {
+						microsoft: {
+							tenant: "Organizations",
+						},
+					},
+					provider_kind: "microsoft",
+					scopes: "openid email profile",
+				}),
+				microsoftKind(),
+			),
+		).toBe(false);
+		for (const [providerKind, descriptor] of [
+			["github", githubKind()],
+			["google", googleKind()],
+			["qq", qqKind()],
+		] as const) {
+			expect(
+				formConnectionChanged(
+					{
+						...emptyForm,
+						authorizationUrl: "https://stale.example.com/authorize",
+						clientId: "client-123",
+						clientSecret: "***REDACTED***",
+						displayName: descriptor.display_name,
+						issuerUrl: "https://stale.example.com",
+						providerKind,
+						scopes: descriptor.default_scopes,
+						tokenUrl: "https://stale.example.com/token",
+						userinfoUrl: "https://stale.example.com/userinfo",
+					},
+					provider({
+						authorization_url: "https://stored.example.com/authorize",
+						client_secret_configured: true,
+						issuer_url: "https://stored.example.com",
+						provider_kind: providerKind,
+						protocol: descriptor.protocol,
+						scopes: descriptor.default_scopes,
+						token_url: "https://stored.example.com/token",
+						userinfo_url: "https://stored.example.com/userinfo",
+					}),
+					descriptor,
+				),
+			).toBe(false);
+		}
 	});
 
 	it("checks connection requirements and summarizes connection and claims", () => {

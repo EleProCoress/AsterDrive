@@ -488,6 +488,7 @@ mod tests {
             key: "qq".to_string(),
             provider_kind: ExternalAuthProviderKind::Qq,
             protocol: ExternalAuthProtocol::OAuth2,
+            options: Default::default(),
             issuer_url: Some("https://ignored.example.com".to_string()),
             authorization_url: Some("https://ignored.example.com/auth".to_string()),
             token_url: Some("https://ignored.example.com/token".to_string()),

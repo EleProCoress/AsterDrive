@@ -156,6 +156,31 @@ describe("mediaDataSupportStore", () => {
 		expect(localStorage.getItem(MEDIA_DATA_SUPPORT_CACHE_KEY)).toBeNull();
 	});
 
+	it("accepts cached kind support with omitted empty extension arrays", async () => {
+		const cachedSupport = {
+			...supportConfig,
+			kinds: {
+				...supportConfig.kinds,
+				video: {
+					enabled: false,
+					match: "extensions",
+				},
+			},
+		};
+		localStorage.setItem(
+			"aster-cached-media-data-support:v1",
+			JSON.stringify({
+				config: cachedSupport,
+				cachedAt: Date.now(),
+			}),
+		);
+
+		const { useMediaDataSupportStore } = await loadStore();
+
+		expect(useMediaDataSupportStore.getState().config).toEqual(cachedSupport);
+		expect(useMediaDataSupportStore.getState().isLoaded).toBe(true);
+	});
+
 	it("drops cached support payloads without a config object", async () => {
 		localStorage.setItem(
 			"aster-cached-media-data-support:v1",

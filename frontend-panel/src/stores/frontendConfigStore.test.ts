@@ -163,6 +163,25 @@ describe("frontendConfigStore", () => {
 		expect(localStorage.getItem(FRONTEND_CONFIG_CACHE_KEY)).toBeNull();
 	});
 
+	it("drops cached configs without media config", async () => {
+		const { media: _media, ...configWithoutMedia } = frontendConfig;
+		localStorage.setItem(
+			"aster-cached-frontend-config:v1",
+			JSON.stringify({
+				config: configWithoutMedia,
+			}),
+		);
+
+		const { FRONTEND_CONFIG_CACHE_KEY, useFrontendConfigStore } =
+			await loadStore();
+
+		expect(useFrontendConfigStore.getState().config).toBeNull();
+		expect(useFrontendConfigStore.getState().imagePreviewPreference).toBe(
+			"original_first",
+		);
+		expect(localStorage.getItem(FRONTEND_CONFIG_CACHE_KEY)).toBeNull();
+	});
+
 	it("drops cached configs with invalid branding shape", async () => {
 		localStorage.setItem(
 			"aster-cached-frontend-config:v1",
@@ -234,6 +253,24 @@ describe("frontendConfigStore", () => {
 		expect(useFrontendConfigStore.getState().branding).toEqual(
 			DEFAULT_BRANDING,
 		);
+		expect(useFrontendConfigStore.getState().imagePreviewPreference).toBe(
+			"original_first",
+		);
+		expect(useFrontendConfigStore.getState().isLoaded).toBe(true);
+	});
+
+	it("falls back to safe defaults when fetched config has an invalid preview preference", async () => {
+		mockState.get.mockResolvedValueOnce({
+			...frontendConfig,
+			media: { image_preview_preference: "sideways" },
+		});
+
+		const { useFrontendConfigStore } = await loadStore();
+
+		await useFrontendConfigStore.getState().load();
+
+		expect(mockState.warn).toHaveBeenCalledTimes(1);
+		expect(useFrontendConfigStore.getState().config).toBeNull();
 		expect(useFrontendConfigStore.getState().imagePreviewPreference).toBe(
 			"original_first",
 		);

@@ -174,6 +174,7 @@ fn oidc_external_auth_provider_model(
         icon_url: Set(None),
         provider_kind: Set(aster_drive::types::ExternalAuthProviderKind::Oidc),
         protocol: Set(aster_drive::types::ExternalAuthProtocol::Oidc),
+        options: Set(aster_drive::types::StoredExternalAuthProviderOptions::empty()),
         issuer_url: Set(Some(issuer_url.to_string())),
         authorization_url: Set(None),
         token_url: Set(None),
@@ -206,6 +207,7 @@ pub fn google_external_auth_provider_model(
 ) -> external_auth_provider::ActiveModel {
     external_auth_provider::ActiveModel {
         provider_kind: Set(aster_drive::types::ExternalAuthProviderKind::Google),
+        options: Set(aster_drive::types::StoredExternalAuthProviderOptions::empty()),
         scopes: Set("openid profile email".to_string()),
         subject_claim: Set(Some("sub".to_string())),
         display_name_claim: Set(Some("name".to_string())),
@@ -223,6 +225,7 @@ pub fn microsoft_external_auth_provider_model(
 ) -> external_auth_provider::ActiveModel {
     external_auth_provider::ActiveModel {
         provider_kind: Set(aster_drive::types::ExternalAuthProviderKind::Microsoft),
+        options: Set(aster_drive::types::StoredExternalAuthProviderOptions::empty()),
         scopes: Set("openid profile email".to_string()),
         require_email_verified: Set(false),
         subject_claim: Set(Some("sub".to_string())),

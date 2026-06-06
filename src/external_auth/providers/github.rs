@@ -258,6 +258,7 @@ mod tests {
             key: "github".to_string(),
             provider_kind: ExternalAuthProviderKind::GitHub,
             protocol: ExternalAuthProtocol::OAuth2,
+            options: Default::default(),
             issuer_url: None,
             authorization_url: None,
             token_url: None,

@@ -4,10 +4,15 @@ import {
 } from "@/components/common/previewAppIconUrls";
 import { isSupportedArchivePreviewFile } from "@/lib/archiveFormats";
 import { BUILTIN_TABLE_PREVIEW_APP_KEY } from "@/lib/tablePreview";
+import {
+	imagePreviewExtensionCandidatesFromMime,
+	supportsImagePreviewFile,
+} from "@/lib/thumbnailSupport";
 import type {
 	PreviewAppProvider,
 	PublicPreviewAppDefinition,
 	PublicPreviewAppsConfig,
+	PublicThumbnailSupport,
 } from "@/types/api";
 import {
 	BUILTIN_PREVIEW_OPTIONS,
@@ -69,7 +74,10 @@ export function getEditorLanguage(file: PreviewableFileLike): string {
 	return LANGUAGE_BY_EXTENSION[ext] ?? "plaintext";
 }
 
-export function getFileTypeInfo(file: PreviewableFileLike): FileTypeInfo {
+export function getFileTypeInfo(
+	file: PreviewableFileLike,
+	thumbnailSupport?: PublicThumbnailSupport | null,
+): FileTypeInfo {
 	const exact = DOCUMENT_MIME_TYPES.get(file.mime_type);
 	if (exact) {
 		if (file.mime_type === "application/pdf") {
@@ -82,6 +90,9 @@ export function getFileTypeInfo(file: PreviewableFileLike): FileTypeInfo {
 	}
 
 	const { ext } = getExtension(file.name);
+	const mimeImageExtensions = imagePreviewExtensionCandidatesFromMime(
+		file.mime_type,
+	);
 	if (
 		file.mime_type === "text/markdown" ||
 		ext === "md" ||
@@ -105,7 +116,15 @@ export function getFileTypeInfo(file: PreviewableFileLike): FileTypeInfo {
 	if (ext === "json") {
 		return { category: "json", icon: "BracketsCurly", color: "text-amber-500" };
 	}
-	if (IMAGE_EXTENSIONS.has(ext)) {
+	if (
+		IMAGE_EXTENSIONS.has(ext) ||
+		mimeImageExtensions.some((extension) => IMAGE_EXTENSIONS.has(extension)) ||
+		supportsImagePreviewFile(
+			file.name,
+			file.mime_type,
+			thumbnailSupport?.image_preview?.extensions,
+		)
+	) {
 		return { category: "image", icon: "FileImage", color: "text-sky-500" };
 	}
 	if (ext === "doc" || ext === "docx" || ext === "odt") {
@@ -135,8 +154,9 @@ export function getFileTypeInfo(file: PreviewableFileLike): FileTypeInfo {
 
 function detectBuiltinFilePreviewProfile(
 	file: PreviewableFileLike,
+	thumbnailSupport?: PublicThumbnailSupport | null,
 ): FilePreviewProfile {
-	const typeInfo = getFileTypeInfo(file);
+	const typeInfo = getFileTypeInfo(file, thumbnailSupport);
 	const { ext } = getExtension(file.name);
 	const isOpenDocument = ext === "odt" || ext === "ods" || ext === "odp";
 
@@ -487,8 +507,12 @@ function matchesConfiguredApp(
 function detectConfiguredFilePreviewProfile(
 	file: PreviewableFileLike,
 	previewApps: PublicPreviewAppsConfig,
+	thumbnailSupport?: PublicThumbnailSupport | null,
 ): FilePreviewProfile {
-	const builtinProfile = detectBuiltinFilePreviewProfile(file);
+	const builtinProfile = detectBuiltinFilePreviewProfile(
+		file,
+		thumbnailSupport,
+	);
 	const allConfiguredApps = previewApps.apps ?? [];
 	const configuredApps = allConfiguredApps.filter(
 		isConfiguredPreviewAppEnabled,
@@ -569,28 +593,39 @@ function detectConfiguredFilePreviewProfile(
 export function detectFilePreviewProfile(
 	file: PreviewableFileLike,
 	previewApps?: PublicPreviewAppsConfig | null,
+	thumbnailSupport?: PublicThumbnailSupport | null,
 ): FilePreviewProfile {
 	if (!previewApps) {
-		return detectBuiltinFilePreviewProfile(file);
+		return detectBuiltinFilePreviewProfile(file, thumbnailSupport);
 	}
-	return detectConfiguredFilePreviewProfile(file, previewApps);
+	return detectConfiguredFilePreviewProfile(
+		file,
+		previewApps,
+		thumbnailSupport,
+	);
 }
 
 export function getAvailableOpenWithOptions(
 	file: PreviewableFileLike,
 	previewApps?: PublicPreviewAppsConfig | null,
+	thumbnailSupport?: PublicThumbnailSupport | null,
 ) {
-	const profile = detectFilePreviewProfile(file, previewApps);
+	const profile = detectFilePreviewProfile(file, previewApps, thumbnailSupport);
 	return profile.allOptions ?? profile.options;
 }
 
 export function getDefaultOpenWith(
 	file: PreviewableFileLike,
 	previewApps?: PublicPreviewAppsConfig | null,
+	thumbnailSupport?: PublicThumbnailSupport | null,
 ) {
-	return detectFilePreviewProfile(file, previewApps).defaultMode;
+	return detectFilePreviewProfile(file, previewApps, thumbnailSupport)
+		.defaultMode;
 }
 
-export function isEditableTextFile(file: PreviewableFileLike) {
-	return detectBuiltinFilePreviewProfile(file).isEditableText;
+export function isEditableTextFile(
+	file: PreviewableFileLike,
+	thumbnailSupport?: PublicThumbnailSupport | null,
+) {
+	return detectBuiltinFilePreviewProfile(file, thumbnailSupport).isEditableText;
 }

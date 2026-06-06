@@ -693,7 +693,12 @@ describe("AdminExternalAuthPage", () => {
 				authorization_url: null,
 				client_id: "microsoft-client",
 				display_name: "Microsoft",
-				issuer_url: "https://login.microsoftonline.com/organizations/v2.0",
+				issuer_url: null,
+				options: {
+					microsoft: {
+						tenant: "organizations",
+					},
+				},
 				provider_kind: "microsoft",
 				require_email_verified: false,
 				scopes: "openid profile email",
@@ -981,6 +986,7 @@ describe("AdminExternalAuthPage", () => {
 			client_id: "client-123",
 			client_secret: null,
 			issuer_url: "https://idp.example.com",
+			options: {},
 			provider_kind: "oidc",
 			scopes: "openid email profile",
 			token_url: null,

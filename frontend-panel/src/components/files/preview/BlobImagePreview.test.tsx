@@ -189,6 +189,69 @@ describe("BlobImagePreview", () => {
 		).not.toBeInTheDocument();
 	});
 
+	it("resets inline original request state when the public preference changes", async () => {
+		mockState.imagePreviewPreference = "preview_first";
+		mockState.useBlobUrl.mockImplementation((path: string | null) => {
+			if (path === null) {
+				return {
+					blobUrl: null,
+					error: false,
+					loading: false,
+					retry: mockState.retry,
+				};
+			}
+			return {
+				blobUrl: path.includes("image-preview") ? "blob:medium" : null,
+				error: false,
+				loading: !path.includes("image-preview"),
+				retry: mockState.retry,
+			};
+		});
+
+		const { rerender } = render(
+			<BlobImagePreview
+				file={file}
+				path="/files/1/download"
+				fallbackPath="/files/1/image-preview"
+			/>,
+		);
+
+		fireEvent.click(
+			screen.getByRole("button", { name: "preview_show_original" }),
+		);
+		await waitFor(() =>
+			expect(mockState.useBlobUrl).toHaveBeenCalledWith("/files/1/download", {
+				lane: "default",
+			}),
+		);
+
+		mockState.imagePreviewPreference = "original_first";
+		mockState.useBlobUrl.mockClear();
+		mockState.useBlobUrl.mockReturnValue({
+			blobUrl: "blob:original",
+			error: false,
+			loading: false,
+			retry: mockState.retry,
+		});
+		rerender(
+			<BlobImagePreview
+				file={file}
+				path="/files/1/download"
+				fallbackPath="/files/1/image-preview"
+			/>,
+		);
+
+		expect(mockState.useBlobUrl).toHaveBeenCalledWith(null, {
+			lane: "default",
+		});
+		expect(mockState.useBlobUrl).toHaveBeenCalledWith("/files/1/download", {
+			lane: "default",
+		});
+		expect(
+			screen.queryByRole("button", { name: "preview_show_original" }),
+		).not.toBeInTheDocument();
+	});
+
 	it("keeps the backend preview visible while the requested original is loading", async () => {
 		mockState.imagePreviewPreference = "preview_first";
 		mockState.useBlobUrl.mockImplementation((path: string | null) => ({

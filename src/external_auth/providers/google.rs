@@ -125,6 +125,7 @@ mod tests {
             key: "google".to_string(),
             provider_kind: ExternalAuthProviderKind::Google,
             protocol: ExternalAuthProtocol::Oidc,
+            options: Default::default(),
             issuer_url: None,
             authorization_url: Some("https://ignored.example.com/auth".to_string()),
             token_url: Some("https://ignored.example.com/token".to_string()),

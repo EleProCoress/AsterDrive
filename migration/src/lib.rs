@@ -25,6 +25,7 @@ mod m20260530_000001_add_webdav_account_team_scope;
 mod m20260601_000001_add_system_config_visibility;
 mod m20260601_000002_add_background_task_runtime_json;
 mod m20260604_000001_allow_shared_webdav_locks;
+mod m20260606_000001_add_external_auth_provider_options;
 mod search_acceleration;
 mod time;
 
@@ -122,6 +123,7 @@ impl MigratorTrait for CurrentMigrator {
             Box::new(m20260601_000001_add_system_config_visibility::Migration),
             Box::new(m20260601_000002_add_background_task_runtime_json::Migration),
             Box::new(m20260604_000001_allow_shared_webdav_locks::Migration),
+            Box::new(m20260606_000001_add_external_auth_provider_options::Migration),
         ]
     }
 }

@@ -5,10 +5,15 @@ use crate::api::pagination::{OffsetPage, load_offset_page};
 use crate::db::repository::external_auth_provider_repo;
 use crate::entities::external_auth_provider;
 use crate::errors::{AsterError, Result};
-use crate::external_auth::providers::microsoft::normalize_microsoft_tenant_or_issuer_url;
+use crate::external_auth::providers::microsoft::{
+    normalize_microsoft_tenant_input, normalize_microsoft_tenant_or_issuer_url,
+};
 use crate::external_auth::{ExternalAuthProviderConfig, registry};
 use crate::runtime::PrimaryAppState;
-use crate::types::{ExternalAuthProviderKind, NullablePatch};
+use crate::types::{
+    ExternalAuthProviderKind, ExternalAuthProviderOptions, MicrosoftExternalAuthProviderOptions,
+    NullablePatch, serialize_external_auth_provider_options,
+};
 use crate::utils::id;
 
 use super::REDACTED_SECRET;
@@ -67,6 +72,15 @@ fn provider_to_admin(
     model: external_auth_provider::Model,
 ) -> Result<AdminExternalAuthProviderInfo> {
     let allowed_domains = parse_allowed_domains(model.allowed_domains.as_deref())?;
+    let options = admin_provider_options(
+        model.provider_kind,
+        model.options.as_ref(),
+        model.issuer_url.as_deref(),
+    )?;
+    let issuer_url = admin_issuer_url(model.provider_kind, model.issuer_url, &options);
+    let authorization_url = admin_manual_endpoint(model.provider_kind, model.authorization_url);
+    let token_url = admin_manual_endpoint(model.provider_kind, model.token_url);
+    let userinfo_url = admin_manual_endpoint(model.provider_kind, model.userinfo_url);
     Ok(AdminExternalAuthProviderInfo {
         id: model.id,
         key: model.key,
@@ -74,10 +88,11 @@ fn provider_to_admin(
         protocol: model.protocol,
         display_name: model.display_name,
         icon_url: model.icon_url,
-        issuer_url: model.issuer_url,
-        authorization_url: model.authorization_url,
-        token_url: model.token_url,
-        userinfo_url: model.userinfo_url,
+        options,
+        issuer_url,
+        authorization_url,
+        token_url,
+        userinfo_url,
         client_id: model.client_id,
         client_secret: model
             .client_secret
@@ -106,6 +121,57 @@ fn provider_to_admin(
     })
 }
 
+fn admin_provider_options(
+    provider_kind: ExternalAuthProviderKind,
+    raw_options: &str,
+    legacy_issuer_url: Option<&str>,
+) -> Result<ExternalAuthProviderOptions> {
+    let mut options = crate::types::parse_external_auth_provider_options(raw_options);
+    if provider_kind == ExternalAuthProviderKind::Microsoft && options.microsoft.is_none() {
+        let Some(legacy_issuer_url) = legacy_issuer_url else {
+            return normalize_provider_options(provider_kind, options);
+        };
+        let Some(tenant) = microsoft_tenant_from_legacy_issuer_url(legacy_issuer_url) else {
+            return Ok(options);
+        };
+        options.microsoft = Some(MicrosoftExternalAuthProviderOptions::new(tenant));
+    }
+    normalize_provider_options(provider_kind, options)
+}
+
+fn admin_issuer_url(
+    provider_kind: ExternalAuthProviderKind,
+    issuer_url: Option<String>,
+    options: &ExternalAuthProviderOptions,
+) -> Option<String> {
+    match provider_kind {
+        ExternalAuthProviderKind::Oidc | ExternalAuthProviderKind::GenericOAuth2 => issuer_url,
+        ExternalAuthProviderKind::Microsoft => {
+            if options.microsoft.is_some() {
+                None
+            } else {
+                issuer_url
+            }
+        }
+        ExternalAuthProviderKind::GitHub
+        | ExternalAuthProviderKind::Google
+        | ExternalAuthProviderKind::Qq => None,
+    }
+}
+
+fn admin_manual_endpoint(
+    provider_kind: ExternalAuthProviderKind,
+    value: Option<String>,
+) -> Option<String> {
+    match provider_kind {
+        ExternalAuthProviderKind::Oidc | ExternalAuthProviderKind::GenericOAuth2 => value,
+        ExternalAuthProviderKind::GitHub
+        | ExternalAuthProviderKind::Google
+        | ExternalAuthProviderKind::Microsoft
+        | ExternalAuthProviderKind::Qq => None,
+    }
+}
+
 pub(super) fn external_auth_provider_config(
     provider: &external_auth_provider::Model,
 ) -> ExternalAuthProviderConfig {
@@ -124,15 +190,22 @@ fn external_auth_provider_config_from_test_params(
             descriptor.kind.as_str()
         )));
     }
+    let options = normalize_provider_options_from_test_params(
+        input.provider_kind,
+        input.options,
+        input.issuer_url.as_deref(),
+    )?;
     Ok(ExternalAuthProviderConfig {
         id: 0,
         key: "draft".to_string(),
         provider_kind: input.provider_kind,
         protocol: descriptor.protocol,
+        options,
         issuer_url: normalize_provider_issuer_url_input(
             input.provider_kind,
             input.issuer_url,
             descriptor.issuer_url_required,
+            true,
         )?,
         authorization_url: normalize_manual_endpoint_input(
             input.authorization_url,
@@ -195,11 +268,106 @@ fn normalize_provider_issuer_url_input(
     provider_kind: ExternalAuthProviderKind,
     value: Option<String>,
     required: bool,
+    allow_test_override: bool,
 ) -> Result<Option<String>> {
-    if provider_kind == ExternalAuthProviderKind::Microsoft {
-        return normalize_microsoft_tenant_or_issuer_url(value);
+    match provider_kind {
+        ExternalAuthProviderKind::Oidc | ExternalAuthProviderKind::GenericOAuth2 => {
+            normalize_issuer_url_input(value, required)
+        }
+        ExternalAuthProviderKind::Microsoft if allow_test_override => {
+            normalize_microsoft_tenant_or_issuer_url(value)
+        }
+        ExternalAuthProviderKind::Microsoft => normalize_specialized_issuer_url_input(
+            provider_kind,
+            value,
+            "Use options.microsoft.tenant for Microsoft providers",
+        ),
+        ExternalAuthProviderKind::Google if allow_test_override => {
+            normalize_issuer_url_input(value, false)
+        }
+        ExternalAuthProviderKind::GitHub
+        | ExternalAuthProviderKind::Google
+        | ExternalAuthProviderKind::Qq => normalize_specialized_issuer_url_input(
+            provider_kind,
+            value,
+            "Dedicated external auth providers use fixed endpoints",
+        ),
     }
-    normalize_issuer_url_input(value, required)
+}
+
+fn normalize_specialized_issuer_url_input(
+    provider_kind: ExternalAuthProviderKind,
+    value: Option<String>,
+    message: &str,
+) -> Result<Option<String>> {
+    if value.as_deref().is_none_or(|value| value.trim().is_empty()) {
+        return Ok(None);
+    }
+    Err(AsterError::validation_error(format!(
+        "issuer_url is not configurable for {} providers. {message}.",
+        provider_kind.as_str()
+    )))
+}
+
+fn normalize_provider_options(
+    provider_kind: ExternalAuthProviderKind,
+    mut options: ExternalAuthProviderOptions,
+) -> Result<ExternalAuthProviderOptions> {
+    options = options.normalized();
+    match provider_kind {
+        ExternalAuthProviderKind::Microsoft => {
+            let tenant = normalize_microsoft_tenant_input(
+                options
+                    .microsoft
+                    .as_ref()
+                    .map(|options| options.tenant.clone()),
+            )?;
+            options.microsoft = Some(MicrosoftExternalAuthProviderOptions::new(tenant));
+        }
+        _ if options.microsoft.is_some() => {
+            return Err(AsterError::validation_error(format!(
+                "microsoft provider options are not valid for {} providers",
+                provider_kind.as_str()
+            )));
+        }
+        _ => {}
+    }
+    Ok(options)
+}
+
+fn normalize_provider_options_from_create(
+    provider_kind: ExternalAuthProviderKind,
+    options: Option<ExternalAuthProviderOptions>,
+) -> Result<ExternalAuthProviderOptions> {
+    let mut options = options.unwrap_or_default().normalized();
+    if provider_kind == ExternalAuthProviderKind::Microsoft && options.microsoft.is_none() {
+        let tenant = normalize_microsoft_tenant_input(None)?;
+        options.microsoft = Some(MicrosoftExternalAuthProviderOptions::new(tenant));
+    }
+    normalize_provider_options(provider_kind, options)
+}
+
+fn normalize_provider_options_from_test_params(
+    provider_kind: ExternalAuthProviderKind,
+    options: Option<ExternalAuthProviderOptions>,
+    issuer_url: Option<&str>,
+) -> Result<ExternalAuthProviderOptions> {
+    if provider_kind == ExternalAuthProviderKind::Microsoft && issuer_url.is_some() {
+        return Ok(options.unwrap_or_default().normalized());
+    }
+    normalize_provider_options(provider_kind, options.unwrap_or_default())
+}
+
+fn microsoft_tenant_from_legacy_issuer_url(value: &str) -> Option<String> {
+    normalize_microsoft_tenant_input(Some(value.to_string())).ok()
+}
+
+fn serialize_options(
+    options: &ExternalAuthProviderOptions,
+) -> Result<crate::types::StoredExternalAuthProviderOptions> {
+    serialize_external_auth_provider_options(options).map_err(|error| {
+        AsterError::internal_error(format!("serialize external auth provider options: {error}"))
+    })
 }
 
 fn default_require_email_verified(provider_kind: ExternalAuthProviderKind) -> bool {
@@ -303,12 +471,16 @@ pub async fn create_provider(
     })
     .await?
     .to_string();
+    let provider_kind = input.provider_kind;
+    let legacy_issuer_url = input.issuer_url.clone();
     let display_name = normalize_required(&input.display_name, "display_name", 128)?;
     let icon_url = normalize_icon_url_input(input.icon_url)?;
+    let options = normalize_provider_options_from_create(provider_kind, input.options)?;
     let issuer_url = normalize_provider_issuer_url_input(
-        input.provider_kind,
-        input.issuer_url,
+        provider_kind,
+        legacy_issuer_url,
         descriptor.issuer_url_required,
+        false,
     )?;
     let authorization_url = normalize_manual_endpoint_input(
         input.authorization_url,
@@ -340,8 +512,9 @@ pub async fn create_provider(
         key: Set(key),
         display_name: Set(display_name),
         icon_url: Set(icon_url),
-        provider_kind: Set(input.provider_kind),
+        provider_kind: Set(provider_kind),
         protocol: Set(descriptor.protocol),
+        options: Set(serialize_options(&options)?),
         issuer_url: Set(issuer_url),
         authorization_url: Set(authorization_url),
         token_url: Set(token_url),
@@ -356,7 +529,7 @@ pub async fn create_provider(
             .unwrap_or(false)),
         require_email_verified: Set(input
             .require_email_verified
-            .unwrap_or_else(|| default_require_email_verified(input.provider_kind))),
+            .unwrap_or_else(|| default_require_email_verified(provider_kind))),
         subject_claim: Set(normalize_optional_claim(
             input.subject_claim,
             "subject_claim",
@@ -417,7 +590,15 @@ pub async fn update_provider(
             existing.provider_kind,
             issuer_url,
             descriptor.issuer_url_required,
+            false,
         )?);
+    }
+    if let Some(options) = input.options {
+        let options = normalize_provider_options(existing.provider_kind, options)?;
+        active.options = Set(serialize_options(&options)?);
+        if existing.provider_kind == ExternalAuthProviderKind::Microsoft {
+            active.issuer_url = Set(None);
+        }
     }
     if let Some(authorization_url) = input.authorization_url.and_then(nullable_patch_to_update) {
         active.authorization_url = Set(normalize_manual_endpoint_input(
