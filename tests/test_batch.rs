@@ -2,6 +2,7 @@
 
 #[macro_use]
 mod common;
+use aster_drive::api::api_error_code::ApiErrorCode;
 use aster_drive::runtime::SharedRuntimeState;
 
 use actix_web::test;
@@ -59,7 +60,7 @@ async fn test_batch_delete_files() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
     let body: Value = test::read_body_json(resp).await;
-    assert_eq!(body["code"], 0);
+    assert_eq!(body["code"], "success");
     assert_eq!(body["data"]["succeeded"], 2);
 
     // 批量删除后应能重新创建同名文件
@@ -140,7 +141,7 @@ async fn test_batch_delete_mixed() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
     let body: Value = test::read_body_json(resp).await;
-    assert_eq!(body["code"], 0);
+    assert_eq!(body["code"], "success");
     assert_eq!(body["data"]["succeeded"], 2);
     assert_eq!(body["data"]["failed"], 0);
 }
@@ -211,7 +212,7 @@ async fn test_batch_move_files() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
     let body: Value = test::read_body_json(resp).await;
-    assert_eq!(body["code"], 0);
+    assert_eq!(body["code"], "success");
     assert_eq!(body["data"]["succeeded"], 2);
 
     // Verify files are now in target folder
@@ -264,7 +265,7 @@ async fn test_batch_move_files() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
     let body: Value = test::read_body_json(resp).await;
-    assert_eq!(body["code"], 0);
+    assert_eq!(body["code"], "success");
     assert_eq!(body["data"]["succeeded"], 2);
 
     // Root should have the files again
@@ -344,7 +345,7 @@ async fn test_batch_copy_files() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
     let body: Value = test::read_body_json(resp).await;
-    assert_eq!(body["code"], 0);
+    assert_eq!(body["code"], "success");
     assert_eq!(body["data"]["succeeded"], 2);
     let event = tokio::time::timeout(std::time::Duration::from_secs(1), rx.recv())
         .await
@@ -1170,7 +1171,8 @@ async fn test_batch_empty_request() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 400);
     let body: Value = test::read_body_json(resp).await;
-    assert_ne!(body["code"], 0);
+    let code = body["code"].as_str().expect("error code should be string");
+    assert_eq!(code, ApiErrorCode::BadRequest.as_str());
 }
 
 #[actix_web::test]

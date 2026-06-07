@@ -12,8 +12,8 @@ import { useThemeStore } from "@/stores/themeStore";
 const MockApiError = vi.hoisted(
 	() =>
 		class MockApiError extends Error {
-			code: number;
-			constructor(code: number, message: string) {
+			code: string;
+			constructor(code: string, message: string) {
 				super(message);
 				this.code = code;
 			}
@@ -117,8 +117,8 @@ vi.mock("@/services/http", () => ({
 }));
 
 vi.mock("@/types/api-helpers", () => ({
-	ErrorCode: {
-		PendingActivation: 2004,
+	ApiErrorCode: {
+		PendingActivation: "auth.pending_activation",
 	},
 }));
 
@@ -2000,7 +2000,9 @@ describe("LoginPage", () => {
 	});
 
 	it("switches pending-activation login failures into the activation state", async () => {
-		mockState.login.mockRejectedValueOnce(new MockApiError(2004, "pending"));
+		mockState.login.mockRejectedValueOnce(
+			new MockApiError("auth.pending_activation", "pending"),
+		);
 
 		render(<LoginPage />);
 

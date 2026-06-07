@@ -4,11 +4,11 @@ import { absoluteAppUrl } from "@/lib/publicSiteUrl";
 import { buildWorkspacePath, type Workspace } from "@/lib/workspace";
 import { bindWorkspaceService } from "@/stores/workspaceStore";
 import type {
+	ApiErrorCode,
 	ArchiveFilenameEncoding,
 	ArchivePreviewManifest,
 	CreateOfflineDownloadTaskParams,
 	DirectLinkTokenInfo,
-	ErrorCode,
 	FileInfo,
 	FileVersion,
 	FolderAncestorItem,
@@ -20,7 +20,7 @@ import type {
 	TaskInfo,
 	WopiLaunchSession,
 } from "@/types/api";
-import { isApiErrorCode, isApiSubcode } from "@/types/api-helpers";
+import { ApiErrorCode as ApiErrorCodeValue } from "@/types/api-helpers";
 import {
 	type ArchivePreviewRequestOptions,
 	archivePreviewRequestConfig,
@@ -222,12 +222,9 @@ export function createFileService(workspace: Workspace) {
 							response?: {
 								status: number;
 								data?: {
-									code?: number;
+									code?: ApiErrorCode;
 									msg?: string;
 									error?: {
-										code?: string;
-										internal_code?: string;
-										subcode?: string;
 										retryable?: boolean;
 									} | null;
 								};
@@ -238,19 +235,9 @@ export function createFileService(workspace: Workspace) {
 						const status = response.status;
 						const body = response.data;
 						const apiErr = new ApiError(
-							(body?.code ?? status) as ErrorCode,
+							body?.code ?? ApiErrorCodeValue.InternalServerError,
 							body?.msg ?? `HTTP ${status}`,
 							{
-								apiCode:
-									body?.error?.code && isApiErrorCode(body.error.code)
-										? body.error.code
-										: undefined,
-								internalCode: body?.error?.internal_code ?? undefined,
-								// TODO(0.3.0): remove subcode compatibility after API clients use error.code.
-								subcode:
-									body?.error?.subcode && isApiSubcode(body.error.subcode)
-										? body.error.subcode
-										: undefined,
 								retryable: body?.error?.retryable ?? undefined,
 							},
 						);

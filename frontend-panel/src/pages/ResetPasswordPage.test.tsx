@@ -5,8 +5,8 @@ import ResetPasswordPage from "@/pages/ResetPasswordPage";
 const MockApiError = vi.hoisted(
 	() =>
 		class MockApiError extends Error {
-			code: number;
-			constructor(code: number, message: string) {
+			code: string;
+			constructor(code: string, message: string) {
 				super(message);
 				this.code = code;
 			}
@@ -40,9 +40,9 @@ vi.mock("@/services/http", () => ({
 }));
 
 vi.mock("@/types/api-helpers", () => ({
-	ErrorCode: {
-		ContactVerificationInvalid: 2005,
-		ContactVerificationExpired: 2006,
+	ApiErrorCode: {
+		ContactVerificationInvalid: "auth.contact_verification_invalid",
+		ContactVerificationExpired: "auth.contact_verification_expired",
 	},
 }));
 
@@ -187,7 +187,7 @@ describe("ResetPasswordPage", () => {
 			search: "?token=reset-token",
 		};
 		mockState.confirmPasswordReset.mockRejectedValueOnce(
-			new MockApiError(2005, "invalid"),
+			new MockApiError("auth.contact_verification_invalid", "invalid"),
 		);
 
 		render(<ResetPasswordPage />);
@@ -211,7 +211,7 @@ describe("ResetPasswordPage", () => {
 			search: "?token=reset-token",
 		};
 		mockState.confirmPasswordReset.mockRejectedValueOnce(
-			new MockApiError(2006, "expired"),
+			new MockApiError("auth.contact_verification_expired", "expired"),
 		);
 
 		render(<ResetPasswordPage />);

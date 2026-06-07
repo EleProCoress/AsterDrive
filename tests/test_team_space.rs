@@ -9,6 +9,13 @@ use serde_json::Value;
 
 const OVER_LIMIT_BODY_SIZE: usize = 10 * 1024 * 1024 + 1;
 
+fn assert_upload_error_contract(body: &Value, expected_code: &str) {
+    assert_eq!(body["code"], expected_code);
+    assert_eq!(body["error"]["retryable"], false);
+    assert!(body["error"].get("internal_code").is_none());
+    assert!(body["error"].get("subcode").is_none());
+}
+
 macro_rules! register_user {
     ($app:expr, $db:expr, $mail_sender:expr, $username:expr, $email:expr, $password:expr) => {{
         let req = test::TestRequest::post()
@@ -2417,8 +2424,7 @@ async fn test_team_chunk_upload_endpoint_rejects_oversized_chunk_with_413() {
         actix_web::http::StatusCode::PAYLOAD_TOO_LARGE
     );
     let body: Value = test::read_body_json(resp).await;
-    assert_eq!(body["error"]["internal_code"], "E024");
-    assert_eq!(body["error"]["subcode"], "upload.chunk_too_large");
+    assert_upload_error_contract(&body, "upload.chunk_too_large");
 }
 
 #[actix_web::test]
@@ -2488,8 +2494,7 @@ async fn test_team_chunk_upload_endpoint_keeps_duplicate_size_validation() {
     let resp = test::call_service(&app, req).await;
     assert!(resp.status().is_client_error());
     let body: Value = test::read_body_json(resp).await;
-    assert_eq!(body["error"]["internal_code"], "E056");
-    assert_eq!(body["error"]["subcode"], "upload.chunk_size_mismatch");
+    assert_upload_error_contract(&body, "upload.chunk_size_mismatch");
 }
 
 #[actix_web::test]
