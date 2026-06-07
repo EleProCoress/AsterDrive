@@ -187,20 +187,12 @@ pub fn public_thumbnail_support(runtime_config: &RuntimeConfig) -> PublicThumbna
     }
 
     let image_preview_extensions = image_thumbnail_extensions.clone();
-    let extensions = image_thumbnail_extensions
-        .iter()
-        .chain(audio_thumbnail_extensions.iter())
-        .chain(video_thumbnail_extensions.iter())
-        .cloned()
-        .collect::<BTreeSet<_>>();
-
     PublicThumbnailSupport {
         version: PUBLIC_THUMBNAIL_SUPPORT_VERSION,
         image_preview: public_extension_support(image_preview_extensions),
         image_thumbnail: public_extension_support(image_thumbnail_extensions),
         audio_thumbnail: public_extension_support(audio_thumbnail_extensions),
         video_thumbnail: public_extension_support(video_thumbnail_extensions),
-        extensions: extensions.into_iter().collect(),
     }
 }
 

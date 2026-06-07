@@ -2153,22 +2153,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/public/branding": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["get_public_branding"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/public/frontend-config": {
         parameters: {
             query?: never;
@@ -6252,7 +6236,6 @@ export interface components {
         };
         PublicThumbnailSupport: {
             audio_thumbnail: components["schemas"]["PublicExtensionSupport"];
-            extensions?: string[];
             image_preview: components["schemas"]["PublicExtensionSupport"];
             image_thumbnail: components["schemas"]["PublicExtensionSupport"];
             /** Format: int32 */
@@ -16790,40 +16773,6 @@ export interface operations {
             };
         };
     };
-    get_public_branding: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Public branding config */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        code: components["schemas"]["ApiErrorCode"];
-                        data?: {
-                            allow_user_registration: boolean;
-                            description: string;
-                            favicon_url: string;
-                            passkey_login_enabled: boolean;
-                            site_urls: string[];
-                            title: string;
-                            wordmark_dark_url: string;
-                            wordmark_light_url: string;
-                        };
-                        error?: null | components["schemas"]["ApiErrorInfo"];
-                        msg: string;
-                    };
-                };
-            };
-        };
-    };
     get_public_frontend_config: {
         parameters: {
             query?: never;
@@ -16980,7 +16929,6 @@ export interface operations {
                         code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             audio_thumbnail: components["schemas"]["PublicExtensionSupport"];
-                            extensions?: string[];
                             image_preview: components["schemas"]["PublicExtensionSupport"];
                             image_thumbnail: components["schemas"]["PublicExtensionSupport"];
                             /** Format: int32 */

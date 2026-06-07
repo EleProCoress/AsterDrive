@@ -76,8 +76,8 @@ async fn build_audit_entries(
             continue;
         };
 
-        // TODO: if audit read volume becomes a bottleneck in pressure tests, cache
-        // presentation at write time instead of rebuilding it on every query.
+        // Build presentation at read time so historical audit rows keep using
+        // the current presentation rules without duplicating display snapshots.
         let presentation = build_audit_presentation(
             model.action,
             entity_type,
@@ -156,8 +156,8 @@ fn build_team_audit_entry(
     TeamAuditEntryInfo {
         id: entry.id,
         action: entry.action,
-        // TODO: if audit read volume becomes a bottleneck in pressure tests, cache
-        // presentation at write time instead of rebuilding it here.
+        // Build presentation at read time so historical audit rows keep using
+        // the current presentation rules without duplicating display snapshots.
         presentation: entity_type.and_then(|entity_type| {
             build_audit_presentation(
                 entry.action,

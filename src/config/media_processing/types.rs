@@ -111,10 +111,6 @@ pub struct PublicThumbnailSupport {
     pub image_thumbnail: PublicExtensionSupport,
     pub audio_thumbnail: PublicExtensionSupport,
     pub video_thumbnail: PublicExtensionSupport,
-    // TODO(0.3.0): remove this flattened compatibility field after clients
-    // consume the per-use capability fields above.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub extensions: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]

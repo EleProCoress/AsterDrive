@@ -575,7 +575,10 @@ pub struct OfflineDownloadTaskPayloadInfo {
 /// Stored payload for an offline download task.
 pub struct OfflineDownloadTaskPayload {
     /// Original source URL. It is validated by `parse_and_validate_source_url`
-    /// before task creation and must be an HTTP/HTTPS URL with a host.
+    /// before task creation and must be an HTTP/HTTPS URL with a host. It is
+    /// intentionally persisted for retry execution and administrator
+    /// investigations; public task views receive `OfflineDownloadTaskPayloadInfo`
+    /// with only `source_display_url`.
     pub url: String,
     /// Optional normalized target filename.
     #[serde(default, skip_serializing_if = "Option::is_none")]

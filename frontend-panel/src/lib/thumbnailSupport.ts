@@ -29,10 +29,6 @@ function normalizeExtension(value: string) {
 	return value.trim().replace(/^\./, "").toLowerCase();
 }
 
-// Image preview currently shares the thumbnail extension allowlist because the
-// backend advertises image preview support through thumbnailSupport. TODO:
-// keep this wrapper separate so preview and thumbnail semantics can diverge
-// later without changing call sites.
 export function supportsImagePreviewExtension(
 	fileName: string,
 	extensions: string[] | undefined,

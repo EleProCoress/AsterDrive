@@ -697,7 +697,7 @@ dependencies = [
 
 [[package]]
 name = "aster_drive"
-version = "0.2.7"
+version = "0.3.0-do-not-use-in-production.1"
 dependencies = [
  "actix-governor",
  "actix-http",

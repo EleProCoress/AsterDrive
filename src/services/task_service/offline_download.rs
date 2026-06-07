@@ -77,8 +77,9 @@ pub(crate) async fn create_offline_download_task_in_scope(
     }
 
     let payload = OfflineDownloadTaskPayload {
-        // TODO: Move raw source URLs out of persistent task payloads once
-        // short-lived encrypted task secret storage exists.
+        // Keep the original URL in the stored task payload for retries and
+        // administrator investigations. Task API responses expose only the
+        // redacted source_display_url wrapper, not this raw URL.
         url: request.url.as_str().to_string(),
         filename: request.filename,
         target_folder_id: request.target_folder_id,

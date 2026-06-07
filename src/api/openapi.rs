@@ -70,7 +70,6 @@ use utoipa::{Modify, OpenApi};
         crate::api::routes::health::primary_ready,
 
         // public：登录前也能读取的公开站点配置，例如品牌信息和预览应用列表。
-        crate::api::routes::public::get_branding,
         crate::api::routes::public::get_frontend_config,
         crate::api::routes::public::get_preview_apps,
         crate::api::routes::public::get_thumbnail_support,

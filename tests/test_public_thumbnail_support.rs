@@ -85,22 +85,17 @@ async fn test_public_thumbnail_support_returns_default_builtin_extensions() {
     assert_eq!(body["data"]["image_thumbnail"]["enabled"], true);
     assert_eq!(body["data"]["audio_thumbnail"]["enabled"], true);
     assert_eq!(body["data"]["video_thumbnail"]["enabled"], false);
+    assert!(body["data"].get("extensions").is_none());
 
-    let extensions = body["data"]["extensions"]
-        .as_array()
-        .expect("extensions should be an array");
     let image_preview_extensions = body["data"]["image_preview"]["extensions"]
         .as_array()
         .expect("image preview extensions should be an array");
     let audio_thumbnail_extensions = body["data"]["audio_thumbnail"]["extensions"]
         .as_array()
         .expect("audio thumbnail extensions should be an array");
-    assert!(extensions.iter().any(|value| value == "png"));
-    assert!(extensions.iter().any(|value| value == "jpg"));
-    assert!(extensions.iter().any(|value| value == "tiff"));
-    assert!(extensions.iter().any(|value| value == "mp3"));
-    assert!(extensions.iter().any(|value| value == "flac"));
     assert!(image_preview_extensions.iter().any(|value| value == "png"));
+    assert!(image_preview_extensions.iter().any(|value| value == "jpg"));
+    assert!(image_preview_extensions.iter().any(|value| value == "tiff"));
     assert!(!image_preview_extensions.iter().any(|value| value == "mp3"));
     assert!(
         audio_thumbnail_extensions
@@ -113,9 +108,6 @@ async fn test_public_thumbnail_support_returns_default_builtin_extensions() {
             .any(|value| value == "flac")
     );
     assert!(body["data"]["video_thumbnail"].get("extensions").is_none());
-    assert!(!extensions.iter().any(|value| value == "mp4"));
-    assert!(!extensions.iter().any(|value| value == "m4v"));
-    assert!(!extensions.iter().any(|value| value == "3gp"));
 }
 
 #[actix_web::test]
@@ -169,16 +161,7 @@ async fn test_public_thumbnail_support_merges_builtin_and_enabled_vips_extension
     assert_eq!(resp.status(), 200);
 
     let body: Value = test::read_body_json(resp).await;
-    let extensions = body["data"]["extensions"]
-        .as_array()
-        .expect("extensions should be an array");
-    assert!(extensions.iter().any(|value| value == "png"));
-    assert!(extensions.iter().any(|value| value == "heic"));
-    assert!(extensions.iter().any(|value| value == "avif"));
-    assert!(extensions.iter().any(|value| value == "nef"));
-    assert!(extensions.iter().any(|value| value == "raw"));
-    assert!(extensions.iter().any(|value| value == "custom-vips"));
-    assert!(extensions.iter().any(|value| value == "mp4"));
+    assert!(body["data"].get("extensions").is_none());
 
     let image_preview_extensions = body["data"]["image_preview"]["extensions"]
         .as_array()
@@ -186,6 +169,7 @@ async fn test_public_thumbnail_support_merges_builtin_and_enabled_vips_extension
     let video_thumbnail_extensions = body["data"]["video_thumbnail"]["extensions"]
         .as_array()
         .expect("video thumbnail extensions should be an array");
+    assert!(image_preview_extensions.iter().any(|value| value == "png"));
     assert!(image_preview_extensions.iter().any(|value| value == "heic"));
     assert!(image_preview_extensions.iter().any(|value| value == "avif"));
     assert!(image_preview_extensions.iter().any(|value| value == "nef"));
@@ -243,10 +227,14 @@ async fn test_public_thumbnail_support_backfills_old_lofty_uses() {
     assert_eq!(resp.status(), 200);
 
     let body: Value = test::read_body_json(resp).await;
-    let extensions = body["data"]["extensions"]
+    let audio_thumbnail_extensions = body["data"]["audio_thumbnail"]["extensions"]
         .as_array()
-        .expect("extensions should be an array");
-    assert!(extensions.iter().any(|value| value == "mp3"));
+        .expect("audio thumbnail extensions should be an array");
+    assert!(
+        audio_thumbnail_extensions
+            .iter()
+            .any(|value| value == "mp3")
+    );
 }
 
 #[actix_web::test]
@@ -262,10 +250,14 @@ async fn test_public_thumbnail_support_cache_is_invalidated_after_config_update(
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
     let body: Value = test::read_body_json(resp).await;
-    let extensions = body["data"]["extensions"]
+    let image_thumbnail_extensions = body["data"]["image_thumbnail"]["extensions"]
         .as_array()
-        .expect("extensions should be an array");
-    assert!(!extensions.iter().any(|value| value == "heic"));
+        .expect("image thumbnail extensions should be an array");
+    assert!(
+        !image_thumbnail_extensions
+            .iter()
+            .any(|value| value == "heic")
+    );
 
     let req = test::TestRequest::put()
         .uri("/api/v1/admin/config/media_processing_registry_json")
@@ -302,10 +294,14 @@ async fn test_public_thumbnail_support_cache_is_invalidated_after_config_update(
     assert_eq!(resp.status(), 200);
 
     let body: Value = test::read_body_json(resp).await;
-    let extensions = body["data"]["extensions"]
+    let image_thumbnail_extensions = body["data"]["image_thumbnail"]["extensions"]
         .as_array()
-        .expect("extensions should be an array");
-    assert!(extensions.iter().any(|value| value == "heic"));
+        .expect("image thumbnail extensions should be an array");
+    assert!(
+        image_thumbnail_extensions
+            .iter()
+            .any(|value| value == "heic")
+    );
 }
 
 #[actix_web::test]
@@ -327,10 +323,14 @@ async fn test_public_thumbnail_support_includes_storage_native_policy_without_ca
     assert_eq!(resp.status(), 200);
 
     let body: Value = test::read_body_json(resp).await;
-    let extensions = body["data"]["extensions"]
+    let image_thumbnail_extensions = body["data"]["image_thumbnail"]["extensions"]
         .as_array()
-        .expect("extensions should be an array");
-    assert!(extensions.iter().any(|value| value == "heif"));
+        .expect("image thumbnail extensions should be an array");
+    assert!(
+        image_thumbnail_extensions
+            .iter()
+            .any(|value| value == "heif")
+    );
     assert!(
         !state.driver_registry.has_cached_driver_for_test(policy.id),
         "public thumbnail support must not instantiate a cold storage-native policy driver"
@@ -356,10 +356,14 @@ async fn test_public_thumbnail_support_ignores_storage_native_options_for_unsupp
     assert_eq!(resp.status(), 200);
 
     let body: Value = test::read_body_json(resp).await;
-    let extensions = body["data"]["extensions"]
+    let image_thumbnail_extensions = body["data"]["image_thumbnail"]["extensions"]
         .as_array()
-        .expect("extensions should be an array");
-    assert!(!extensions.iter().any(|value| value == "zzrawthumb"));
+        .expect("image thumbnail extensions should be an array");
+    assert!(
+        !image_thumbnail_extensions
+            .iter()
+            .any(|value| value == "zzrawthumb")
+    );
     assert!(
         !state.driver_registry.has_cached_driver_for_test(policy.id),
         "unsupported public thumbnail policy must not be instantiated just to reject capability"

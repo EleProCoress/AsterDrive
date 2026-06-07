@@ -40,7 +40,10 @@ export function FileThumbnail({
 	const loadThumbnailSupport = useThumbnailSupportStore((state) => state.load);
 	const canRequestThumbnail =
 		thumbnailSupportLoaded &&
-		supportsThumbnailExtension(file.name, thumbnailSupport?.extensions);
+		supportsThumbnailExtension(
+			file.name,
+			thumbnailSupport?.image_thumbnail?.extensions,
+		);
 
 	useEffect(() => {
 		if (!thumbnailSupportLoaded) {

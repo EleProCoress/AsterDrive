@@ -9,20 +9,19 @@ use crate::types::{MediaProcessorKind, SystemConfigSource, SystemConfigValueType
 use chrono::Utc;
 
 use super::{
-    BUILTIN_AUDIO_METADATA_EXTENSIONS, BUILTIN_AUDIO_THUMBNAIL_EXTENSIONS,
-    BUILTIN_IMAGE_METADATA_EXTENSIONS, BUILTIN_IMAGES_SUPPORTED_EXTENSIONS, DEFAULT_FFMPEG_COMMAND,
-    DEFAULT_FFMPEG_EXTENSIONS, DEFAULT_FFPROBE_COMMAND, DEFAULT_FFPROBE_EXTENSIONS,
-    DEFAULT_VIPS_COMMAND, DEFAULT_VIPS_EXTENSIONS, MEDIA_PROCESSING_REGISTRY_JSON_KEY,
-    MEDIA_PROCESSING_REGISTRY_VERSION, MatchedMediaProcessor, MediaProcessingMatchKind,
-    MediaProcessingProcessorConfig, MediaProcessingProcessorRuntimeConfig,
-    MediaProcessingRegistryConfig, MediaProcessingUse, PUBLIC_MEDIA_DATA_MAX_SAFE_SOURCE_BYTES,
-    PUBLIC_MEDIA_DATA_SUPPORT_VERSION, PublicExtensionSupport, PublicMediaDataKindSupport,
-    PublicMediaDataSupport, PublicMediaDataSupportMatch, PublicThumbnailSupport,
-    builtin_audio_metadata_supports_extension, builtin_image_metadata_supports_extension,
-    command_is_available, default_media_processing_registry,
-    default_media_processing_registry_json, default_uses_for_kind,
-    ffmpeg_command_from_registry_value, ffprobe_command_from_registry_value, file_extension,
-    media_processing_registry, normalize_ffmpeg_command, normalize_ffprobe_command,
+    BUILTIN_AUDIO_METADATA_EXTENSIONS, BUILTIN_IMAGE_METADATA_EXTENSIONS,
+    BUILTIN_IMAGES_SUPPORTED_EXTENSIONS, DEFAULT_FFMPEG_COMMAND, DEFAULT_FFMPEG_EXTENSIONS,
+    DEFAULT_FFPROBE_COMMAND, DEFAULT_FFPROBE_EXTENSIONS, DEFAULT_VIPS_COMMAND,
+    DEFAULT_VIPS_EXTENSIONS, MEDIA_PROCESSING_REGISTRY_JSON_KEY, MEDIA_PROCESSING_REGISTRY_VERSION,
+    MatchedMediaProcessor, MediaProcessingMatchKind, MediaProcessingProcessorConfig,
+    MediaProcessingProcessorRuntimeConfig, MediaProcessingRegistryConfig, MediaProcessingUse,
+    PUBLIC_MEDIA_DATA_MAX_SAFE_SOURCE_BYTES, PUBLIC_MEDIA_DATA_SUPPORT_VERSION,
+    PublicExtensionSupport, PublicMediaDataKindSupport, PublicMediaDataSupport,
+    PublicMediaDataSupportMatch, PublicThumbnailSupport, builtin_audio_metadata_supports_extension,
+    builtin_image_metadata_supports_extension, command_is_available,
+    default_media_processing_registry, default_media_processing_registry_json,
+    default_uses_for_kind, ffmpeg_command_from_registry_value, ffprobe_command_from_registry_value,
+    file_extension, media_processing_registry, normalize_ffmpeg_command, normalize_ffprobe_command,
     normalize_media_processing_registry_config_value, normalize_vips_command,
     parse_media_processor_kind, processor_candidates_for_file_name, processor_candidates_for_use,
     processor_config_for_kind, public_media_data_support, public_thumbnail_support,
@@ -449,11 +448,6 @@ fn public_thumbnail_support_exposes_enabled_processor_capabilities() {
         .into_iter()
         .map(str::to_string)
         .collect::<Vec<_>>();
-    let expected = ["avif", "flac", "heic", "mp3", "mp4", "webm"]
-        .into_iter()
-        .map(str::to_string)
-        .collect::<std::collections::BTreeSet<_>>();
-
     assert_eq!(
         public_thumbnail_support(&runtime_config),
         PublicThumbnailSupport {
@@ -474,7 +468,6 @@ fn public_thumbnail_support_exposes_enabled_processor_capabilities() {
                 enabled: true,
                 extensions: expected_video,
             },
-            extensions: expected.into_iter().collect(),
         }
     );
 }
@@ -482,16 +475,8 @@ fn public_thumbnail_support_exposes_enabled_processor_capabilities() {
 #[test]
 fn public_thumbnail_support_keeps_builtin_extensions_when_images_are_enabled() {
     let support = public_thumbnail_support(&RuntimeConfig::new());
-    let expected = BUILTIN_IMAGES_SUPPORTED_EXTENSIONS
-        .iter()
-        .chain(BUILTIN_AUDIO_THUMBNAIL_EXTENSIONS.iter())
-        .map(|extension| (*extension).to_string())
-        .collect::<std::collections::BTreeSet<_>>()
-        .into_iter()
-        .collect::<Vec<_>>();
 
     assert_eq!(support.version, 1);
-    assert_eq!(support.extensions, expected);
     assert_eq!(support.image_preview, support.image_thumbnail);
     assert!(support.image_preview.enabled);
     assert!(
@@ -516,24 +501,6 @@ fn public_thumbnail_support_keeps_builtin_extensions_when_images_are_enabled() {
             .extensions
             .iter()
             .any(|extension| extension == "mp3")
-    );
-    assert!(
-        !support
-            .extensions
-            .iter()
-            .any(|extension| extension == "mp4")
-    );
-    assert!(
-        !support
-            .extensions
-            .iter()
-            .any(|extension| extension == "m4v")
-    );
-    assert!(
-        !support
-            .extensions
-            .iter()
-            .any(|extension| extension == "3gp")
     );
 }
 
@@ -802,11 +769,6 @@ fn normalize_media_processing_registry_backfills_new_default_uses() {
         MEDIA_PROCESSING_REGISTRY_JSON_KEY,
         &normalized,
     ));
-    assert!(
-        public_thumbnail_support(&runtime_config)
-            .extensions
-            .contains(&"mp3".to_string())
-    );
     assert!(
         public_thumbnail_support(&runtime_config)
             .audio_thumbnail

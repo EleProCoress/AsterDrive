@@ -8,40 +8,6 @@ use actix_web::test;
 use serde_json::Value;
 
 #[actix_web::test]
-async fn test_public_branding_returns_defaults() {
-    let state = common::setup().await;
-    let app = create_test_app!(state);
-
-    let req = test::TestRequest::get()
-        .uri("/api/v1/public/branding")
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), 200);
-    assert_eq!(
-        resp.headers()
-            .get("Cache-Control")
-            .and_then(|value| value.to_str().ok()),
-        Some("public, max-age=60")
-    );
-
-    let body: Value = test::read_body_json(resp).await;
-    assert_eq!(body["data"]["title"], "AsterDrive");
-    assert_eq!(body["data"]["description"], "Self-hosted cloud storage");
-    assert_eq!(body["data"]["favicon_url"], "/favicon.svg");
-    assert_eq!(
-        body["data"]["wordmark_dark_url"],
-        "/static/asterdrive/asterdrive-dark.svg"
-    );
-    assert_eq!(
-        body["data"]["wordmark_light_url"],
-        "/static/asterdrive/asterdrive-light.svg"
-    );
-    assert_eq!(body["data"]["site_urls"], Value::Array(vec![]));
-    assert_eq!(body["data"]["allow_user_registration"], true);
-    assert_eq!(body["data"]["passkey_login_enabled"], true);
-}
-
-#[actix_web::test]
 async fn test_public_frontend_config_returns_default_bootstrap_config() {
     let state = common::setup().await;
     let app = create_test_app!(state);
@@ -192,7 +158,7 @@ async fn test_public_frontend_config_falls_back_for_invalid_preview_preference()
 }
 
 #[actix_web::test]
-async fn test_public_branding_uses_admin_updated_values() {
+async fn test_public_frontend_config_uses_admin_updated_branding_values() {
     let state = common::setup().await;
     let app = create_test_app!(state);
     let (token, _) = register_and_login!(app);
@@ -233,36 +199,37 @@ async fn test_public_branding_uses_admin_updated_values() {
     }
 
     let req = test::TestRequest::get()
-        .uri("/api/v1/public/branding")
+        .uri("/api/v1/public/frontend-config")
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
 
     let body: Value = test::read_body_json(resp).await;
-    assert_eq!(body["data"]["title"], "Nebula Drive");
-    assert_eq!(body["data"]["description"], "Team storage for the squad");
+    let branding = &body["data"]["branding"];
+    assert_eq!(branding["title"], "Nebula Drive");
+    assert_eq!(branding["description"], "Team storage for the squad");
     assert_eq!(
-        body["data"]["favicon_url"],
+        branding["favicon_url"],
         "https://cdn.example.com/branding/favicon.png?v=2"
     );
     assert_eq!(
-        body["data"]["wordmark_dark_url"],
+        branding["wordmark_dark_url"],
         "https://cdn.example.com/branding/wordmark-dark.svg?v=2"
     );
     assert_eq!(
-        body["data"]["wordmark_light_url"],
+        branding["wordmark_light_url"],
         "https://cdn.example.com/branding/wordmark-light.svg?v=2"
     );
     assert_eq!(
-        body["data"]["site_urls"],
+        branding["site_urls"],
         serde_json::json!(["https://drive.example.com", "https://panel.example.com"])
     );
-    assert_eq!(body["data"]["allow_user_registration"], false);
-    assert_eq!(body["data"]["passkey_login_enabled"], false);
+    assert_eq!(branding["allow_user_registration"], false);
+    assert_eq!(branding["passkey_login_enabled"], false);
 }
 
 #[actix_web::test]
-async fn test_public_branding_blank_values_fall_back_to_defaults() {
+async fn test_public_frontend_config_branding_blank_values_fall_back_to_defaults() {
     let state = common::setup().await;
     let app = create_test_app!(state);
     let (token, _) = register_and_login!(app);
@@ -285,27 +252,28 @@ async fn test_public_branding_blank_values_fall_back_to_defaults() {
     }
 
     let req = test::TestRequest::get()
-        .uri("/api/v1/public/branding")
+        .uri("/api/v1/public/frontend-config")
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
 
     let body: Value = test::read_body_json(resp).await;
-    assert_eq!(body["data"]["title"], "AsterDrive");
-    assert_eq!(body["data"]["description"], "Self-hosted cloud storage");
-    assert_eq!(body["data"]["favicon_url"], "/favicon.svg");
+    let branding = &body["data"]["branding"];
+    assert_eq!(branding["title"], "AsterDrive");
+    assert_eq!(branding["description"], "Self-hosted cloud storage");
+    assert_eq!(branding["favicon_url"], "/favicon.svg");
     assert_eq!(
-        body["data"]["wordmark_dark_url"],
+        branding["wordmark_dark_url"],
         "/static/asterdrive/asterdrive-dark.svg"
     );
     assert_eq!(
-        body["data"]["wordmark_light_url"],
+        branding["wordmark_light_url"],
         "/static/asterdrive/asterdrive-light.svg"
     );
 }
 
 #[actix_web::test]
-async fn test_public_branding_preserves_non_ascii_text() {
+async fn test_public_frontend_config_branding_preserves_non_ascii_text() {
     let state = common::setup().await;
     let app = create_test_app!(state);
     let (token, _) = register_and_login!(app);
@@ -337,24 +305,25 @@ async fn test_public_branding_preserves_non_ascii_text() {
     }
 
     let req = test::TestRequest::get()
-        .uri("/api/v1/public/branding")
+        .uri("/api/v1/public/frontend-config")
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
 
     let body: Value = test::read_body_json(resp).await;
-    assert_eq!(body["data"]["title"], "猫猫云盘");
-    assert_eq!(body["data"]["description"], "团队私有云存储");
+    let branding = &body["data"]["branding"];
+    assert_eq!(branding["title"], "猫猫云盘");
+    assert_eq!(branding["description"], "团队私有云存储");
     assert_eq!(
-        body["data"]["favicon_url"],
+        branding["favicon_url"],
         "https://cdn.example.com/branding/favicon.png?v=unicode"
     );
     assert_eq!(
-        body["data"]["wordmark_dark_url"],
+        branding["wordmark_dark_url"],
         "https://cdn.example.com/branding/深色.svg?v=unicode"
     );
     assert_eq!(
-        body["data"]["wordmark_light_url"],
+        branding["wordmark_light_url"],
         "https://cdn.example.com/branding/浅色.svg?v=unicode"
     );
 }

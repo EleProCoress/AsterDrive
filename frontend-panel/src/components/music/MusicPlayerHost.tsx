@@ -552,7 +552,7 @@ export function MusicPlayerHost() {
 		thumbnailSupportLoaded &&
 		supportsThumbnailExtension(
 			track.thumbnail.file.name,
-			thumbnailSupport?.extensions,
+			thumbnailSupport?.audio_thumbnail?.extensions,
 		)
 			? (track.thumbnail.path ?? null)
 			: null;
