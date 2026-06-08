@@ -5,6 +5,244 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.3.0-alpha.1] - 2026-06-09
+
+### Release Highlights
+
+**AsterDrive `0.3.0-alpha.1` 是 0.3.0 系列的预发布版本，聚焦 API 错误码协议统一、用户邀请流程、文件标签体系和运行时架构解耦。** 本版本将后端双轨制的 `ErrorCode`（数值）与 `ApiSubcode`（字符串）合并为单一的字符串 `ApiErrorCode`，作为前端与文档的唯一稳定错误码来源；新增用户邀请系统，管理员可通过邮件发送一次性注册链接；上线文件/文件夹标签系统，支持工作区作用域、批量操作与搜索集成；运行时状态拆分为可组合的 trait 体系，为多运行时场景铺路。UI 侧同步完成 action menu、z-index 体系、分类浏览页与全页面搜索重构。
+
+- **统一 API 错误码协议** — 合并 `ErrorCode`/`ApiSubcode` 为字符串 `ApiErrorCode`，内部存储协议升至 v4，向后不兼容
+- **用户邀请系统** — 管理员邮件邀请、一次性注册链接、状态追踪、撤销、可定制邮件模板
+- **文件/文件夹标签系统** — 工作区作用域、批量绑定、搜索过滤、可视化颜色管理
+- **运行时 trait 架构** — `PrimaryAppState`/`FollowerAppState` 改为组合式 trait，提升可测性与多运行时扩展能力
+- **API 显式状态访问** — 全部 API 路由统一使用 `state.get_ref()`，移除隐式 Deref，提升类型安全
+- **前端体验工程化** — action menu、语义化 z-index token、分类浏览页、全页面搜索、内联确认 UI
+
+### Added
+
+- **用户邀请系统**
+  - 新增 `user_invitations` 表，支持 pending / accepted / expired / revoked 状态流转
+  - 邀请仓库、服务层、token 生成与校验逻辑
+  - 管理端 API：创建、列表、撤销邀请
+  - 公开 API：校验与接受邀请
+  - 邀请专属错误码（invalid、expired、revoked、accepted）
+  - 邀请邮件模板可定制（HTML + 主题，支持中英）
+  - 自动过期与撤销机制 + 审计日志覆盖
+  - 前端 `InviteUserDialog`、`UserInvitationsTable`、`InviteRegisterPage` 组件
+  - `LoginPage` 集成邀请流程，错误码国际化
+  - 接受邀请时已登录用户状态的正确处理
+
+- **文件/文件夹标签系统**
+  - 新增 `tags` 表，支持 personal/team 工作区作用域，name 规范化索引
+  - 标签 CRUD：创建、重命名、改色、删除
+  - 标签绑定端点：附加/移除文件和文件夹的标签
+  - 批量标签操作（跨多文件/多文件夹）
+  - 标签过滤集成到现有文件/文件夹搜索
+  - 标签生命周期与绑定操作的审计日志
+  - 前端 `TagChips` 组件（颜色编码 + 溢出处理）
+  - 前端 `TagManagerDialog`（单/批量管理）+ `TagLibraryManagerDialog`（工作区级别管理）
+  - 标签接入文件浏览器（卡片/表格行/右键菜单/批量操作）
+  - 标签显示与管理接入文件/文件夹信息弹窗
+  - 全局搜索新增 any/all 匹配模式的标签过滤
+  - 文件浏览器工具栏与右键菜单新增标签库管理入口
+  - 中英文翻译
+  - 重命名动作语义：`copy` → `copy_to`、`move` → `move_to`
+  - API 端点：
+    - `GET /api/v1/tags`、`POST /api/v1/tags`、`PATCH /api/v1/tags/:id`、`DELETE /api/v1/tags/:id`
+    - `GET/PUT /api/v1/tags/:entity_type/:entity_id` 实体标签查询与替换
+    - `PUT/DELETE /api/v1/tags/:tag_id/:entity_type/:entity_id` 单条附加/移除
+    - `PUT/DELETE /api/v1/tags/:tag_id/batch` 批量附加/移除
+    - 团队工作区下镜像端点 `/api/v1/teams/:team_id/tags`
+
+- **邮件审计日志**
+  - 新增审计动作 `mail_send` 与 `mail_delivery_failed`
+  - 新增审计实体类型 `mail`
+  - 记录邮件投递尝试（模板、收件人、错误详情）
+  - 覆盖 outbox dispatcher 与直发场景（MFA、配置测试）
+  - 审计字段增强：可选 IP、User-Agent
+  - 敏感字段（收件人名、主题、错误）UTF-8 安全截断至 1024 字符
+  - 前端 i18n 邮件审计条目支持（中英）
+
+- **前端 UI 体验**
+  - 新增 `ManagerDialogShell` 通用对话框骨架（固定头/可滚中/固定底）
+  - `AdminTableList` 新增工具栏、分页、过滤空态支持
+  - 文件浏览器新增每条目 action menu（`FileBrowserItemActionMenu`）
+  - 全局搜索 header 新增激活过滤 chip 条，单条移除
+  - 新增 `usePendingAction` Hook 防止异步重复提交
+  - 分类浏览页：视频/音频缩略图生成、文件位置跳转（"Go to file location"）
+  - 侧边栏分类链接从触发搜索改为直接导航
+  - 分类视图支持无限滚动（每页 100）
+  - 搜索 API 新增 `sort_by`/`sort_order` 参数
+  - 分类浏览页新增文件信息面板，状态与列表同步
+
+### Changed
+
+- **API 错误码协议统一（Breaking）**
+  - 移除后端 `error_code.rs`（数值 `ErrorCode`）与 `subcode.rs`（`ApiSubcode`）
+  - 全部 `*_with_subcode` 助手函数重命名为 `*_with_code` 变体
+  - `AsterError` 用 `api_error_code_override()` 替代 `api_error_subcode()`
+  - `ApiResponse.code` 字段从数值 `ErrorCode` 改为字符串 `ApiErrorCode`
+  - OpenAPI schema 移除 `ApiSubcode` 和 `ErrorCode`，仅保留 `ApiErrorCode`
+  - `ApiErrorInfo` 响应契约移除 `subcode` 和 `internal_code` 字段
+  - 内部存储协议版本从 v3 升级到 v4，最小支持版本同步升至 v4（向后不兼容）
+  - `StoragePolicyCleanupRemoteNodeSnapshot` 新增 `last_capabilities` 字段（serde default）
+  - 前端全部从 `ErrorCode`/`ApiSubcode` 迁移到 `ApiErrorCode` 字符串
+  - `ApiError` 构造器简化为 `(code, message)`，移除旧 subcode 包装
+  - `useApiError` 移除 subcode 分类逻辑，统一走 `error.code`
+  - 集成测试全部改为字符串 code 断言（`"success"`、`"auth.token_missing"`）
+  - 公共 API 示例统一使用 `code: "success"` 与字符串错误码
+
+- **运行时架构重构（Breaking on internal API）**
+  - `PrimaryAppState`/`FollowerAppState` 引入 trait 体系：
+    - `SharedRuntimeState` 统一访问 config / db / cache / storage / policy / metrics / mail
+    - 专用 trait：`TaskRuntimeState`、`MailRuntimeState`、`StorageChangeRuntimeState`、`RemoteProtocolRuntimeState`
+  - 服务层参数从具体类型改为 trait bound（`impl SharedRuntimeState` 等）
+  - 字段访问改为方法调用（`state.config` → `state.config()`）
+  - `PrimaryRuntimeState` 拆分为 4 个专用 trait + `TaskRuntimeState`
+  - 40+ 个服务函数接受 `SharedRuntimeState` 或具体子 trait
+  - `web::Data<T>` 提供 blanket impl 保持 API 兼容
+  - `TaskRuntimeState` 新增 `wake_background_task_dispatcher`
+  - 健康检查改用 `RemoteProtocolRuntimeState` 进行远程节点测试
+  - 影响 208 个文件，零成本抽象，行为完全一致
+
+- **API 显式状态访问**
+  - 全部 API 路由用 `state.get_ref()` 替代隐式 Deref
+  - 中间件显式调用运行时 config
+  - 主节点/从节点健康检查显式状态访问
+  - WebDAV 与远程 tunnel 客户端同步更新
+  - 移除 `PrimaryAppState` 的隐式 `Deref` 实现
+  - 影响 44 个文件
+
+- **前端架构改进**
+  - `AppLayout` 和 `TopBar` 移除 `actions` prop，搜索按钮移至 `HeaderControls` 作为 `mobileSearchAction`
+  - `EditShareDialog`、`TagLibraryManagerDialog`、`TagManagerDialog` 迁移到 `ManagerDialogShell`
+  - 管理页（Tasks / Teams / Users / Invitations / External Auth）改用 `AdminTableList` + 拆分表头/行
+  - 主题切换：用自定义分层动画替代 View Transition API，跨浏览器一致
+  - 主题切换新增光泽叠加层，卸载时清理防内存泄漏
+  - 搜索从对话框改为全页面结果浏览器，支持 Enter 提交
+  - 搜索 header 新增 `onSubmitSearch` 回调与 `searchReady` 状态
+  - 文件 store 移除 `searchQuery`、`searchFiles`、`searchFolders`、`search()`、`clearSearch()`
+  - 路由新增 `/search` 和 `/teams/:id/search`
+  - 破坏性操作改用内联确认 UI（团队成员移除、WebDAV 账号删除、存储策略连接测试、远程节点 ingress profile 删除、文件预览未保存改动、团队归档）
+  - 文件卡片 action menu 在桌面端隐藏，让出空间给状态指示
+  - 账户菜单下拉尺寸与间距针对移动视口优化
+  - 上传面板展开/收起状态与底部 padding 联动系统
+  - 删除对话框形式的 `GlobalSearchResultRow` / `GlobalSearchResultsPanel`
+
+- **主题/UI 体系**
+  - 引入语义化 z-index token 系统（`--z-fixed`、`--z-dialog`、`--z-dropdown`、`--z-popover`、`--z-tooltip`、`--z-alert-dialog`、`--z-toast`）
+  - 固定 chrome 元素（批量操作栏、侧边栏、上传面板、音乐播放器）统一为 `--z-fixed`
+  - 全部分层堆叠顺序：fixed (40) < dialog (50) < dropdown/popover (60) < tooltip (65) < alert-dialog (70) < toast (80)
+  - 文件浏览器选择工具栏改为 absolute 定位覆盖层，`bg-card` 背景
+  - 上传拖拽覆盖与设置保存条统一用 CSS 变量 token
+
+- **其他工程化**
+  - jemalloc 配置按平台拆分，Linux 优化设置
+  - tunnel 在线检测改为完全依赖心跳时间戳
+  - mock auth server 配置为单 worker 防竞态
+  - 外部认证测试中的 reqwest 模式整合
+  - 移除重复的数据库后端断言
+  - `.cargo/audit.toml` 移除已修复的 RUSTSEC-2026-0097
+  - GitHub Actions 升级 codecov-action 到 v7
+  - MSRV 从 1.91.1 升至 1.94.0
+
+- **批量移动性能优化**
+  - 新增 `find_by_names_in_parent`、`find_by_names_in_team_parent` 等仓库方法
+  - 批量移动用 `load_target_file_name_map`/`load_target_folder_name_map` 做批量名查重
+  - 数据库查询从 O(n) 降为 O(1) 的冲突检测
+  - 批量移动新增 Unicode 归一化（NFC/NFD）支持，防止误冲突
+  - 归一化查询变体生成，NFD 兜底查找
+  - k6 性能测试新增分片上传时序指标（init / chunk / complete / client gap）
+  - 修复 k6 API 成功码检查，同时支持字符串 `"success"` 和数值 0
+
+### Fixed
+
+- 前端防止重复提交（文件/文件夹创建对话框 + `usePendingAction`）
+- 前端认证错误处理：502/503/504 网关错误保留缓存 auth 状态，401/403/token 错误才强制登出
+- `ApiError` 类新增 `status` 字段并贯穿错误链
+- `readHttpStatus` 直接从 error 对象提取 status
+- refresh token 失败设置 `isAuthStale` 触发重试
+- 修复清理失败时的孤立存储对象问题
+- 改进删除操作的原子性和一致性
+- 隧道心跳在轮询周期间的可靠性
+- k6 客户端代码格式化与成功码解析
+- 主题切换在组件卸载时的资源清理
+
+### Security
+
+- 外部认证 URL 配置校验与专门化检查
+- 本地邮箱策略防止非预期注册
+- 邀请链接使用安全 token 哈希
+- 接受邀请前验证状态
+- 邀请端点禁止 token refresh 尝试
+- 一次性邀请自动更新状态
+- 邮件审计敏感字段 UTF-8 安全截断
+
+### Testing
+
+- 新增组件测试：邀请对话框、邀请表格、ManagerDialogShell、FileBrowserItemContextMenu、FileInfoDialog、FileThumbnail
+- 新增 z-index 分层与 token 使用验证套件
+- 新增底部覆盖偏移与 z-index 分配的覆盖测试
+- 新增排序搜索结果测试（文件按 size desc、文件夹按 name desc）
+- 新增重复点击场景下的提交保护测试
+- 新增 502/503/504 网关错误在 auth 检查与 token 刷新中的边界测试
+- 新增 ApiError 状态保留测试
+- 新增 `isSessionAuthFailure` 多种状态码测试
+- 新增邮件审计字段 UTF-8 截断单元测试
+- 新增隧道心跳跨轮询周期测试
+- e2e 测试统一通过 `E2eApiResponse<T>` + `expectApiSuccess` 助手 + `E2E_API_SUCCESS_CODE` 常量
+- e2e 搜索流程更新为"先提交再导航到结果页"
+- 批量移动新增 Unicode 归一化冲突检测测试 + 索引验证测试
+- 批量空请求错误码精确匹配测试（BadRequest）
+- OpenAPI 测试验证所有 `ApiResponse` schema 引用 `ApiErrorCode`
+- 迁移测试新增 `seed_user_invitation_fixture` 与 `seed_tag_fixture` 断言
+- OIDC 测试断言更新为 `bad_request` 而非旧 `wopi.public_site_url_required`
+
+### Documentation
+
+- **API 错误码 v4 迁移**
+  - 公共 API 示例移除旧数值错误码、`error.code`/`error.subcode`/`error.internal_code`
+  - 响应示例统一 `code: "success"` + 字符串错误码
+  - 移除错误码范围表与数值-字符串映射表
+  - 错误处理文档聚焦顶层 `code` 字段
+  - 内部存储协议 v4 文档化（向后不兼容）
+  - 部署/排错文档统一指向 `code` 字段
+  - GitHub Actions workflow 触发改为发布版本
+  - 日志文档引用 API 响应的 `code` 字段
+  - 错误码契约说明合并为单一权威来源
+
+### Notes
+
+- 本版本为 `0.3.0` 首个预发布版本（`alpha.1`）
+- **Breaking Change**：API 错误码协议
+  - 公共错误码改为字符串 `ApiErrorCode`，原 `ErrorCode`（数值）与 `ApiSubcode` 已移除
+  - `ApiErrorInfo` 移除 `subcode` 和 `internal_code` 字段
+  - 内部存储协议 v3 → v4，**最低支持版本升至 v4**，v3 节点无法与 v4 主/从节点互通
+- **Breaking Change**：内部 API
+  - 运行时 trait 体系替代具体类型参数（影响 service 层内部调用，不影响 HTTP API）
+  - API 路由显式 `state.get_ref()` 替代隐式 Deref（编译期错误，不影响运行时）
+- **Breaking Change**：移除的废弃端点
+  - `/api/v1/public/branding` 已移除，统一改用 `/public/frontend-config`
+- **Breaking Change**：缩略图能力响应
+  - `PublicThumbnailSupport.extensions` 扁平字段移除，改为 `image_thumbnail.extensions` / `audio_thumbnail.extensions` 能力字段
+- 新增数据库迁移：
+  - `m20260607_000001_add_user_invitations` — 用户邀请表
+  - `m20260608_000001_add_tags` — 标签系统表
+- 预发布版本建议在测试环境使用，不推荐生产部署
+- 客户端集成需同步更新：
+  - 解析 `code` 字段为字符串而非数值
+  - 弃用 `error.subcode` / `error.internal_code` 解析逻辑
+  - 缩略图能力查询改用 `image_thumbnail.extensions` / `audio_thumbnail.extensions`
+  - 邀请流程使用 `/api/v1/invitations` 系列端点
+  - 标签操作使用 `/api/v1/tags` 系列端点
+
+---
+
+**统计数据**：
+- 675 files changed, 29,067 insertions(+), 11,921 deletions(-)
+- 20 commits
+- Rust Edition 2024, MSRV 1.94.0
+
 ## [v0.2.7] - 2026-06-06
 
 ### Release Highlights
@@ -4239,7 +4477,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 66 commits
 - Rust Edition 2024, MSRV 1.91.1
 
-[Unreleased]: https://github.com/AptS-1547/AsterDrive/compare/v0.2.7...HEAD
+[Unreleased]: https://github.com/AptS-1547/AsterDrive/compare/v0.3.0-alpha.1...HEAD
+[v0.3.0-alpha.1]: https://github.com/AptS-1547/AsterDrive/compare/v0.2.7...v0.3.0-alpha.1
 [v0.2.7]: https://github.com/AptS-1547/AsterDrive/compare/v0.2.6...v0.2.7
 [v0.2.6]: https://github.com/AptS-1547/AsterDrive/compare/v0.2.5...v0.2.6
 [v0.2.5]: https://github.com/AptS-1547/AsterDrive/compare/v0.2.4...v0.2.5
