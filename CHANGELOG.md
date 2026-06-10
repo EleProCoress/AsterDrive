@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.3.0-alpha.3] - 2026-06-10
+
+### Release Highlights
+
+**AsterDrive `0.3.0-alpha.3` 是 `0.3.0-alpha.2` 的发布流水线修正版。二者在应用代码、数据库迁移、运行时配置和用户可见功能上等价；`alpha.3` 仅用于重新发布完整的 GitHub Release 资产。** `0.3.0-alpha.2` 的首次发布触发了 GitHub immutable release 限制，导致部分归档资产未能上传完成；本版本通过先创建 draft release、上传全部资产后再发布，修复该发布流程问题。由于本次修正只影响 GitHub Release 发布流程，Docker 镜像或镜像内版本元数据可能仍标识为 `0.3.0-alpha.2`，这与 `0.3.0-alpha.3` 的应用层内容等价。
+
+### Changed
+
+- **发布流程修复**
+  - GitHub Release 现在先以 draft 形式创建并上传全部归档资产，再发布为正式 release / prerelease
+  - 避免 immutable release 仓库中 release 已发布后继续上传 assets 导致失败
+  - `v0.3.0-alpha.3` 与 `v0.3.0-alpha.2` 的应用层变更等价，完整功能变更见 `v0.3.0-alpha.2`
+  - Docker 镜像或镜像内版本元数据可能仍显示为 `0.3.0-alpha.2`，属于发布标识差异，不代表功能或代码差异
+
 ## [v0.3.0-alpha.2] - 2026-06-10
 
 ### Release Highlights
