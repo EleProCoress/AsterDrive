@@ -2,6 +2,7 @@
 
 #[macro_use]
 mod common;
+use aster_drive::api::api_error_code::ApiErrorCode;
 use aster_drive::runtime::SharedRuntimeState;
 
 use actix_web::test;
@@ -405,6 +406,10 @@ async fn test_policy_promote_s3_driver_rejects_bucket_change() {
     assert_eq!(resp.status(), 400);
     let body: Value = test::read_body_json(resp).await;
     assert_eq!(
+        body["code"],
+        ApiErrorCode::PolicyPromotionBucketChangeDenied.as_str()
+    );
+    assert_eq!(
         body["msg"],
         "bucket cannot be changed by S3-compatible driver promotion"
     );
@@ -465,6 +470,10 @@ async fn test_policy_promote_s3_driver_rejects_non_generic_s3_source() {
     assert_eq!(resp.status(), 400);
     let body: Value = test::read_body_json(resp).await;
     assert_eq!(
+        body["code"],
+        ApiErrorCode::PolicyPromotionSourceUnsupported.as_str()
+    );
+    assert_eq!(
         body["msg"],
         "only generic S3-compatible policies can be promoted"
     );
@@ -520,6 +529,10 @@ async fn test_policy_promote_s3_driver_rejects_unsupported_target() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 400);
     let body: Value = test::read_body_json(resp).await;
+    assert_eq!(
+        body["code"],
+        ApiErrorCode::PolicyPromotionTargetUnsupported.as_str()
+    );
     assert_eq!(
         body["msg"],
         "promoting S3-compatible policy to 's3' is not supported"
@@ -1080,6 +1093,10 @@ async fn test_policy_rejects_storage_native_thumbnail_for_unsupported_driver() {
     assert_eq!(resp.status(), 400);
 
     let body: Value = test::read_body_json(resp).await;
+    assert_eq!(
+        body["code"],
+        ApiErrorCode::PolicyNativeThumbnailUnsupported.as_str()
+    );
     assert!(
         body["msg"]
             .as_str()
@@ -2445,7 +2462,7 @@ async fn test_policy_connection_endpoints_for_local_driver() {
 }
 
 #[actix_web::test]
-async fn test_policy_create_and_params_reject_incomplete_s3_credentials_as_bad_request() {
+async fn test_policy_create_and_params_reject_incomplete_s3_credentials_with_stable_code() {
     let state = common::setup().await;
     let app = create_test_app!(state);
     let (token, _) = register_and_login!(app);
@@ -2464,7 +2481,10 @@ async fn test_policy_create_and_params_reject_incomplete_s3_credentials_as_bad_r
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 400);
     let body: Value = test::read_body_json(resp).await;
-    assert_eq!(body["code"], "bad_request");
+    assert_eq!(
+        body["code"],
+        ApiErrorCode::PolicyStorageAccessKeyRequired.as_str()
+    );
     assert_eq!(
         body["msg"],
         "access_key is required for S3-compatible storage policies"
@@ -2483,7 +2503,10 @@ async fn test_policy_create_and_params_reject_incomplete_s3_credentials_as_bad_r
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 400);
     let body: Value = test::read_body_json(resp).await;
-    assert_eq!(body["code"], "bad_request");
+    assert_eq!(
+        body["code"],
+        ApiErrorCode::PolicyStorageAccessKeyRequired.as_str()
+    );
     assert_eq!(
         body["msg"],
         "access_key is required for S3-compatible storage policies"
@@ -2491,7 +2514,245 @@ async fn test_policy_create_and_params_reject_incomplete_s3_credentials_as_bad_r
 }
 
 #[actix_web::test]
-async fn test_policy_update_rejects_clearing_existing_s3_secret_as_bad_request() {
+async fn test_policy_create_rejects_invalid_s3_storage_fields_with_stable_codes() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/admin/policies")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .set_json(serde_json::json!({
+            "name": "Missing Bucket S3",
+            "driver_type": "s3",
+            "endpoint": "https://s3.example.com",
+            "access_key": "AKIA",
+            "secret_key": "SECRET"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 400);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(
+        body["code"],
+        ApiErrorCode::PolicyStorageBucketRequired.as_str()
+    );
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/admin/policies")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .set_json(serde_json::json!({
+            "name": "Invalid Endpoint S3",
+            "driver_type": "s3",
+            "endpoint": "s3.example.com",
+            "bucket": "archive",
+            "access_key": "AKIA",
+            "secret_key": "SECRET"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 400);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(
+        body["code"],
+        ApiErrorCode::PolicyStorageEndpointInvalid.as_str()
+    );
+}
+
+#[actix_web::test]
+async fn test_policy_create_rejects_remote_without_node_with_stable_code() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/admin/policies")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .set_json(serde_json::json!({
+            "name": "Remote Missing Node",
+            "driver_type": "remote",
+            "base_path": "remote-missing-node"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 400);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(
+        body["code"],
+        ApiErrorCode::PolicyRemoteNodeRequired.as_str()
+    );
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/admin/policies/test")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .set_json(serde_json::json!({
+            "driver_type": "remote",
+            "base_path": "remote-missing-node"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 400);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(
+        body["code"],
+        ApiErrorCode::PolicyRemoteNodeRequired.as_str()
+    );
+}
+
+#[actix_web::test]
+async fn test_policy_create_rejects_remote_node_for_non_remote_policy_with_stable_code() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+    let base_path = format!("/tmp/test-policy-unexpected-node-{}", uuid::Uuid::new_v4());
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/admin/policies")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .set_json(serde_json::json!({
+            "name": "Local Unexpected Node",
+            "driver_type": "local",
+            "base_path": base_path,
+            "remote_node_id": 42
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 400);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(
+        body["code"],
+        ApiErrorCode::PolicyRemoteNodeUnexpected.as_str()
+    );
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/admin/policies/test")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .set_json(serde_json::json!({
+            "driver_type": "local",
+            "base_path": format!("/tmp/test-policy-unexpected-node-{}", uuid::Uuid::new_v4()),
+            "remote_node_id": 42
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 400);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(
+        body["code"],
+        ApiErrorCode::PolicyRemoteNodeUnexpected.as_str()
+    );
+}
+
+#[actix_web::test]
+async fn test_policy_create_rejects_unusable_remote_nodes_with_stable_codes() {
+    use aster_drive::services::managed_follower_service;
+    use aster_drive::types::RemoteNodeTransportMode;
+
+    let state = common::setup().await;
+    let app = create_test_app!(state.clone());
+    let (token, _) = register_and_login!(app);
+
+    let disabled_node = managed_follower_service::create(
+        &state,
+        managed_follower_service::CreateRemoteNodeInput {
+            name: "disabled-policy-node".to_string(),
+            base_url: "https://disabled-policy-node.example.com".to_string(),
+            transport_mode: RemoteNodeTransportMode::Direct,
+            is_enabled: false,
+        },
+    )
+    .await
+    .expect("disabled remote node should be created");
+    let req = test::TestRequest::post()
+        .uri("/api/v1/admin/policies")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .set_json(serde_json::json!({
+            "name": "Disabled Remote Policy",
+            "driver_type": "remote",
+            "base_path": "disabled-remote",
+            "remote_node_id": disabled_node.id
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 400);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(
+        body["code"],
+        ApiErrorCode::PolicyRemoteNodeDisabled.as_str()
+    );
+
+    let direct_node_without_url = managed_follower_service::create(
+        &state,
+        managed_follower_service::CreateRemoteNodeInput {
+            name: "direct-empty-url-policy-node".to_string(),
+            base_url: String::new(),
+            transport_mode: RemoteNodeTransportMode::Direct,
+            is_enabled: true,
+        },
+    )
+    .await
+    .expect("direct remote node without URL should be created");
+    let req = test::TestRequest::post()
+        .uri("/api/v1/admin/policies")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .set_json(serde_json::json!({
+            "name": "Direct Missing URL Policy",
+            "driver_type": "remote",
+            "base_path": "direct-missing-url",
+            "remote_node_id": direct_node_without_url.id
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 400);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(
+        body["code"],
+        ApiErrorCode::PolicyRemoteNodeBaseUrlRequired.as_str()
+    );
+
+    let reverse_node = managed_follower_service::create(
+        &state,
+        managed_follower_service::CreateRemoteNodeInput {
+            name: "reverse-presigned-policy-node".to_string(),
+            base_url: String::new(),
+            transport_mode: RemoteNodeTransportMode::ReverseTunnel,
+            is_enabled: true,
+        },
+    )
+    .await
+    .expect("reverse remote node should be created");
+    let req = test::TestRequest::post()
+        .uri("/api/v1/admin/policies")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .set_json(serde_json::json!({
+            "name": "Reverse Presigned Policy",
+            "driver_type": "remote",
+            "base_path": "reverse-presigned",
+            "remote_node_id": reverse_node.id,
+            "options": {
+                "remote_upload_strategy": "presigned"
+            }
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 400);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(
+        body["code"],
+        ApiErrorCode::PolicyRemoteNodeTransferStrategyUnsupported.as_str()
+    );
+}
+
+#[actix_web::test]
+async fn test_policy_update_rejects_clearing_existing_s3_secret_with_stable_code() {
     let state = common::setup().await;
     let app = create_test_app!(state);
     let (token, _) = register_and_login!(app);
@@ -2525,7 +2786,10 @@ async fn test_policy_update_rejects_clearing_existing_s3_secret_as_bad_request()
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 400);
     let body: Value = test::read_body_json(resp).await;
-    assert_eq!(body["code"], "bad_request");
+    assert_eq!(
+        body["code"],
+        ApiErrorCode::PolicyStorageSecretKeyRequired.as_str()
+    );
     assert_eq!(
         body["msg"],
         "secret_key is required for S3-compatible storage policies"
