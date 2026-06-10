@@ -3,7 +3,7 @@
 use crate::api::dto::admin::{
     AdminPolicyGroupListQuery, AdminPolicyListQuery, CreatePolicyGroupReq, CreatePolicyReq,
     DeletePolicyQuery, MigratePolicyGroupAssignmentsReq, PatchPolicyGroupReq, PatchPolicyReq,
-    PolicyGroupItemReq, TestPolicyParamsReq,
+    PolicyGroupItemReq, PromoteS3CompatiblePolicyDriverReq, TestPolicyParamsReq,
 };
 use crate::api::dto::validate_request;
 use crate::api::pagination::LimitOffsetQuery;
@@ -18,7 +18,7 @@ use actix_web::{HttpRequest, HttpResponse, web};
 
 // ── Conversion helpers (must stay here because they use policy_service types) ──────────
 
-fn build_policy_connection_input(
+struct PolicyConnectionInputParts {
     driver_type: DriverType,
     endpoint: Option<String>,
     bucket: Option<String>,
@@ -26,15 +26,21 @@ fn build_policy_connection_input(
     secret_key: Option<String>,
     base_path: Option<String>,
     remote_node_id: Option<i64>,
-) -> policy_service::StoragePolicyConnectionInput {
-    policy_service::StoragePolicyConnectionInput {
-        driver_type,
-        endpoint: endpoint.unwrap_or_default(),
-        bucket: bucket.unwrap_or_default(),
-        access_key: access_key.unwrap_or_default(),
-        secret_key: secret_key.unwrap_or_default(),
-        base_path: base_path.unwrap_or_default(),
-        remote_node_id,
+    options: crate::types::StoragePolicyOptions,
+}
+
+impl From<PolicyConnectionInputParts> for policy_service::StoragePolicyConnectionInput {
+    fn from(value: PolicyConnectionInputParts) -> Self {
+        Self {
+            driver_type: value.driver_type,
+            endpoint: value.endpoint.unwrap_or_default(),
+            bucket: value.bucket.unwrap_or_default(),
+            access_key: value.access_key.unwrap_or_default(),
+            secret_key: value.secret_key.unwrap_or_default(),
+            base_path: value.base_path.unwrap_or_default(),
+            remote_node_id: value.remote_node_id,
+            options: value.options,
+        }
     }
 }
 
@@ -42,15 +48,17 @@ impl From<CreatePolicyReq> for policy_service::CreateStoragePolicyInput {
     fn from(value: CreatePolicyReq) -> Self {
         Self {
             name: value.name,
-            connection: build_policy_connection_input(
-                value.driver_type,
-                value.endpoint,
-                value.bucket,
-                value.access_key,
-                value.secret_key,
-                value.base_path,
-                value.remote_node_id,
-            ),
+            connection: PolicyConnectionInputParts {
+                driver_type: value.driver_type,
+                endpoint: value.endpoint,
+                bucket: value.bucket,
+                access_key: value.access_key,
+                secret_key: value.secret_key,
+                base_path: value.base_path,
+                remote_node_id: value.remote_node_id,
+                options: crate::types::StoragePolicyOptions::default(),
+            }
+            .into(),
             max_file_size: value.max_file_size.unwrap_or(0),
             chunk_size: value.chunk_size,
             is_default: value.is_default.unwrap_or(false),
@@ -81,15 +89,29 @@ impl From<PatchPolicyReq> for policy_service::UpdateStoragePolicyInput {
 
 impl From<TestPolicyParamsReq> for policy_service::StoragePolicyConnectionInput {
     fn from(value: TestPolicyParamsReq) -> Self {
-        build_policy_connection_input(
-            value.driver_type,
-            value.endpoint,
-            value.bucket,
-            value.access_key,
-            value.secret_key,
-            value.base_path,
-            value.remote_node_id,
-        )
+        PolicyConnectionInputParts {
+            driver_type: value.driver_type,
+            endpoint: value.endpoint,
+            bucket: value.bucket,
+            access_key: value.access_key,
+            secret_key: value.secret_key,
+            base_path: value.base_path,
+            remote_node_id: value.remote_node_id,
+            options: value.options.unwrap_or_default(),
+        }
+        .into()
+    }
+}
+
+impl From<PromoteS3CompatiblePolicyDriverReq>
+    for policy_service::PromoteS3CompatiblePolicyDriverInput
+{
+    fn from(value: PromoteS3CompatiblePolicyDriverReq) -> Self {
+        Self {
+            target_driver_type: value.target_driver_type,
+            endpoint: value.endpoint,
+            bucket: value.bucket,
+        }
     }
 }
 
@@ -260,6 +282,41 @@ pub async fn update_policy(
     let policy =
         policy_service::update_with_audit(state.get_ref(), *path, body.into_inner().into(), &ctx)
             .await?;
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(policy)))
+}
+
+#[api_docs_macros::path(
+    post,
+    path = "/api/v1/admin/policies/{id}/promote-s3-driver",
+    tag = "admin",
+    operation_id = "promote_s3_compatible_policy_driver",
+    params(("id" = i64, Path, description = "Policy ID")),
+    request_body = PromoteS3CompatiblePolicyDriverReq,
+    responses(
+        (status = 200, description = "Policy driver promoted", body = inline(ApiResponse<policy_service::StoragePolicy>)),
+        (status = 400, description = "Promotion rejected"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Policy not found"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn promote_s3_compatible_policy_driver(
+    state: web::Data<PrimaryAppState>,
+    claims: web::ReqData<Claims>,
+    req: HttpRequest,
+    path: web::Path<i64>,
+    body: web::Json<PromoteS3CompatiblePolicyDriverReq>,
+) -> Result<HttpResponse> {
+    validate_request(&*body)?;
+    let ctx = audit_service::AuditContext::from_request(&req, &claims);
+    let policy = policy_service::promote_s3_compatible_driver_with_audit(
+        state.get_ref(),
+        *path,
+        body.into_inner().into(),
+        &ctx,
+    )
+    .await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(policy)))
 }
 
