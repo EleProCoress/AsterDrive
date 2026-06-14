@@ -78,6 +78,21 @@ const BASE_UI_CONTROL_MODULES = new Set([
 	"toolbar",
 ]);
 
+const STARTUP_FORBIDDEN_PRECACHE_GLOBS = [
+	"assets/**/*Admin*",
+	"assets/**/*FileBrowser*",
+	"assets/**/*MusicPlayer*",
+	"assets/**/*PdfPreview*",
+	"assets/**/*WorkspaceOutlet*",
+	"assets/**/*pwaWarmup*",
+	"assets/**/*settings-common*",
+	"assets/**/*preview-apps*",
+	"assets/**/*archive-preview*",
+	"assets/**/*office-preview*",
+	"assets/**/*wopi*",
+	"assets/**/*Wopi*",
+];
+
 export default defineConfig(({ command }) => {
 	const isDevServer = command === "serve";
 	const rootReactPath = path.resolve(__dirname, "./node_modules/react");
@@ -119,28 +134,8 @@ export default defineConfig(({ command }) => {
 				workbox: {
 					globPatterns: isDevServer
 						? []
-						: [
-								"index.html",
-								"assets/index-*.js",
-								"assets/index-*.css",
-								"assets/rolldown-runtime-*.js",
-								"assets/vendor-react-*.js",
-								"assets/vendor-router-*.js",
-								"assets/vendor-i18n-*.js",
-								"assets/i18n-*.js",
-								"assets/http-*.js",
-							],
-					globIgnores: isDevServer
-						? []
-						: [
-								"assets/PdfPreview-*.js",
-								"assets/PdfPreview-*.css",
-								"assets/pdf.worker.min-*.mjs",
-								"assets/vendor-react-icons-*.js",
-								"pdfjs/**",
-								"static/preview-apps/**",
-								"static/external-auth/**",
-							],
+						: ["index.html", "assets/**/*.{js,css,mjs,woff2}"],
+					globIgnores: isDevServer ? [] : STARTUP_FORBIDDEN_PRECACHE_GLOBS,
 					navigateFallback: "index.html",
 					navigateFallbackDenylist: [/^\/api\//, /^\/health\//, /^\/d\//],
 					runtimeCaching: [

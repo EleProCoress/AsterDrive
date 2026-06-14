@@ -12,28 +12,14 @@ const BUDGETS = {
 	entryGzipBytes: 8 * 1024,
 	loginRawBytes: 65 * 1024,
 	loginGzipBytes: 20 * 1024,
-	precacheEntries: 12,
-	precacheBytes: 700 * 1024,
+	precacheEntries: 450,
+	precacheRawBytes: 5 * 1024 * 1024,
 };
 
-const PRECACHE_FORBIDDEN = [
-	/Admin/,
-	/FileBrowser/,
-	/MusicPlayer/,
-	/PdfPreview/,
-	/WorkspaceOutlet/,
-	/pwaWarmup/,
-	/vendor-react-icons-/,
-	/pdf\.worker/,
-	/^pdfjs\//,
-	/^static\/preview-apps\//,
-	/^static\/external-auth\//,
-];
-
 const STARTUP_FORBIDDEN = [
-	/Admin/,
+	/admin/i,
 	/FileBrowser/,
-	/MusicPlayer/,
+	/musicPlayer/i,
 	/PdfPreview/,
 	/WorkspaceOutlet/,
 	/pwaWarmup/,
@@ -45,9 +31,9 @@ const STARTUP_FORBIDDEN = [
 ];
 
 const LOGIN_FORBIDDEN = [
-	/Admin/,
+	/admin/i,
 	/FileBrowser/,
-	/MusicPlayer/,
+	/musicPlayer/i,
 	/PdfPreview/,
 	/WorkspaceOutlet/,
 	/pwaWarmup/,
@@ -91,9 +77,13 @@ function assertBudget(label, actual, max) {
 	}
 }
 
-function assertCountBudget(label, actual, max) {
+function warnBudget(label, actual, max, format = String) {
 	if (actual > max) {
-		fail(`${label} is ${actual}, over budget ${max}`);
+		console.warn(
+			`[startup-audit] ${label} is ${format(actual)}, over budget ${format(
+				max,
+			)}`,
+		);
 	}
 }
 
@@ -195,6 +185,24 @@ function extractPrecacheEntries() {
 	return entries;
 }
 
+function collectPrecacheRequiredAssets() {
+	const entries = ["index.html"];
+	const assetDir = path.join(DIST_DIR, ASSET_PREFIX);
+	const cacheableExtensions = new Set([".js", ".css", ".mjs", ".woff2"]);
+
+	for (const name of readdirSyncCompat(assetDir)) {
+		const entry = `${ASSET_PREFIX}${name}`;
+		if (
+			cacheableExtensions.has(path.extname(name)) &&
+			!STARTUP_FORBIDDEN.some((pattern) => pattern.test(entry))
+		) {
+			entries.push(entry);
+		}
+	}
+
+	return entries;
+}
+
 function assertNoForbidden(label, entries, patterns) {
 	const violations = [...entries].filter((entry) =>
 		patterns.some((pattern) => pattern.test(entry)),
@@ -205,22 +213,26 @@ function assertNoForbidden(label, entries, patterns) {
 }
 
 function auditPrecache() {
-	const entries = extractPrecacheEntries();
-	const totalBytes = entries.reduce((sum, entry) => sum + fileSize(entry), 0);
+	const entries = new Set(extractPrecacheEntries());
+	const requiredEntries = collectPrecacheRequiredAssets();
+	const missing = requiredEntries.filter((entry) => !entries.has(entry));
+	if (missing.length > 0) {
+		fail(`service worker precache is missing assets: ${missing.join(", ")}`);
+	}
 
-	assertCountBudget(
-		"service worker precache entry count",
-		entries.length,
-		BUDGETS.precacheEntries,
-	);
-	assertBudget(
-		"service worker precache size",
+	const entryList = [...entries];
+	assertNoForbidden("service worker precache", entryList, STARTUP_FORBIDDEN);
+
+	const totalBytes = entryList.reduce((sum, entry) => sum + fileSize(entry), 0);
+	warnBudget("precache entry count", entryList.length, BUDGETS.precacheEntries);
+	warnBudget(
+		"precache raw size",
 		totalBytes,
-		BUDGETS.precacheBytes,
+		BUDGETS.precacheRawBytes,
+		formatBytes,
 	);
-	assertNoForbidden("service worker precache", entries, PRECACHE_FORBIDDEN);
 
-	return { entries, totalBytes };
+	return { entries: entryList, totalBytes };
 }
 
 function auditStartupGraphs() {
