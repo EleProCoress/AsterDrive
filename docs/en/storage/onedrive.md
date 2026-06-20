@@ -236,21 +236,27 @@ If background tasks report Microsoft Graph `401` or token-related errors, check 
 
 ## 9. Current App Configuration Storage Design
 
-AsterDrive currently does not create a separate shared application configuration table for OneDrive. Microsoft app settings reuse storage policy connection fields:
+AsterDrive stores the OneDrive Microsoft Graph application settings in a connector application config record instead of keeping them long-term in `storage_policies.access_key` / `storage_policies.secret_key`:
 
 | Storage field | OneDrive meaning |
 | --- | --- |
-| `storage_policies.access_key` | Microsoft Application (client) ID |
-| `storage_policies.secret_key` | Microsoft Client Secret |
+| `storage_connector_application_configs.client_id` | Microsoft Application (client) ID |
+| `storage_connector_application_configs.client_secret_ciphertext` | Encrypted Microsoft Client Secret |
+| `storage_connector_application_configs.tenant_id` | Microsoft tenant, such as `common` or a tenant ID |
+| `storage_connector_application_configs.scopes` | Microsoft Graph delegated scopes |
 
-This is an intentional design trade-off. The current AsterDrive storage policy model is "each policy owns its connection configuration", which is also how S3, COS, Azure Blob, and other backends are configured. OneDrive currently does not require multiple policies to share one Microsoft App, so AsterDrive does not introduce an `oauth_app_configs` or `storage_provider_app_configs` table ahead of a real product requirement.
+The Client Secret is encrypted at rest with a key derived from `auth.storage_credential_secret_key`. The plaintext secret entered by an administrator is used only when saving or replacing the application settings and when starting the Microsoft authorization flow. If the field is left blank while editing a policy, AsterDrive keeps the existing `client_secret_ciphertext`. API responses and audit logs expose only controlled state such as `client_secret_configured`; they do not return the plaintext secret.
+
+When a OneDrive policy is created or updated, AsterDrive clears the legacy `storage_policies.access_key` / `storage_policies.secret_key` fields at the storage connector boundary. They are not the long-term storage location for OneDrive Microsoft app credentials.
+
+This is an intentional design trade-off: each OneDrive policy owns its Microsoft Graph app settings, but those settings are still stored outside the generic storage policy connection fields so the model can later move to shared app configs if needed.
 
 Benefits of the current design:
 
-- It matches the existing storage policy connection model
+- The plaintext Client Secret is not stored long-term in `storage_policies.secret_key`
 - The create and authorize flow stays direct
-- There is no extra lifecycle, permission, or reference management for shared app configs
-- The schema does not grow for a reuse requirement that is not yet needed
+- Connection settings, OAuth tokens, and authorization state have clear table boundaries
+- If multiple policies later need to share one Microsoft app, the schema can migrate to a shared app-config reference model
 
 If a future requirement appears, such as multiple OneDrive policies sharing one Microsoft App, Google Drive using the same OAuth storage-app model, or administrators needing centralized app secret rotation, AsterDrive can migrate to a model like:
 
@@ -258,8 +264,6 @@ If a future requirement appears, such as multiple OneDrive policies sharing one 
 storage_provider_app_configs
 storage_policies.app_config_id -> storage_provider_app_configs.id
 ```
-
-Until then, treating Client ID / Secret as the OneDrive storage policy's connection configuration is simpler and better aligned with the current architecture.
 
 ## FAQ
 

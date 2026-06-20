@@ -236,30 +236,34 @@ OneDrive Test Group
 
 ## 9. 当前应用配置存储设计
 
-AsterDrive 当前没有为 OneDrive 单独创建共享应用配置表。Microsoft 应用配置沿用存储策略连接字段：
+AsterDrive 把 OneDrive 的 Microsoft Graph 应用配置存放在独立的 connector application config 记录里，而不是长期写入 `storage_policies.access_key` / `storage_policies.secret_key`：
 
 | 存储字段 | OneDrive 含义 |
 | --- | --- |
-| `storage_policies.access_key` | Microsoft Application (client) ID |
-| `storage_policies.secret_key` | Microsoft Client Secret |
+| `storage_connector_application_configs.client_id` | Microsoft Application (client) ID |
+| `storage_connector_application_configs.client_secret_ciphertext` | 加密后的 Microsoft Client Secret |
+| `storage_connector_application_configs.tenant_id` | Microsoft tenant，例如 `common` 或租户 ID |
+| `storage_connector_application_configs.scopes` | Microsoft Graph delegated scopes |
 
-这是刻意的设计折中。AsterDrive 现在的存储策略模型是“每条策略自带连接配置”，S3、COS、Azure Blob 等后端也遵循这个形态。OneDrive 在当前产品需求里不需要多个策略共享同一个 Microsoft App，所以没有提前引入 `oauth_app_configs` 或 `storage_provider_app_configs` 这类表。
+Client Secret 使用 `auth.storage_credential_secret_key` 派生的加密密钥加密后落库。管理员在前端输入的明文 secret 只用于首次保存、主动覆盖和发起授权请求；如果编辑策略时留空，AsterDrive 会保留已有的 `client_secret_ciphertext`。API 响应和审计日志只暴露 `client_secret_configured` 这类布尔状态，不回显明文。
 
-这样做的好处是：
+创建或更新 OneDrive 策略时，AsterDrive 会在存储连接边界清空 legacy `storage_policies.access_key` / `storage_policies.secret_key` 字段。它们不作为 OneDrive Microsoft 应用凭据的长期存储位置。
 
-- 和现有存储策略连接模型一致
+这是刻意的设计折中：每条 OneDrive 策略拥有自己的 Microsoft Graph 应用配置，但应用配置仍然和 storage policy 分表存储，方便后续迁移到共享应用配置模型。
+
+当前设计的好处是：
+
+- 明文 Client Secret 不长期写入 `storage_policies.secret_key`
 - 创建和授权流程更直接
-- 不需要额外处理共享 app config 的权限、引用关系和生命周期
-- 不会为了尚未确认的复用需求增加表结构复杂度
+- 连接配置、OAuth token 和授权状态有清晰的表边界
+- 未来需要多个策略共享一个 Microsoft App 时，可以迁移到共享 app config 引用模型
 
-如果以后出现明确需求，例如多个 OneDrive 策略共享一个 Microsoft App、Google Drive 也接入 OAuth 存储后端、管理员需要统一轮换 app secret，再考虑迁移到类似下面的模型：
+如果以后出现明确需求，例如多个 OneDrive 策略共享一个 Microsoft App、Google Drive 也接入 OAuth 存储后端、管理员需要统一轮换 app secret，可以迁移到类似下面的模型：
 
 ```text
 storage_provider_app_configs
 storage_policies.app_config_id -> storage_provider_app_configs.id
 ```
-
-在那之前，继续把 Client ID / Secret 作为 OneDrive 存储策略的连接配置，是更简单也更符合当前架构的做法。
 
 ## 常见问题
 

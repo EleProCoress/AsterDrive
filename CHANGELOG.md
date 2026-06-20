@@ -7,6 +7,118 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.3.0-beta.1] - 2026-06-21
+
+### Release Highlights
+
+**AsterDrive `0.3.0-beta.1` 是 0.3.0 系列的第一个 beta 版本，主线是存储后端扩展与连接器抽象统一。** 本版本新增 Azure Blob Storage 与 OneDrive（含 SharePoint site / Group drive）两类云盘驱动，引入统一的 `StorageConnector` 抽象让六个驱动以一致的 descriptor 暴露能力与表单字段；OneDrive 凭据走 Microsoft Graph OAuth + PKCE，token 用 HKDF 派生密钥 + AES-256-GCM 加密落库。缓存后端精简为 memory / Redis 两种并移除已失效的 `cache.enabled` 开关，Redis 引入本地 memory 二级回退；存储策略连接探测改为结构化诊断端点，失败返回 200 + 脱敏原因。同时补全审计日志结构化详情、Tencent COS CORS 一键配置、PWA precache 重构与 toast 视觉重做。
+
+- **Azure Blob Storage 驱动** — Block Blob CRUD、SAS URL 预签名上传/下载、分块上传
+- **OneDrive 驱动 + OAuth 凭据管理** — personal / work_or_school / SharePoint site / group drive，PKCE 流程，>250MiB 分块续传
+- **StorageConnector 统一抽象** — 六驱动统一 descriptor、字段与上传工作流，新增 `/admin/policies/storage-drivers`
+- **缓存后端精简与 Redis 二级回退（Breaking）** — 移除 `cache.enabled`，Redis 故障时回落 memory
+- **存储策略诊断端点** — 结构化 `StoragePolicyDiagnostic`，SAS / account key 脱敏
+- **审计日志结构化** — 文件 / 用户 / 策略 / 会话操作补全上下文
+- **Tencent COS CORS 自动配置** — 从 `public_site_url` 派生多 origin，一键应用
+- **PWA precache 与 toast 重做** — glob 化预缓存清单 + 预算告警，toast 主题化
+
+### Added
+
+- **Azure Blob Storage 驱动**
+  - 新增 `azure_blob` driver type，完整 CRUD、SAS URL 预签名上传 / 下载、Block Blob 分块上传
+  - `InitUploadResponse` 新增 `presigned_require_etag` 字段；`presigned_put_requires_etag` trait 方法区分驱动（Azure Blob = false，S3 / remote = true）
+  - `AzureBlobConfigError`：生产环境 SAS `spr` 协议限 https，loopback / Azurite 放行 https + http
+  - 前端表单字段改为 Storage Account Name / Key，预签名请求附带 `x-ms-blob-type: BlockBlob` 头
+
+- **OneDrive 驱动与 OAuth 凭据管理**
+  - 新增 `onedrive` driver type + `OneDriveAccountMode`（personal / work_or_school / sharepoint_site / group_drive）
+  - 7 个 `onedrive_*` 策略字段；Microsoft Graph OAuth + PKCE 授权流程
+  - token 与 client secret 用 `auth.storage_credential_secret_key` 经 HKDF 派生 + AES-256-GCM 加密落库
+  - >250MiB 走 Graph 原生分块上传 session
+  - 驱动根动态解析（personal / work / site / group）
+  - 前端凭据面板含授权状态徽章、授权 / 回调入口
+
+- **StorageConnector 统一抽象与驱动 descriptor**
+  - 引入 `StorageConnector` trait + `StorageConnectorDescriptor`，六驱动统一暴露 capabilities / fields / upload workflows / actions
+  - 新增 `GET /admin/policies/storage-drivers` 端点；前端用 TTL 缓存的 descriptor 取代 driver-type 字符串判断
+  - 新增 `ProviderResumableUploadDriver` trait（OneDrive / Graph 原生断点续传）
+  - 新增 DB 表 `storage_connector_application_configs`，Microsoft Graph app 配置从 policy key 字段迁移到 connector application config
+
+- **存储策略诊断端点**
+  - 连接探测返回结构化 `StoragePolicyDiagnostic`（api_code / kind / message / retryable）
+  - 探测失败改为 200 + `ok:false` 而非 4xx
+  - SAS token、account key 在响应中脱敏
+
+- **Tencent COS CORS 自动配置**
+  - 新增 `POST /admin/policies/action` 与 `POST /admin/policies/{id}/action`，`StoragePolicyActionType` 可扩展动作枚举
+  - `configure_tencent_cos_cors` 从 `public_site_url` 派生多 origin，仅替换 ID 为 `asterdrive-presigned-access` 的规则
+  - 草稿动作支持复用已保存 policy 凭据
+  - 触发审计日志
+
+- **审计日志结构化详情**
+  - 用户管理、存储策略、团队、会话撤销等操作补全审计快照与展示文案
+  - 文件 / 文件夹操作补全 location 与 transfer 路径细节
+  - 标签批量操作、MFA 挑战、passkey 登录、WebDAV、WOPI 改为结构化详情
+  - 新增 `ShareDeleteAuditDetails`、`UserMfaManageAuditDetails`、`ExternalAuthUnlinkAuditDetails` 等 struct
+
+### Changed
+
+- **缓存后端精简（Breaking）**
+  - 移除 `cache.enabled` 配置项与 noop cache backend，仅保留 memory / Redis
+  - CacheBackend trait 新增 `take_bytes` / `delete_many`
+  - Redis 引入二级回退：Redis 失败或熔断时落本地 MemoryCache，恢复后清理影子条目
+  - 抽出 `RedisClient` trait + `FakeRedisClient` 测试替身
+
+- **存储策略前端判断重构**
+  - 移除 `isS3CompatibleDriver` / `isOneDriveDriver` / `isObjectStorageDriver`，改 field-presence 检测
+  - `POLICY_OPTION_SERIALIZERS` 替换为 `buildPolicyOptionsFallback`，仅写非默认值
+
+- **上传会话字段统一（DB 迁移自动处理）**
+  - 重命名 `s3_temp_key` → `object_temp_key`、`s3_multipart_id` → `object_multipart_id`
+  - `S3_MULTIPART_MIN_PART_SIZE` → `OBJECT_MULTIPART_MIN_PART_SIZE`
+  - OneDrive 凭据存储从 `storage_policies.access_key` / `secret_key` 迁移到 `storage_connector_application_configs`，旧字段自动清空（代码兼容旧字段回退读取）
+
+- **PWA precache 与 toast 重做**
+  - vite-plugin-pwa 改用 glob 通配 + 关键资源校验，移除手动 precache 清单与 forbidden 列表
+  - 预缓存预算软告警：entries ≤450、raw size ≤5MB；排除 admin / file browser / music player / PDF / office 等大模块
+  - `pwaWarmup` 区分 user / admin 路由独立追踪
+  - Toaster 主题化（oklch、backdrop-blur、4.2s 时长、i18n.dir 方向）
+
+- **审计日志穷举化**
+  - `detail_message` 通配分支改为穷举 match，防止新增 action 被静默遗漏
+  - `mfa_factor_repo::list_for_user` 泛化为 `ConnectionTrait`，支持事务内调用
+
+- **依赖升级**
+  - Rust：sea-orm 2.0.0-rc.41、aws-sdk-s3 1.137、h2 0.4.15
+  - 前端：@base-ui/react 1.6、axios 1.18、react-router-dom 7.18、tailwindcss 4.3.1、biome 2.5、@types/node 26、@typescript/native-preview 7.0.0-dev.20260620.1
+
+### Fixed
+
+- **PWA precache 大小写敏感漏排除**
+  - 大小写敏感文件系统漏排除补全：新增 `assets/**/*admin*`、`assets/**/*musicPlayer*` 小写 / camelCase 变体
+
+### Security
+
+- OneDrive OAuth token 与 Client Secret 用 HKDF 派生密钥 + AES-256-GCM 加密落库，API 与审计只暴露 `client_secret_configured` 布尔状态
+- 存储策略连接诊断在响应中脱敏 SAS token 与 account key
+- OneDrive 创建 / 更新策略时清空 legacy `storage_policies.access_key` / `secret_key` 字段，避免明文 secret 长期驻留
+
+### Database Migrations
+
+- 新增 `m20260612_000001`：`storage_policy_credential`、`storage_policy_authorization_flow` 表（OneDrive OAuth token 加密存储）
+- 新增 `m20260620_000001`：3 个 JSON 列 backfill `{}` 并强制 NOT NULL（跨 MySQL / SQLite / PostgreSQL）
+
+### Configuration Changes
+
+- **移除 `cache.enabled`（Breaking）** — 缓存开关已失效，仅保留 memory / Redis 两种 backend；已有配置中的 `cache.enabled` 字段不再生效
+- 新增 `auth.storage_credential_secret_key` — OneDrive / 后续 OAuth 驱动的凭据加密主密钥（缺失时启动自动生成）
+- 新增 OneDrive 策略字段：`onedrive_account_mode`、`onedrive_tenant`、`onedrive_site_id`、`onedrive_drive_id`、`onedrive_group_id`、`onedrive_scopes` 等
+
+### Statistics
+
+- 316 files changed, 36108 insertions(+), 3381 deletions(-)
+- 9 commits
+
 ## [v0.3.0-alpha.5] - 2026-06-13
 
 ### Release Highlights
@@ -4929,7 +5041,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 66 commits
 - Rust Edition 2024, MSRV 1.91.1
 
-[Unreleased]: https://github.com/AptS-1547/AsterDrive/compare/v0.3.0-alpha.5...HEAD
+[Unreleased]: https://github.com/AptS-1547/AsterDrive/compare/v0.3.0-beta.1...HEAD
+[v0.3.0-beta.1]: https://github.com/AptS-1547/AsterDrive/compare/v0.3.0-alpha.5...v0.3.0-beta.1
 [v0.3.0-alpha.5]: https://github.com/AptS-1547/AsterDrive/compare/v0.3.0-alpha.4...v0.3.0-alpha.5
 [v0.3.0-alpha.4]: https://github.com/AptS-1547/AsterDrive/compare/v0.3.0-alpha.3...v0.3.0-alpha.4
 [v0.3.0-alpha.3]: https://github.com/AptS-1547/AsterDrive/compare/v0.3.0-alpha.2...v0.3.0-alpha.3

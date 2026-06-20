@@ -12,7 +12,7 @@ permissions:
   id-token: write
 
 env:
-  REGISTRY_IMAGE_GHCR: ghcr.io/apts-1547/asterdrive
+  REGISTRY_IMAGE_GHCR: ghcr.io/astercommunity/asterdrive
   REGISTRY_IMAGE_DOCKERHUB: ${{ secrets.DOCKERHUB_USERNAME }}/asterdrive
   TEMP_IMAGE_TAG: build-${{ github.run_id }}
 
