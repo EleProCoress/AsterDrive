@@ -64,38 +64,6 @@ pub enum Relation {
     StoragePolicies,
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn debug_redacts_managed_follower_credentials() {
-        let now = chrono::Utc::now();
-        let model = Model {
-            id: 1,
-            name: "follower".to_string(),
-            base_url: "https://follower.example.test".to_string(),
-            access_key: "plain-access-key".to_string(),
-            secret_key: "plain-secret-key".to_string(),
-            is_enabled: true,
-            transport_mode: RemoteNodeTransportMode::Direct,
-            last_capabilities: "{}".to_string(),
-            last_error: String::new(),
-            last_checked_at: None,
-            tunnel_last_error: String::new(),
-            tunnel_last_seen_at: None,
-            created_at: now,
-            updated_at: now,
-        };
-
-        let debug = format!("{model:?}");
-        assert!(debug.contains(r#"access_key: "***REDACTED***""#));
-        assert!(debug.contains(r#"secret_key: "***REDACTED***""#));
-        assert!(!debug.contains("plain-access-key"));
-        assert!(!debug.contains("plain-secret-key"));
-    }
-}
-
 impl Related<super::follower_enrollment_session::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::FollowerEnrollmentSessions.def()
@@ -126,5 +94,37 @@ impl ActiveModelBehavior for ActiveModel {
             }
         }
         Ok(self)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn debug_redacts_managed_follower_credentials() {
+        let now = chrono::Utc::now();
+        let model = Model {
+            id: 1,
+            name: "follower".to_string(),
+            base_url: "https://follower.example.test".to_string(),
+            access_key: "plain-access-key".to_string(),
+            secret_key: "plain-secret-key".to_string(),
+            is_enabled: true,
+            transport_mode: RemoteNodeTransportMode::Direct,
+            last_capabilities: "{}".to_string(),
+            last_error: String::new(),
+            last_checked_at: None,
+            tunnel_last_error: String::new(),
+            tunnel_last_seen_at: None,
+            created_at: now,
+            updated_at: now,
+        };
+
+        let debug = format!("{model:?}");
+        assert!(debug.contains(r#"access_key: "***REDACTED***""#));
+        assert!(debug.contains(r#"secret_key: "***REDACTED***""#));
+        assert!(!debug.contains("plain-access-key"));
+        assert!(!debug.contains("plain-secret-key"));
     }
 }
