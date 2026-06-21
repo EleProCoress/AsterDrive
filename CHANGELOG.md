@@ -7,6 +7,63 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.3.0-beta.2] - 2026-06-21
+
+### Release Highlights
+
+**AsterDrive `0.3.0-beta.2` 是 0.3.0 beta 线的稳定性与错误处理打磨版本，主线是连接器抽象的健壮性收口与 OneDrive 授权流程修正。** 全面将 panic 路径（`expect`/`unwrap`）替换为 `Result` 错误传播，统一存储连接测试的诊断返回（从成功响应 payload 迁移到 error metadata）；OneDrive 授权改为"先保存凭据再授权"，draft 策略连接测试支持复用已保存凭据；各 service 缓存逻辑下沉到独立 cache 子模块。
+
+- **错误处理健壮性收口** — `expect`/`unwrap` 全面替换为 `Result`，multipart 读取失败映射 BAD_REQUEST，connector 注册缺失改为显式错误而非静默回退 local
+- **存储连接测试 API 契约统一** — 诊断信息从成功响应 payload 迁移到 `ApiErrorInfo.diagnostic`，前端从 `ApiError.diagnostic` 读取
+- **OneDrive 授权流程修正** — 授权请求只发 provider type，要求先保存凭据变更才能发起授权
+- **draft 策略凭据复用** — 连接测试可选 `policy_id`，空白凭据字段复用已保存凭据（S3 / Azure Blob / Tencent COS）
+- **cache 模块抽取** — 各 service 缓存逻辑下沉到独立 cache 子模块
+
+### Added
+
+- **draft 策略凭据复用**
+  - 连接测试端点新增可选 `policy_id`，S3 / Azure Blob / Tencent COS 在凭据字段为空时复用已保存凭据，管理员改配置时无需重输敏感信息
+
+### Changed
+
+- **错误处理重构**
+  - CORS、加密、shutdown handler、CLI 序列化、时间/时区运算、内存 mail sender mutex 中毒等 panic 路径替换为 `Result` 传播与日志降级
+  - signal handler 安装失败不再 panic；archive preview / offline download / WOPI discovery client 构建失败由静默 fallback 改为错误传播
+  - `connector_or_local` 静默回退 local 改为 `connector_or_registered` 显式报错；故意不可达分支加 `#[allow(clippy::expect_used)]` 标注不变式
+
+- **存储连接测试 API 契约统一**
+  - 移除 `StoragePolicyProbeResult` 与 `probe_connection*` 端点，改用标准错误响应携带 `ApiErrorInfo.diagnostic`
+  - 新增 `ApiErrorDiagnostic` schema，对外暴露 message / kind，api_code / retryable 内部保留
+  - 前端连接测试从 `ApiError.diagnostic` 读取失败原因
+
+- **OneDrive 授权流程**
+  - 授权请求不再携带 draft Microsoft Graph 凭据，仅发送 provider type，后端复用已保存 application_config
+  - 凭据变更后必须先保存才能发起授权
+
+- **连接器 descriptor 配置**
+  - driver-type 条件分支改为显式 input struct（`ObjectStorageConnectorDescriptorInput` / `ObjectStorageFieldDescriptorInput`）
+  - descriptor UI 逻辑从集中函数下沉到各 connector；multipart ETag 要求改为显式 input 字段
+
+- **cache 模块抽取**
+  - admin / auth / folder / passkey / preview link / share stream / stream ticket / workspace scope / WebDAV auth / WebDAV path resolver 的缓存操作下沉到独立 cache 子模块，补全作用域与失效测试
+  - `share_stream` marker 编码移入 cache 模块，`reserve_count_marker` / `store_count_marker` 改为 `Result` 传播
+
+- **依赖升级**
+  - actix-web 4.13.0 → 4.14.0、actix-multipart 0.7.2 → 0.8.0、actix-http 3.12.1 → 3.13.0、actix-multipart-derive 0.7.0 → 0.8.0
+  - derive_more 统一为 2.1.1、foldhash 0.2.0、impl-more 0.3.1；parse-size 替换为 bytesize 2.4.0
+  - 前端 `@typescript/native-preview` 升至 `7.0.0-dev.20260621.1`
+
+### Fixed
+
+- multipart 上传读取失败（`UploadFieldReadFailed` / `AvatarUploadReadFailed`）映射为 BAD_REQUEST，此前为 500
+- offline download 循环在 shutdown 信号下不再静默中断，改为返回 transient 错误
+- WOPI discovery client 构建失败不再回退 `reqwest::Client::new`，改为传播错误
+
+### Statistics
+
+- 114 files changed, 3665 insertions(+), 1347 deletions(-)
+- 4 commits
+
 ## [v0.3.0-beta.1] - 2026-06-21
 
 ### Release Highlights
@@ -5041,7 +5098,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 66 commits
 - Rust Edition 2024, MSRV 1.91.1
 
-[Unreleased]: https://github.com/AptS-1547/AsterDrive/compare/v0.3.0-beta.1...HEAD
+[Unreleased]: https://github.com/AptS-1547/AsterDrive/compare/v0.3.0-beta.2...HEAD
+[v0.3.0-beta.2]: https://github.com/AptS-1547/AsterDrive/compare/v0.3.0-beta.1...v0.3.0-beta.2
 [v0.3.0-beta.1]: https://github.com/AptS-1547/AsterDrive/compare/v0.3.0-alpha.5...v0.3.0-beta.1
 [v0.3.0-alpha.5]: https://github.com/AptS-1547/AsterDrive/compare/v0.3.0-alpha.4...v0.3.0-alpha.5
 [v0.3.0-alpha.4]: https://github.com/AptS-1547/AsterDrive/compare/v0.3.0-alpha.3...v0.3.0-alpha.4
