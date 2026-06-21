@@ -193,7 +193,7 @@ Notes:
 - the built-in `lofty` processor can expose audio suffixes for embedded cover thumbnails
 - `vips_cli` / `ffmpeg_cli` expose configured extensions only when the commands are available and the processors are enabled
 - the capability mainly comes from `media_processing_registry_json`
-- storage-native thumbnails and image previews can also contribute extensions when a storage policy opts in and the driver exposes that capability; built-in `tencent_cos` policies can expose it through COS CI, while built-in Local, S3-compatible, and Remote policies do not
+- storage-native thumbnails and image previews can also contribute extensions when a storage policy opts in and the driver exposes that capability; built-in `tencent_cos` policies can expose it through COS CI, while built-in Local, S3-compatible, Azure Blob, OneDrive, and Remote policies do not
 
 ## `GET /public/media-data-support`
 

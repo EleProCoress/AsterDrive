@@ -17,7 +17,7 @@ First identify which layer you need to change, then open the corresponding page.
 - **`Admin -> Storage Policies`** - Where files are actually stored, and which upload method is used
 - **`Admin -> Policy Groups`** - Which storage route different users, teams, or file sizes use
 - **`Admin -> Follower Nodes`** - How the primary connects to followers, and where the follower receives objects by default
-- **Reverse proxy / object storage configuration** - HTTPS, large uploads, WebDAV passthrough, and direct S3 uploads
+- **Reverse proxy / object storage configuration** - HTTPS, large uploads, WebDAV passthrough, and direct S3 / Azure Blob / COS uploads
 
 The earlier layers are managed by AsterDrive itself. The last layer belongs to the reverse proxy, object storage, and external network environment.
 
@@ -28,7 +28,7 @@ flowchart TD
   Start --> Runtime["System settings in the database<br/>Site, registration, cookies, mail, share streaming playback, archive preview, trash, WOPI, audit"]
   Start --> Auth["External authentication providers<br/>OIDC / Generic OAuth2 / SSO login entries, external identity binding rules"]
   Start --> Storage["Storage policies + policy groups<br/>File placement, upload method, user/team routing"]
-  Start --> Environment["External environment<br/>HTTPS, reverse proxy, S3 CORS, WebDAV method passthrough"]
+  Start --> Environment["External environment<br/>HTTPS, reverse proxy, object-storage CORS, WebDAV method passthrough"]
 ```
 
 ::: tip Rule of thumb
@@ -47,7 +47,7 @@ Anything the service must know before startup usually belongs in `config.toml`. 
 | Configure SMTP, send test mail, or edit mail templates | [Mail](/en/config/mail) |
 | Configure link import, the built-in downloader, or aria2 offline download | [Offline Download](/en/config/offline-download) |
 | Decide where files are stored and how uploads/downloads work | [Storage Policies](/en/config/storage) |
-| Follow a tutorial for S3 / MinIO / R2 / Tencent COS backends | [Storage Policy Backends](/en/storage/) |
+| Follow a tutorial for S3 / MinIO / R2 / Azure Blob / Tencent COS / OneDrive backends | [Storage Policy Backends](/en/storage/) |
 | Decide which storage route different users/teams use | [Storage Policies](/en/config/storage) |
 | Connect a follower node and configure the default ingress target | [Follower Nodes](/en/guide/remote-nodes) |
 | Change the WebDAV path or hard WebDAV upload limit | [WebDAV](/en/config/webdav) |

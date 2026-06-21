@@ -93,7 +93,7 @@ A few easy-to-misread points:
 
 - Personal and team spaces share the same file pipeline, but quota ownership is different
 - A folder may override the storage policy; otherwise the system falls back to the user's default policy or the team's policy group
-- Local storage may use content deduplication; S3 paths do not deduplicate by default
+- Local storage may use content deduplication; object-storage, OneDrive, and Remote paths do not deduplicate by default
 - “Upload succeeded” does not mean only that an object was written. It also includes database state transitions and quota accounting
 
 ### Why policy resolution belongs in the unified pipeline

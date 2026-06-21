@@ -60,17 +60,23 @@ Error responses also include an `error` object:
   "code": "auth.credentials_failed",
   "msg": "Invalid Credentials",
   "error": {
-    "retryable": false
+    "retryable": false,
+    "diagnostic": {
+      "kind": "auth",
+      "message": "Invalid Credentials"
+    }
   }
 }
 ```
 
-The public error contract has one stable code source: the top-level `code`. The nested `error` object only carries behavior hints such as `retryable`.
+The public error contract has one stable code source: the top-level `code`. The nested `error` object carries behavior hints such as `retryable` and optional redacted diagnostics under `diagnostic.kind` / `diagnostic.message`.
+
+Storage connection tests, storage actions, and remote-node probes return administrator-facing failure context through `error.diagnostic`. Successful connection tests still return an empty success payload; probe details are no longer returned as a success response body.
 
 ## Error-code rules
 
 - Backend responses must write top-level `code: ApiErrorCode`.
-- `ApiErrorInfo` must expose `retryable` only; do not reintroduce `code`, `subcode`, `internal_code`, or `api_code` under `error`.
+- `ApiErrorInfo` may expose only `retryable` and redacted `diagnostic`; do not reintroduce `code`, `subcode`, `internal_code`, or `api_code` under `error`.
 - New user-visible errors should add or reuse a stable `ApiErrorCode` instead of relying on message text.
 - Client copy and branching should use `code`, while `msg` remains a human-readable fallback.
 

@@ -11,7 +11,7 @@ The following paths are relative to `/api/v1` and require authentication.
 | `POST` | `/files/upload/init` | Negotiate upload mode |
 | `GET` | `/files/upload/sessions` | List recoverable upload sessions |
 | `PUT` | `/files/upload/{upload_id}/{chunk_number}` | Upload one chunk |
-| `POST` | `/files/upload/{upload_id}/presign-parts` | Request S3 multipart part URLs |
+| `POST` | `/files/upload/{upload_id}/presign-parts` | Request object-storage / remote multipart part URLs |
 | `POST` | `/files/upload/{upload_id}/complete` | Assemble chunks or confirm presigned upload |
 | `GET` | `/files/upload/{upload_id}` | Read upload progress |
 | `DELETE` | `/files/upload/{upload_id}` | Cancel upload |
@@ -55,23 +55,24 @@ Negotiation returns one of four modes:
 
 - `direct`: small-file direct upload
 - `chunked`: resumable chunked upload
-- `presigned`: single S3 presigned `PUT`
-- `presigned_multipart`: S3 multipart direct upload; the client must request part URLs separately
+- `presigned`: single object-storage or remote presigned `PUT`
+- `presigned_multipart`: object-storage or remote multipart direct upload; the client must request part URLs separately
 
-The frontend never sees an additional `relay_stream` mode. S3 and remote transfer strategies are controlled by storage policy options:
+The frontend never sees an additional `relay_stream` mode. Actual transfer strategy is decided by storage connectors and policy options:
 
-- `options.s3_upload_strategy`
+- `options.s3_upload_strategy`: transfer strategy for S3-compatible, Azure Blob, and Tencent COS object-storage connectors
 - `options.remote_upload_strategy`
-- `relay_stream`: `init` still returns `direct` / `chunked`, but the server relays bytes straight to S3 / follower instead of writing a local temp file
+- OneDrive uses Microsoft Graph native upload capabilities and follows the upload workflow exposed by the connector
+- `relay_stream`: `init` still returns `direct` / `chunked`, but the server relays bytes straight to object storage / follower instead of writing a local temp file
 - `presigned`: `init` returns `presigned` / `presigned_multipart`
 
-S3 and remote uploads fall back to `relay_stream` by default. Legacy `{"presigned_upload":true}` is equivalent to `{"s3_upload_strategy":"presigned"}`.
+Object-storage and remote uploads fall back to `relay_stream` by default. Legacy `{"presigned_upload":true}` is equivalent to `{"s3_upload_strategy":"presigned"}`.
 
-Presigned browser uploads require usable CORS on the object storage or follower internal storage endpoint. Remote presigned upload only works for directly reachable remote nodes; reverse-tunnel remote nodes reject `remote_upload_strategy = "presigned"`.
+Presigned browser uploads require usable CORS on the object storage or follower internal storage endpoint. Azure Blob presigned upload uses SAS URLs and requires `x-ms-blob-type: BlockBlob`; S3-compatible, Tencent COS, and Remote multipart parts usually require returned ETags. Remote presigned upload only works for directly reachable remote nodes; reverse-tunnel remote nodes reject `remote_upload_strategy = "presigned"`.
 
 ## Direct, chunked, and completion stages
 
-- `POST /files/upload`: ordinary multipart upload; empty files are rejected, and same-folder same-name files are not overwritten. With S3 / Remote `relay_stream`, the body is relayed directly to the target driver.
+- `POST /files/upload`: ordinary multipart upload; empty files are rejected, and same-folder same-name files are not overwritten. With object-storage / Remote `relay_stream`, the body is relayed directly to the target driver.
 - `POST /files/new`: creates a 0-byte file for “new text file” style actions
 - `GET /files/upload/sessions`: lists unexpired, recoverable sessions in `uploading` / `assembling` / `presigned` status; `frontend_client_id` can filter sessions created by the same frontend instance
 - `PUT /files/upload/{upload_id}/{chunk_number}`: uploads one chunk, with `chunk_number` starting at `0`
@@ -98,9 +99,9 @@ Recoverable session fields include:
 Completion behavior:
 
 - local path: validates size and quota; if local `content_dedup` is enabled, computes SHA-256 and deduplicates blobs
-- S3 / Remote paths: validate size and quota but do not deduplicate; each upload creates an independent blob using an upload-session-derived opaque hash and `files/{upload_id}`-style object path
+- object-storage / OneDrive / Remote paths: validate size and quota but do not deduplicate; each upload creates an independent blob using an upload-session-derived opaque hash and `files/{upload_id}`-style object path
 
-`POST /files/new` follows the same rule: local content dedup can reuse the 0-byte blob, while S3 always creates an independent blob.
+`POST /files/new` follows the same rule: local content dedup can reuse the 0-byte blob, while non-local connectors always create an independent blob.
 
 `presigned_multipart` completion must include object-storage returned `parts`; other modes may omit the body.
 
@@ -147,7 +148,7 @@ Supports rename, move, and `folder_id = null` to move to root. Name conflicts at
 
 Thumbnail support comes from the media processing registry and is exposed anonymously through `/public/thumbnail-support`. The built-in `images` processor covers common image formats. The built-in `lofty` processor can expose audio suffixes for embedded cover thumbnails. Optional `vips_cli` / `ffmpeg_cli` processors contribute additional extensions only when enabled and available.
 
-Storage policies can also contribute storage-native thumbnail and image-preview support with `storage_native_processing_enabled = true`, `thumbnail_processor = "storage_native"`, and `thumbnail_extensions`. Built-in `tencent_cos` policies can expose this through COS CI; built-in Local, S3-compatible, and Remote policies do not expose native thumbnail or image-preview capabilities.
+Storage policies can also contribute storage-native thumbnail and image-preview support with `storage_native_processing_enabled = true`, `thumbnail_processor = "storage_native"`, and `thumbnail_extensions`. Built-in `tencent_cos` policies can expose this through COS CI; built-in Local, S3-compatible, Azure Blob, OneDrive, and Remote policies do not expose native thumbnail or image-preview capabilities.
 
 Thumbnails return WebP and reuse cache by blob, processor, processor version, and effective max dimension. The max source byte limit is controlled by `thumbnail_max_source_bytes`; the rendered longest edge is controlled by runtime config `thumbnail_max_dimension`.
 
@@ -169,7 +170,7 @@ The supported image-preview extensions are the same public capability union adve
 
 Media metadata is cached by blob. Image metadata is read by the built-in `images` processor, audio by `lofty`, and video by `ffprobe_cli`. `media_metadata_enabled` is the master switch, while per-kind settings live in `media_processing_registry_json`.
 
-Storage-native media metadata can be enabled per policy with `storage_native_processing_enabled = true`, `storage_native_media_metadata_enabled = true`, and `media_metadata_extensions`. Built-in `tencent_cos` policies can expose native audio/video metadata through COS CI; built-in Local, S3-compatible, and Remote policies do not expose native media metadata.
+Storage-native media metadata can be enabled per policy with `storage_native_processing_enabled = true`, `storage_native_media_metadata_enabled = true`, and `media_metadata_extensions`. Built-in `tencent_cos` policies can expose native audio/video metadata through COS CI; built-in Local, S3-compatible, Azure Blob, OneDrive, and Remote policies do not expose native media metadata.
 
 Audio embedded cover art is exposed through the existing thumbnail path when the `lofty` processor has `thumbnail:audio`.
 

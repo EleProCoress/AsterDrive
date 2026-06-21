@@ -31,6 +31,7 @@ Field meanings:
 | --- | --- |
 | `code` | **The stable string error code**. Frontends, SDKs, scripts, and third-party clients should use this for business logic. Successful responses use `success`. |
 | `error.retryable` | Whether automatic retry is suggested. `true` does not guarantee success; it only means the failure is likely temporary. |
+| `error.diagnostic` | Structured administrator-facing diagnostic details. Common for storage policy connection tests, capacity probes, and backend driver errors; `message` preserves useful troubleshooting context where possible and redacts credentials. |
 | `msg` | A human-readable diagnostic message. Do not branch on it and do not use it as an i18n key. |
 
 When reporting an issue or asking an administrator for help, include:
@@ -39,7 +40,7 @@ When reporting an issue or asking an administrator for help, include:
 2. `msg`
 3. Time and operation that produced the error
 
-Only pasting an English message makes the issue harder to locate.
+If the response includes `error.diagnostic.message`, include that for the administrator too. Only pasting an English message makes the issue harder to locate.
 
 ## String Codes Use Domains
 
@@ -177,6 +178,14 @@ Storage errors are usually not solved by clicking retry repeatedly. Administrato
 - `storage.transient_failure` / `storage.transient`: temporary network, object storage, or follower failure. Retry later.
 - `storage.precondition_failed` / `storage.precondition`: conditional write, remote ingress state, or concurrent operation conflict.
 - `storage.driver_error` / `storage.unknown`: driver returned an unclassified error. Check server logs.
+
+When a storage policy connection test fails, check `error.diagnostic` in addition to the top-level `code`:
+
+- `kind` is a broad category such as `auth`, `permission`, `misconfigured`, `transient`, or `unsupported`.
+- `message` is troubleshooting text. The backend tries to redact sensitive values such as SAS tokens, account keys, and secret keys.
+- `retryable` remains on outer `error.retryable`, and is useful for deciding whether retrying later makes sense.
+
+A successful admin connection test only proves that the AsterDrive server can reach the backend. `presigned` upload or download still requires checking whether the browser can reach object storage, Azure Blob endpoints, or follower `base_url`, and whether CORS allows the required request and response headers.
 
 Remote-node codes:
 

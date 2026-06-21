@@ -50,7 +50,7 @@ AsterDrive 的第一个 alpha 版本，其实只是一个 file browser。
 
 > 文件进来以后，应该怎么可靠地走到它该去的地方？
 
-现在 AsterDrive 可以从默认 SQLite + 本地存储起步，也可以接 PostgreSQL / MySQL、S3 兼容对象存储、腾讯云 COS、远程 follower 节点。它能处理普通直传、可恢复分片上传、对象存储预签名上传和 multipart 上传。听起来已经不像最初那个 file browser 了，但它还是从那三件事长出来的：上传、下载、回收站。
+现在 AsterDrive 可以从默认 SQLite + 本地存储起步，也可以接 PostgreSQL / MySQL、S3 兼容对象存储、Azure Blob Storage、腾讯云 COS、Microsoft Graph 支持的 OneDrive / SharePoint drive、远程 follower 节点。它能处理普通直传、可恢复分片上传、对象存储预签名上传和 multipart 上传。听起来已经不像最初那个 file browser 了，但它还是从那三件事长出来的：上传、下载、回收站。
 
 ## 我想把它做成什么样
 

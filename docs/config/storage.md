@@ -52,7 +52,36 @@
 | 单文件大小上限 | 允许上传的最大文件；`0` = 不限 |
 | 分片大小 | 大文件上传时每一片的大小 |
 | 默认策略 | 新建默认组或默认分流规则会优先使用 |
-| 附加选项 | 本地内容去重、S3/COS 上传下载方式、S3 path-style 访问、远程上传下载方式、存储原生处理开关等 |
+| 附加选项 | 本地内容去重、S3 / Azure Blob / COS 上传下载方式、S3 path-style 访问、OneDrive 目标 drive 定位、远程上传下载方式、存储原生处理开关等 |
+
+后台的存储策略表单不是靠前端硬编码各个厂商字段。AsterDrive 会从后端的 `StorageConnector` descriptor 读取当前 driver 支持的字段、能力、上传工作流和管理动作，所以新增或调整存储后端时，管理界面会尽量跟着后端能力显示。
+
+## 连接测试怎么看
+
+存储策略有两类连接测试：
+
+- **测试已保存策略**：对数据库里已经保存的策略做读写探测。
+- **测试草稿配置**：在保存前用当前表单参数做探测；S3、Azure Blob 和 Tencent COS 这类静态凭据后端，在密钥字段留空时可以复用已保存凭据。
+
+连接测试成功时只表示 AsterDrive 服务端能访问后端，并且凭据、bucket / container / drive / follower 接收落点等基础读写路径可用。它不代表浏览器一定能直连对象存储或 follower。只要用了 `presigned`，还要继续检查浏览器网络、HTTPS 证书、CORS 和暴露响应头。
+
+连接测试失败时，后台会优先展示标准错误响应里的 `error.diagnostic.message`。这个诊断来自后端对存储错误的归类，会尽量保留可排查的信息，同时脱敏 SAS、account key、secret key 等敏感内容。脚本或第三方客户端也应该读：
+
+```json
+{
+  "code": "storage.permission_denied",
+  "msg": "Storage permission denied",
+  "error": {
+    "retryable": false,
+    "diagnostic": {
+      "kind": "permission",
+      "message": "provider denied access to the target prefix"
+    }
+  }
+}
+```
+
+这里的 `code` 仍然是稳定错误码；`diagnostic.message` 是给管理员排查的说明，不要拿它做程序分支。
 
 ::: warning 存储原生处理可能产生云厂商费用
 `存储原生处理` 是每条存储策略自己的总开关。开启后，AsterDrive 才会调用当前存储 driver 暴露的原生数据处理能力；在腾讯云 COS 策略下，这对应 COS 数据万象。
@@ -88,7 +117,7 @@ AsterDrive 会缓存缩略图和媒体信息等派生结果，避免每次查看
 
 适合把文件写到 Microsoft Graph 可访问的 OneDrive、SharePoint 文档库或 Microsoft 365 group drive。
 
-OneDrive 策略需要 Microsoft 应用注册和管理员 delegated OAuth 授权。目标 drive 可以在授权后自动解析，也可以通过 Drive ID、SharePoint site ID 或 group ID 指定。完整流程见 [OneDrive 存储策略教程](/storage/onedrive)。
+OneDrive 策略需要 Microsoft 应用注册和管理员 delegated OAuth 授权。先保存策略和 Microsoft Graph 应用凭据，再发起授权；授权请求不会携带未保存的 Client ID / Secret 草稿。目标 drive 可以在授权后自动解析，也可以通过 Drive ID、SharePoint site ID 或 group ID 指定。完整流程见 [OneDrive 存储策略教程](/storage/onedrive)。
 
 ### `tencent_cos`
 

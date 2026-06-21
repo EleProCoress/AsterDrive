@@ -62,7 +62,7 @@ They are not a separate "team filesystem" implementation. They reuse the persona
 | `POST` | `/teams/{team_id}/files/upload/init` | Negotiate team upload mode |
 | `GET` | `/teams/{team_id}/files/upload/sessions` | List recoverable team upload sessions |
 | `PUT` | `/teams/{team_id}/files/upload/{upload_id}/{chunk_number}` | Upload a team chunk |
-| `POST` | `/teams/{team_id}/files/upload/{upload_id}/presign-parts` | Presign S3 multipart part URLs |
+| `POST` | `/teams/{team_id}/files/upload/{upload_id}/presign-parts` | Presign object-storage / remote multipart part URLs |
 | `POST` | `/teams/{team_id}/files/upload/{upload_id}/complete` | Complete team upload |
 | `GET` | `/teams/{team_id}/files/upload/{upload_id}` | Read team upload progress |
 | `DELETE` | `/teams/{team_id}/files/upload/{upload_id}` | Cancel team upload |

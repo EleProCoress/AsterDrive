@@ -31,6 +31,7 @@ AsterDrive 的失败响应一般长这样：
 | --- | --- |
 | `code` | **稳定字符串错误码**。前端、SDK、脚本和第三方客户端都应该用它做业务判断。成功时是 `success`。 |
 | `error.retryable` | 是否建议自动重试。`true` 不代表一定成功，只表示这个错误更像临时失败。 |
+| `error.diagnostic` | 给管理员看的结构化诊断。常见于存储策略连接测试、容量探测和后端驱动错误；其中 `message` 会尽量保留可排查信息并脱敏凭据。 |
 | `msg` | 给人看的诊断说明。不要用它做代码分支，也不要当翻译 key。 |
 
 报 issue 或向管理员反馈时，优先贴：
@@ -39,7 +40,7 @@ AsterDrive 的失败响应一般长这样：
 2. `msg`
 3. 出错时间和你正在做的操作
 
-如果只贴一句英文报错，定位会慢很多。
+如果响应里有 `error.diagnostic.message`，也一起贴给管理员。只贴一句英文报错，定位会慢很多。
 
 ## 字符串码看领域
 
@@ -177,6 +178,14 @@ Passkey 相关错误：
 - `storage.transient_failure` / `storage.transient`：网络、对象存储或 follower 临时失败，可以稍后重试。
 - `storage.precondition_failed` / `storage.precondition`：条件写入、远程接收状态或并发操作冲突。
 - `storage.driver_error` / `storage.unknown`：驱动返回了无法归类的错误，查服务端日志。
+
+存储策略连接测试失败时，除了顶层 `code`，还要看 `error.diagnostic`：
+
+- `kind` 是粗粒度分类，例如 `auth`、`permission`、`misconfigured`、`transient`、`unsupported`。
+- `message` 是排查说明，后端会尽量脱敏 SAS token、account key、secret key 等敏感值。
+- `retryable` 仍在外层 `error.retryable`，适合判断是否值得稍后重试。
+
+后台连接测试成功只代表 AsterDrive 服务端能访问后端。`presigned` 上传或下载还要另外确认浏览器是否能访问对象存储、Azure Blob endpoint 或 follower `base_url`，以及 CORS 是否允许所需请求头和响应头。
 
 远程节点相关：
 

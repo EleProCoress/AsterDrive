@@ -17,7 +17,7 @@ AsterDrive 的配置分得很清楚。先把这些层分开，后续就能更容
 - **`管理 -> 存储策略`** —— 文件真正存到哪里、用哪种上传方式
 - **`管理 -> 策略组`** —— 不同用户、团队、文件大小走哪条存储路线
 - **`管理 -> 远程节点`** —— 主控怎么接 follower，以及 follower 的默认接收落点在哪里
-- **反向代理 / 对象存储自己的配置** —— HTTPS、大文件上传、WebDAV 透传、S3 直传
+- **反向代理 / 对象存储自己的配置** —— HTTPS、大文件上传、WebDAV 透传、S3 / Azure Blob / COS 直传
 
 前面几层是 AsterDrive 自己管的；最后一层属于反向代理、对象存储和外部网络环境。
 
@@ -28,7 +28,7 @@ flowchart TD
   Start --> Runtime["数据库里的系统设置<br/>站点、注册、Cookie、邮件、分享流播放、压缩包预览、回收站、WOPI、审计"]
   Start --> Auth["外部认证提供商<br/>OIDC / 通用 OAuth2 / SSO 登录入口、外部身份和本地账号绑定规则"]
   Start --> Storage["存储策略 + 策略组<br/>文件落点、上传方式、用户/团队分流"]
-  Start --> Environment["外部环境<br/>HTTPS、反向代理、S3 CORS、WebDAV 方法透传"]
+  Start --> Environment["外部环境<br/>HTTPS、反向代理、对象存储 CORS、WebDAV 方法透传"]
 ```
 
 ::: tip 判断规则

@@ -208,6 +208,10 @@ Before or after saving, use the admin-console connection test to confirm:
 - the base path is correct
 - if you use `presigned`, browsers can also reach the endpoint
 
+When editing an existing policy, leaving the storage account name or account key fields blank lets the draft connection test reuse the credentials already saved for that policy. This lets you test endpoint, container, base path, or upload-mode changes without pasting the account key every time. New policies have no saved credentials to reuse, so required credentials still need to be filled in.
+
+When a connection test fails, the admin console prefers the backend diagnostic. Scripts and API clients can read `error.diagnostic.message` from the standard error response. It keeps useful Azure context where possible while redacting SAS values, account keys, and similar credentials.
+
 If the connection test fails, do not move users to this policy yet. Check in this order:
 
 1. Endpoint includes `http://` or `https://`

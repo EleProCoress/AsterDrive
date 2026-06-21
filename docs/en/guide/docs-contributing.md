@@ -10,7 +10,7 @@ AsterDrive documentation is layered by reader task:
 | --- | --- | --- |
 | First use, daily operations, administrator workflows | `guide/` | User manual, common workflows, follower nodes, file editing |
 | Startup configuration, backend system settings, storage policy descriptions | `config/` | Server, database, system settings, storage policies |
-| Specific storage backend tutorials | `storage/` | Local disk, S3 / MinIO / R2, Azure Blob Storage, Tencent COS, follower node storage policy |
+| Specific storage backend tutorials | `storage/` | Local disk, S3 / MinIO / R2, Azure Blob Storage, Tencent COS, OneDrive, follower node storage policy |
 | Deployment, launch, upgrade, backup, troubleshooting | `deployment/` | Docker, systemd, reverse proxy, troubleshooting |
 | Concept explanations, indexes, problem routing | Reference pages under `guide/` | Glossary, FAQ triage, error codes |
 

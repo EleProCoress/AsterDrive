@@ -10,7 +10,7 @@ AsterDrive 文档按读者任务分层：
 | --- | --- | --- |
 | 第一次使用、日常操作、管理员流程 | `guide/` | 用户手册、常用流程、远程节点、文件编辑 |
 | 启动配置、后台系统设置、存储策略说明 | `config/` | 服务器、数据库、系统设置、存储策略 |
-| 具体存储后端接入教程 | `storage/` | 本地磁盘、S3 / MinIO / R2、Azure Blob Storage、腾讯云 COS、远程节点存储策略 |
+| 具体存储后端接入教程 | `storage/` | 本地磁盘、S3 / MinIO / R2、Azure Blob Storage、腾讯云 COS、OneDrive、远程节点存储策略 |
 | 部署、上线、升级、备份、排障 | `deployment/` | Docker、systemd、反向代理、故障排查 |
 | 概念解释、索引、问题分流 | `guide/` 的参考页 | 术语表、常见问题速查、错误码 |
 

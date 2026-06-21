@@ -30,7 +30,7 @@ flowchart TD
   Rule --> Binding["User or team bound to the policy group"]
 ```
 
-Creating only a OneDrive storage policy is not enough. After saving the policy, authorize Microsoft from the AsterDrive admin console so AsterDrive can obtain delegated tokens for the target drive.
+Creating only a OneDrive storage policy is not enough. After saving the policy and Microsoft Graph application credentials, authorize Microsoft from the AsterDrive admin console so AsterDrive can obtain delegated tokens for the target drive.
 
 ## Entries Used in This Page
 
@@ -123,6 +123,12 @@ Fill in:
 
 After saving the policy, open the policy edit page and start authorization.
 
+::: warning Save before authorizing
+The OneDrive authorization request only uses Microsoft Graph application settings already saved on the backend. If you just changed Client ID, Client Secret, tenant, cloud, drive type, or location fields in the form, save the policy first, then click `Authorize` or `Reauthorize`.
+
+This avoids sending unsaved secret drafts in the browser authorization request, and it keeps audit logs, the authorization flow, token refresh, and later background tasks on the same configuration.
+:::
+
 ## 4. Complete Microsoft Authorization
 
 Open the OneDrive policy edit page:
@@ -132,6 +138,8 @@ Admin -> Storage Policies -> target OneDrive policy
 ```
 
 In the `Microsoft Graph credential` panel, click `Authorize`.
+
+When the backend starts authorization, the request only needs to identify the provider as Microsoft Graph. Client ID, Client Secret, tenant, and scopes are read from the saved connector application config. The older "authorize while carrying draft credentials" flow has been closed.
 
 After authorization succeeds, the browser returns to the AsterDrive admin console and shows the result. AsterDrive stores:
 
@@ -245,7 +253,7 @@ AsterDrive stores the OneDrive Microsoft Graph application settings in a connect
 | `storage_connector_application_configs.tenant_id` | Microsoft tenant, such as `common` or a tenant ID |
 | `storage_connector_application_configs.scopes` | Microsoft Graph delegated scopes |
 
-The Client Secret is encrypted at rest with a key derived from `auth.storage_credential_secret_key`. The plaintext secret entered by an administrator is used only when saving or replacing the application settings and when starting the Microsoft authorization flow. If the field is left blank while editing a policy, AsterDrive keeps the existing `client_secret_ciphertext`. API responses and audit logs expose only controlled state such as `client_secret_configured`; they do not return the plaintext secret.
+The Client Secret is encrypted at rest with a key derived from `auth.storage_credential_secret_key`. The plaintext secret entered by an administrator is used only when saving or replacing the application settings; when authorization starts, the backend reads the already saved encrypted secret. If the field is left blank while editing a policy, AsterDrive keeps the existing `client_secret_ciphertext`. API responses and audit logs expose only controlled state such as `client_secret_configured`; they do not return the plaintext secret.
 
 When a OneDrive policy is created or updated, AsterDrive clears the legacy `storage_policies.access_key` / `storage_policies.secret_key` fields at the storage connector boundary. They are not the long-term storage location for OneDrive Microsoft app credentials.
 

@@ -1,6 +1,6 @@
 # Admin API
 
-The following paths are relative to `/api/v1` and require administrator privileges.
+The following paths are relative to `/api/v1`. Every endpoint on this page requires administrator privileges except the storage OAuth provider callback `/admin/policies/storage-authorization/callback`.
 
 This page keeps the most important admin endpoint groups. For usage-oriented admin-console guidance, see [Admin Console](../../../docs/guide/admin-console.md).
 
@@ -45,9 +45,15 @@ The overview response includes user, file, blob, share, audit, and task summarie
 | `GET` | `/admin/policies/{id}/capacity` | Read policy capacity observation |
 | `PATCH` | `/admin/policies/{id}` | Update policy |
 | `DELETE` | `/admin/policies/{id}` | Delete policy |
+| `GET` | `/admin/policies/storage-drivers` | List storage connector descriptors |
+| `GET` | `/admin/policies/storage-credential-providers` | List storage OAuth credential providers |
 | `POST` | `/admin/policies/{id}/test` | Test saved policy |
 | `POST` | `/admin/policies/{id}/action` | Execute a storage action for a saved policy |
 | `POST` | `/admin/policies/{id}/promote-s3-driver` | Promote a generic S3-compatible policy to a supported specialized driver |
+| `POST` | `/admin/policies/{id}/storage-authorization/start` | Start storage OAuth authorization for a policy |
+| `GET` | `/admin/policies/{id}/storage-credentials` | List stored OAuth credentials for a policy |
+| `POST` | `/admin/policies/{id}/storage-credentials/{provider}/validate` | Validate a stored OAuth credential |
+| `GET` | `/admin/policies/storage-authorization/callback` | Storage OAuth provider callback entry; does not require an admin JWT and redirects back to the admin UI |
 | `POST` | `/admin/policies/test` | Test connection with draft parameters |
 | `POST` | `/admin/policies/action` | Execute a storage action with draft policy parameters |
 
@@ -70,25 +76,105 @@ Create example:
 
 Current notes:
 
-- `driver_type` currently supports `local`, `s3`, `tencent_cos`, and `remote`
+- `driver_type` currently supports `local`, `s3`, `azure_blob`, `tencent_cos`, `remote`, and `onedrive`
+- `GET /admin/policies/storage-drivers` returns `StorageConnectorDescriptor` entries. The frontend should use descriptor `capabilities`, `fields`, `upload_workflows`, `actions`, and `credential_mode` to decide forms, connection tests, upload/download strategies, and action affordances instead of maintaining a hard-coded driver capability matrix.
 - create and update both honor request `chunk_size`
 - `options` carries policy-level behavior:
-  - S3 / Remote upload and download strategies
+  - S3-compatible / Azure Blob / Tencent COS object-storage connectors continue to use `s3_upload_strategy` / `s3_download_strategy` for transfer strategy
+  - Remote upload and download strategies through `remote_upload_strategy` / `remote_download_strategy`
   - local `content_dedup`
   - generic S3 path-style addressing through `s3_path_style` (defaults to `true`)
   - S3 connect / read / operation timeouts
   - storage-native thumbnails / image previews with `storage_native_processing_enabled`, `thumbnail_processor`, and `thumbnail_extensions`
   - storage-native media metadata with `storage_native_media_metadata_enabled` and `media_metadata_extensions`
+  - OneDrive location options: `onedrive_account_mode`, `onedrive_tenant`, `onedrive_site_id`, `onedrive_drive_id`, `onedrive_group_id`, and `onedrive_root_item_id`
+- `application_config.microsoft_graph` stores OneDrive / Microsoft Graph app settings. Client secrets are stored encrypted; API responses expose only `client_secret_configured`.
+- `driver_type = "azure_blob"` uses Azure Block Blob capabilities. Presigned browser upload uses SAS URLs and requires the client to send `x-ms-blob-type: BlockBlob`.
+- `driver_type = "onedrive"` uses Microsoft Graph OAuth credentials. Save the policy and `application_config.microsoft_graph` before starting authorization.
 - `driver_type = "tencent_cos"` uses the S3-compatible object path for normal reads and writes, validates Tencent COS endpoint shape, and can expose COS CI storage-native thumbnail / image-preview / media-metadata capabilities when the policy opts in
-- built-in Local, S3-compatible, and Remote drivers do not expose storage-native thumbnail, image-preview, or media-metadata capabilities
+- built-in Local, S3-compatible, Azure Blob, OneDrive, and Remote drivers do not expose storage-native thumbnail, image-preview, or media-metadata capabilities
 - legacy `{"presigned_upload":true}` remains compatible with S3 presigned upload
 - `allowed_types` can be managed through REST
 - `driver_type = "remote"` requires `remote_node_id`
 - `PATCH` cannot change `driver_type`
-- `POST /admin/policies/{id}/promote-s3-driver` currently supports promoting a generic `s3` policy to `tencent_cos`. The request body is `{ "target_driver_type": "tencent_cos" }`. Promotion is rejected unless the bucket stays unchanged, there are no active upload sessions for the policy, and the target driver validates the existing endpoint / bucket combination.
+- `POST /admin/policies/{id}/promote-s3-driver` currently supports promoting a generic `s3` policy to `tencent_cos`. The body must include the target driver and current endpoint / bucket, for example `{ "target_driver_type": "tencent_cos", "endpoint": "https://bucket-1250000000.cos.ap-guangzhou.myqcloud.com", "bucket": "bucket-1250000000" }`. Promotion is rejected unless the bucket stays unchanged, there are no active upload sessions for the policy, and the target driver validates the endpoint / bucket combination.
 - `GET /admin/policies` supports `limit`, `offset`, `sort_by`, `sort_order`
-- `GET /admin/policies/{id}/capacity` returns `StoragePolicyCapacityInfo`; local can return real filesystem capacity, S3 is explicitly unsupported, and remote forwards follower capacity status
+- `GET /admin/policies/{id}/capacity` returns `StoragePolicyCapacityInfo`; local returns filesystem capacity, S3-compatible and Azure Blob are explicitly unsupported, OneDrive reads Microsoft Graph drive quota, and remote forwards follower capacity status
 - `DELETE /admin/policies/{id}?force=true` only cleans upload sessions that still reference the policy. Existing blobs or policy-group references still block deletion. If temp objects or multipart uploads need delayed cleanup, a `storage_policy_temp_cleanup` task is created.
+
+### Storage connection tests
+
+`POST /admin/policies/{id}/test` and `POST /admin/policies/test` return an ordinary empty success response on success:
+
+```json
+{
+  "code": "success",
+  "msg": "",
+  "data": {}
+}
+```
+
+Failed connection tests no longer return a `StoragePolicyProbeResult` success payload. They use the standard error response and expose redacted diagnostics through `error.diagnostic`:
+
+```json
+{
+  "code": "storage.auth_failed",
+  "msg": "storage authentication failed",
+  "error": {
+    "retryable": false,
+    "diagnostic": {
+      "kind": "auth",
+      "message": "credentials were rejected by the storage provider"
+    }
+  }
+}
+```
+
+Draft test requests support optional `policy_id`. While editing a saved policy, blank sensitive fields such as `access_key` or `secret_key` can be filled from the saved policy by S3-compatible, Azure Blob, and Tencent COS connectors. Unsaved new policies must still provide complete credentials.
+
+### Storage OAuth Credentials
+
+These endpoints currently mainly serve the OneDrive / Microsoft Graph connector:
+
+- `GET /admin/policies/storage-credential-providers` lists providers. `microsoft_graph` is currently supported; `google_drive` is reserved with `supported = false`.
+- Creating or updating a OneDrive policy first saves Microsoft Graph app settings through `application_config.microsoft_graph`; client secrets are encrypted at rest.
+- `POST /admin/policies/{id}/storage-authorization/start` only needs the provider; the backend reuses saved application config to start authorization.
+- After successful authorization, the callback writes `storage_policy_credentials` and redirects to `/admin/policies?storage_authorization=success&policy_id=...`. The callback does not require an admin JWT because Microsoft Graph and similar providers return to it through the browser.
+- `GET /admin/policies/{id}/storage-credentials` returns credential status, tenant, account label, scopes, expiry, and refresh timestamps, but never access or refresh tokens.
+- `POST /admin/policies/{id}/storage-credentials/{provider}/validate` validates the stored credential and updates status to `authorized`, `reauth_required`, `permission_denied`, or `invalid`.
+
+Start authorization example:
+
+```http
+POST /api/v1/admin/policies/12/storage-authorization/start
+```
+
+```json
+{
+  "provider": "microsoft_graph"
+}
+```
+
+The returned `authorization_url` is meant for browser navigation:
+
+```json
+{
+  "code": "success",
+  "msg": "",
+  "data": {
+    "authorization_url": "https://login.microsoftonline.com/common/oauth2/v2.0/authorize?...",
+    "expires_in": 300,
+    "provider": "microsoft_graph",
+    "microsoft_graph": {
+      "cloud": "global",
+      "tenant": "common",
+      "client_id": "00000000-0000-0000-0000-000000000000",
+      "client_secret_configured": true,
+      "scopes": ["offline_access", "Files.ReadWrite.All", "Sites.ReadWrite.All"]
+    }
+  }
+}
+```
 
 ### Storage policy actions
 

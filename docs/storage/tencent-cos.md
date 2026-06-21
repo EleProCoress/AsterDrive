@@ -259,6 +259,10 @@ AsterDrive 调用的是腾讯云 COS `GET Bucket cors` 和 `PUT Bucket cors`。`
 腾讯云 COS
 ```
 
+保存前或保存后，都建议先点一次 `测试连接`。编辑已有策略时，如果 Access Key 或 Secret Key 字段留空，草稿连接测试会复用这条策略已经保存的凭据。这样你可以先测试 endpoint、bucket、基础路径、上传方式或 COS CI 开关的变更，不必每次重新粘贴 secret。新建策略没有可复用凭据，仍然必须填完整。
+
+连接测试失败时，后台会优先展示后端返回的诊断说明。脚本或 API 客户端可以读取标准错误响应里的 `error.diagnostic.message`；这里会尽量保留 COS 返回的可排查信息，同时脱敏 secret、SAS、account key 等敏感值。
+
 常见字段：
 
 | 字段 | 示例 |

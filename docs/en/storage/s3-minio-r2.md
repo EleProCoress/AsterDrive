@@ -196,6 +196,10 @@ Before or after saving, use the admin-console connection test to confirm:
 - The credentials can read and write the target location
 - path-style / region is not misconfigured
 
+When editing an existing policy, leaving Access Key or Secret Key blank lets the draft connection test reuse the credentials already saved for that policy. This lets you test endpoint, region, path-style, or prefix changes without pasting the secret every time. New policies have no saved credentials to reuse, so required credentials still need to be filled in.
+
+When a connection test fails, the admin console prefers the backend diagnostic. Scripts and API clients can read `error.diagnostic.message` from the standard error response. It keeps useful provider context where possible while redacting secrets, SAS values, account keys, and similar credentials.
+
 If the connection test fails, do not move users to this policy. Check in this order first:
 
 1. Whether the endpoint is accessible from the AsterDrive server

@@ -125,11 +125,13 @@ AsterDrive 的管理后台**故意做得不"全功能"**。
 - 文件真正落到哪里
 - 上传时用哪种方式写入
 
-当前后台支持四类策略：
+当前后台支持这些策略：
 
 - `local`：本地目录
 - `s3`：S3 或兼容对象存储
+- `azure_blob`：Azure Blob Storage container，使用 Azure Blob SDK 和 SAS URL
 - `tencent_cos`：腾讯云 COS，基础对象读写复用 S3 兼容能力，并额外支持 COS 数据万象等腾讯云原生能力
+- `one_drive`：Microsoft Graph 可访问的 OneDrive、SharePoint 或 Microsoft 365 group drive
 - `remote`：绑定到远程节点，由另一台 AsterDrive 从节点承接真实对象读写
 
 在这里你可以：
@@ -139,20 +141,25 @@ AsterDrive 的管理后台**故意做得不"全功能"**。
 - 设为系统默认策略
 - 控制单文件大小上限
 - 控制分片大小
-- 为 S3 / COS 选择上传和下载方式，例如 `relay_stream` 或 `presigned`
+- 为 S3 / Azure Blob / COS 选择上传和下载方式，例如 `relay_stream` 或 `presigned`
+- 为 OneDrive 保存 Microsoft Graph 应用凭据、发起授权或重新授权，并验证已保存凭据
 - 为通用 S3 策略控制 path-style 访问方式，兼容 MinIO、RustFS、R2、AWS S3 等不同 endpoint 习惯
 - 在符合条件时，把误建成通用 `s3` 的腾讯云 COS 策略提升为 `tencent_cos`
 - 创建存储策略数据迁移任务，把已有对象从源策略复制到目标策略
 
-编辑已有策略时，左侧会显示当前容量观测结果。`local` 策略会读取底层文件系统总量、可用量和已用量；`remote` 策略会向 follower 查询它实际接收落点的能力；`s3` / `tencent_cos` 没有统一可靠的 bucket 剩余容量接口，所以会显示为“不支持”，不会伪造容量数值。
+编辑已有策略时，左侧会显示当前容量观测结果。`local` 策略会读取底层文件系统总量、可用量和已用量；`one_drive` 策略会读取 Microsoft Graph drive quota；`remote` 策略会向 follower 查询它实际接收落点的能力；`s3` / `tencent_cos` / `azure_blob` 没有统一可靠的剩余容量接口，所以会显示为“不支持”，不会伪造容量数值。
 
 通用 `s3` 策略里的 `Path-style 访问` 控制请求地址形态。MinIO、RustFS 这类兼容服务通常开启；AWS S3 这类支持虚拟托管风格的服务通常可以关闭。保存前先测试连接，比按厂商名字猜更可靠。
 
 如果后台识别到一条通用 `s3` 策略其实指向腾讯云 COS，会在编辑页给出驱动提升建议。提升只改变 AsterDrive 对这条策略使用的 driver，让它能使用 COS endpoint 规范化、签名和后续数据万象能力；不会移动 bucket 里的对象。系统会检查提升方向、活动上传会话和 bucket 不变性，避免在仍有上传或落点不确定时切换。
 
+OneDrive 策略的授权按钮只使用已经保存的 Microsoft Graph 应用配置。改了 Client ID、Client Secret、tenant、目标 drive 类型或定位字段以后，先保存策略，再点击授权或重新授权。这样后端授权流程、审计日志和后续 token 刷新使用的是同一份配置，不会出现“页面草稿看起来改了，实际授权用的还是旧配置”的情况。
+
+连接测试失败时，后台会优先展示后端返回的诊断说明。这个诊断在标准错误响应的 `error.diagnostic.message` 里，已经做了 secret / token 脱敏；它适合给管理员排查，不适合做脚本里的稳定分支。
+
 创建迁移任务前，`迁移数据` 会先做预检查。预检查会显示源对象数、源对象大小、预计需要复制的对象数、目标已有对象数、容量检查结果，以及 opaque key 冲突数。容量检查只在目标明确容量不足时阻止创建任务；如果目标驱动不支持容量观测或本次查询不可用，会给出提示，但不会直接禁止迁移。
 
-已经有文件在用的策略，不要直接修改 `base_path`、`bucket`、`endpoint` 或绑定的远程节点这类决定真实落点的选项。要改位置，先新建目标策略，使用页面里的 `迁移数据` 做预检查并创建后台迁移任务，确认完成后再切换策略组。
+已经有文件在用的策略，不要直接修改 `base_path`、`bucket`、`endpoint`、Azure container、OneDrive drive / root item / site / group 定位字段，或绑定的远程节点这类决定真实落点的选项。要改位置，先新建目标策略，使用页面里的 `迁移数据` 做预检查并创建后台迁移任务，确认完成后再切换策略组。
 
 ## 远程节点
 

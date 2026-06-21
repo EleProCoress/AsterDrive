@@ -273,6 +273,10 @@ Common fields:
 
 AsterDrive normalizes the COS endpoint and bucket, then uses COS virtual-hosted style for the underlying S3-compatible requests. You do not need to tune COS as a generic S3 path-style policy manually.
 
+Before or after saving, click `Test Connection` once. When editing an existing policy, leaving Access Key or Secret Key blank lets the draft connection test reuse the credentials already saved for that policy. This lets you test endpoint, bucket, base path, upload mode, or COS CI switch changes without pasting the secret every time. New policies have no saved credentials to reuse, so required credentials still need to be filled in.
+
+When a connection test fails, the admin console prefers the backend diagnostic. Scripts and API clients can read `error.diagnostic.message` from the standard error response. It keeps useful COS context where possible while redacting secrets, SAS values, account keys, and similar credentials.
+
 ## 6. Test the Connection Before Saving
 
 Before or after saving, use the admin-console connection test to confirm:

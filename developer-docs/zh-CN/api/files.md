@@ -11,7 +11,7 @@
 | `POST` | `/files/upload/init` | 协商上传模式 |
 | `GET` | `/files/upload/sessions` | 列出当前用户可恢复的上传 session |
 | `PUT` | `/files/upload/{upload_id}/{chunk_number}` | 上传单个分片 |
-| `POST` | `/files/upload/{upload_id}/presign-parts` | 为 S3 multipart 上传批量申请分片 URL |
+| `POST` | `/files/upload/{upload_id}/presign-parts` | 为对象存储 / remote multipart 上传批量申请分片 URL |
 | `POST` | `/files/upload/{upload_id}/complete` | 组装分片或确认预签名上传 |
 | `GET` | `/files/upload/{upload_id}` | 查询上传进度 |
 | `DELETE` | `/files/upload/{upload_id}` | 取消上传 |
@@ -60,21 +60,22 @@
 
 - `direct`：小文件直接上传
 - `chunked`：大文件分片上传，可断点续传
-- `presigned`：S3 单次预签名 `PUT`
-- `presigned_multipart`：S3 multipart 直传，客户端需要再申请每个 part 的 URL
+- `presigned`：对象存储或 remote 单次预签名 `PUT`
+- `presigned_multipart`：对象存储或 remote multipart 直传，客户端需要再申请每个 part 的 URL
 
-前端仍然只会看到这四种模式，不会额外出现一个 `relay_stream` 模式。S3 和 Remote 传输策略由存储策略控制：
+前端仍然只会看到这四种模式，不会额外出现一个 `relay_stream` 模式。实际传输策略由存储 connector 和策略 options 共同决定：
 
-- `options.s3_upload_strategy`：控制 S3 策略
+- `options.s3_upload_strategy`：控制 S3-compatible、Azure Blob、Tencent COS 这类对象存储 connector 的传输策略
 - `options.remote_upload_strategy`：控制 remote follower 策略
-- `relay_stream`：`init` 仍返回 `direct` / `chunked`，但服务端直接把字节流中继到 S3 / follower，不落本地临时文件
+- OneDrive 使用 Microsoft Graph 原生上传能力，按 connector 暴露的 upload workflow 决定普通上传或 provider resumable upload
+- `relay_stream`：`init` 仍返回 `direct` / `chunked`，但服务端直接把字节流中继到对象存储 / follower，不落本地临时文件
 - `presigned`：`init` 才会返回 `presigned` / `presigned_multipart`
 
-缺省时 S3 和 Remote 上传都会回退为 `relay_stream`。旧配置 `{"presigned_upload":true}` 仍兼容，等价于 `{"s3_upload_strategy":"presigned"}`；旧的 `{"s3_upload_strategy":"proxy_tempfile"}` 会回退为 `relay_stream`。使用预签名模式时，对象存储侧或 follower 内部存储接口还必须配置好浏览器可用的 CORS。Remote 预签名上传只适用于可直连的远端节点；如果远端节点解析为 reverse tunnel，服务端会拒绝 `remote_upload_strategy = "presigned"` 这类策略组合。
+缺省时对象存储和 Remote 上传都会回退为 `relay_stream`。旧配置 `{"presigned_upload":true}` 仍兼容，等价于 `{"s3_upload_strategy":"presigned"}`；旧的 `{"s3_upload_strategy":"proxy_tempfile"}` 会回退为 `relay_stream`。使用预签名模式时，对象存储侧或 follower 内部存储接口还必须配置好浏览器可用的 CORS。Azure Blob 预签名上传使用 SAS URL，客户端必须带 `x-ms-blob-type: BlockBlob`；S3-compatible、Tencent COS 和 Remote multipart part 通常要求回传 ETag。Remote 预签名上传只适用于可直连的远端节点；如果远端节点解析为 reverse tunnel，服务端会拒绝 `remote_upload_strategy = "presigned"` 这类策略组合。
 
 ### 直传、分片和完成阶段
 
-- `POST /files/upload`：普通 multipart 上传；空文件会报错，同目录同名文件不会覆盖。若命中的 S3 / Remote 策略是 `relay_stream`，这里会直接把请求体中继到对应驱动
+- `POST /files/upload`：普通 multipart 上传；空文件会报错，同目录同名文件不会覆盖。若命中的对象存储 / Remote 策略是 `relay_stream`，这里会直接把请求体中继到对应驱动
 - `POST /files/new`：创建一个 0 字节空文件，适合“新建文本文件”这类前端动作
 - `GET /files/upload/sessions`：列出当前用户个人空间下未过期、状态为 `uploading` / `assembling` / `presigned` 的 session，按 `updated_at` 和 `upload_id` 倒序返回；传 `frontend_client_id` 时只返回同一前端实例创建的 session
 - `PUT /files/upload/{upload_id}/{chunk_number}`：上传单个分片，`chunk_number` 从 `0` 开始
@@ -103,11 +104,11 @@
 完成阶段的服务端行为分两类：
 
 - 本地路径：会校验大小和配额；若 local 策略开启了 `content_dedup`，还会计算 SHA-256 并做 Blob 去重，否则直接创建独立 Blob
-- 所有 S3 / Remote 路径（`relay_stream` / `presigned` / `presigned_multipart`）：都会校验大小和配额，但不会做 Blob 去重；最终会使用上传 session 派生的占位 hash 和 `files/{upload_id}` 风格的对象路径为每次上传创建独立 Blob；这些路径都不会回读对象计算 SHA-256
+- 所有对象存储 / OneDrive / Remote 路径（`relay_stream` / `presigned` / `presigned_multipart` / provider resumable）：都会校验大小和配额，但不会做 Blob 去重；最终会使用上传 session 派生的占位 hash 和 `files/{upload_id}` 风格的对象路径为每次上传创建独立 Blob；这些路径都不会回读对象计算 SHA-256
 
-`POST /files/new` 创建空文件时也遵循同样规则：只有 local 显式开启 `content_dedup` 才会复用 0 字节 Blob，S3 始终创建独立 Blob。
+`POST /files/new` 创建空文件时也遵循同样规则：只有 local 显式开启 `content_dedup` 才会复用 0 字节 Blob，非本地 connector 始终创建独立 Blob。
 
-`relay_stream` 的 multipart 场景下，服务端会把每个 part 的 `part_number + etag` 持久化到数据库；`complete` 时直接使用这些服务端记录完成 S3 / Remote multipart，不依赖客户端再回传 `parts`。
+`relay_stream` 的 multipart 场景下，服务端会把每个 part 的 `part_number + etag` 持久化到数据库；`complete` 时直接使用这些服务端记录完成对象存储 / Remote multipart，不依赖客户端再回传 `parts`。
 
 对 `presigned_multipart` 来说，`complete` 请求体需要带对象存储返回的 `parts` 列表；其他模式可以不带请求体。
 
@@ -115,10 +116,10 @@
 
 - `GET /files/{id}`：读取文件元信息；已进回收站的文件会按“找不到”处理
 - `GET /files/{id}/archive-preview`：读取归档预览清单；缓存未生成时返回 `202` 并排队 `archive_preview_generate` 任务
-- `GET /files/{id}/direct-link`：返回一个短 token；真正下载走根路径 `/d/{token}/{filename}`。默认按 inline 流式返回；追加 `?download=1` 后复用附件下载分流，命中 S3 / Remote 的 `presigned` 策略时会返回 `302`
+- `GET /files/{id}/direct-link`：返回一个短 token；真正下载走根路径 `/d/{token}/{filename}`。默认按 inline 流式返回；追加 `?download=1` 后复用附件下载分流，命中对象存储 / Remote 的 `presigned` 策略时会返回 `302`
 - `POST /files/{id}/preview-link`：返回一个短期预览链接；真正读取内容走根路径 `/pv/{token}/{filename}`
 - `POST /files/{id}/wopi/open`：为配置成 `provider = "wopi"` 的预览器创建一次 WOPI 启动会话
-- `GET /files/{id}/download`：下载文件；默认是流式响应，若命中的 S3 / Remote 策略把下载策略设为 `presigned`，则会在鉴权后返回 `302` 重定向到短时效的对象存储 GET URL；支持 `If-None-Match`，命中时返回 `304`
+- `GET /files/{id}/download`：下载文件；默认是流式响应，若命中的对象存储 / Remote 策略把下载策略设为 `presigned`，则会在鉴权后返回 `302` 重定向到短时效的 provider GET URL；支持 `If-None-Match`，命中时返回 `304`
 - `GET /files/{id}/thumbnail`：读取缩略图（仅服务端当前支持的类型）；若后台仍在生成，会先返回 `202` 和 `Retry-After`
 - `GET /files/{id}/image-preview`：为图片预览返回 WebP 原始响应，不走统一 JSON 包装；成功响应带 `ETag`，支持 `If-None-Match` 命中返回 `304`
 - `GET /files/{id}/media-metadata`：读取按 blob 缓存的媒体元数据；缓存未生成时返回 `202` 和 `Retry-After`
@@ -169,7 +170,7 @@
 
 当前缩略图能力主要来自运行时的 media processing registry，并由 `/public/thumbnail-support` 暴露给匿名态前端。默认内置 `images` 处理器覆盖常见图片格式；内置 `lofty` 处理器启用音频封面用途时也会暴露音频后缀；如果启用且运行环境可找到 `vips_cli` / `ffmpeg_cli`，缩略图支持列表也会包含对应配置里的扩展名。
 
-存储策略也可以通过 `storage_native_processing_enabled = true`、`thumbnail_processor = "storage_native"` 和 `thumbnail_extensions` 暴露策略级原生缩略图 / 图片预览能力。内置 `tencent_cos` 策略可通过 COS CI 暴露这项能力；内置 Local、S3-compatible 和 Remote 策略不暴露原生缩略图或图片预览能力。
+存储策略也可以通过 `storage_native_processing_enabled = true`、`thumbnail_processor = "storage_native"` 和 `thumbnail_extensions` 暴露策略级原生缩略图 / 图片预览能力。内置 `tencent_cos` 策略可通过 COS CI 暴露这项能力；内置 Local、S3-compatible、Azure Blob、OneDrive 和 Remote 策略不暴露原生缩略图或图片预览能力。
 
 接口统一返回 WebP，并按 Blob、processor、processor version 和实际最大边长复用缓存。源文件大小上限由 `thumbnail_max_source_bytes` 控制；生成后最长边由运行时配置 `thumbnail_max_dimension` 控制。
 
@@ -195,7 +196,7 @@
 
 当前图片元数据由内置 `images` 处理器读取尺寸和格式；音频元数据由内置 `lofty` 处理器读取标题、艺术家、专辑、时长、采样率、声道、码率、曲目号和内嵌封面存在性等信息；视频元数据由 `ffprobe_cli` 处理器通过服务端 `ffprobe` 读取时长、尺寸、编码、容器和帧率。`media_metadata_enabled` 是总开关；图片 / 音频 / 视频是否参与解析、命中的后缀，以及 `ffprobe` 的命令名或绝对路径，都统一在 `media_processing_registry_json` 里配置。若运行环境找不到配置的 `ffprobe`，视频会返回并缓存为 `unsupported`；配置修正且命令可用后，旧的 missing-probe unsupported 缓存会被重新探测。
 
-存储策略可以通过 `storage_native_processing_enabled = true`、`storage_native_media_metadata_enabled = true` 和 `media_metadata_extensions` 启用策略级原生媒体元数据。内置 `tencent_cos` 策略可通过 COS CI 暴露音频 / 视频元数据；内置 Local、S3-compatible 和 Remote 策略不暴露原生媒体元数据能力。
+存储策略可以通过 `storage_native_processing_enabled = true`、`storage_native_media_metadata_enabled = true` 和 `media_metadata_extensions` 启用策略级原生媒体元数据。内置 `tencent_cos` 策略可通过 COS CI 暴露音频 / 视频元数据；内置 Local、S3-compatible、Azure Blob、OneDrive 和 Remote 策略不暴露原生媒体元数据能力。
 
 音频内嵌封面不单独开音乐封面缓存。`lofty` 处理器具备 `thumbnail:audio` 用途时，客户端继续复用现有 thumbnail 路径获取封面图；响应里的 `has_embedded_picture` 和 MIME 用于播放器元数据展示和兜底判断。
 

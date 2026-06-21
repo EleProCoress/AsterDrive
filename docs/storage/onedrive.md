@@ -30,7 +30,7 @@ flowchart TD
   Rule --> Binding["用户或团队绑定策略组"]
 ```
 
-只创建 OneDrive 存储策略还不够。策略保存后，还需要在 AsterDrive 后台发起 Microsoft 授权，让 AsterDrive 获得访问目标 drive 的 delegated token。
+只创建 OneDrive 存储策略还不够。策略和 Microsoft Graph 应用凭据保存后，还需要在 AsterDrive 后台发起 Microsoft 授权，让 AsterDrive 获得访问目标 drive 的 delegated token。
 
 ## 这篇用到的入口
 
@@ -123,6 +123,12 @@ OneDrive
 
 保存策略后，进入策略编辑页发起授权。
 
+::: warning 先保存，再授权
+OneDrive 授权请求只会使用已经保存到后端的 Microsoft Graph 应用配置。你在表单里刚改过 Client ID、Client Secret、tenant、cloud、drive 类型或定位字段时，先保存策略，再点击 `授权` 或 `重新授权`。
+
+这样做是为了避免浏览器把未保存的 secret 草稿塞进授权请求，也能保证审计日志、授权 flow、token 刷新和后续后台任务看到的是同一份配置。
+:::
+
 ## 4. 完成 Microsoft 授权
 
 进入 OneDrive 策略编辑页：
@@ -132,6 +138,8 @@ OneDrive
 ```
 
 在 `Microsoft Graph 凭据` 区域点击 `授权`。
+
+后端启动授权时，请求体只需要说明 provider 是 Microsoft Graph；Client ID、Client Secret、tenant 和 scopes 会从已保存的 connector application config 读取。旧版本里那种“边带草稿凭据边授权”的流程已经收口掉了。
 
 授权成功后，浏览器会回到 AsterDrive 管理后台，并显示授权结果。AsterDrive 会保存：
 
@@ -245,7 +253,7 @@ AsterDrive 把 OneDrive 的 Microsoft Graph 应用配置存放在独立的 conne
 | `storage_connector_application_configs.tenant_id` | Microsoft tenant，例如 `common` 或租户 ID |
 | `storage_connector_application_configs.scopes` | Microsoft Graph delegated scopes |
 
-Client Secret 使用 `auth.storage_credential_secret_key` 派生的加密密钥加密后落库。管理员在前端输入的明文 secret 只用于首次保存、主动覆盖和发起授权请求；如果编辑策略时留空，AsterDrive 会保留已有的 `client_secret_ciphertext`。API 响应和审计日志只暴露 `client_secret_configured` 这类布尔状态，不回显明文。
+Client Secret 使用 `auth.storage_credential_secret_key` 派生的加密密钥加密后落库。管理员在前端输入的明文 secret 只用于首次保存或主动覆盖；发起授权时，后端会读取已保存并加密保存的 secret。如果编辑策略时留空，AsterDrive 会保留已有的 `client_secret_ciphertext`。API 响应和审计日志只暴露 `client_secret_configured` 这类布尔状态，不回显明文。
 
 创建或更新 OneDrive 策略时，AsterDrive 会在存储连接边界清空 legacy `storage_policies.access_key` / `storage_policies.secret_key` 字段。它们不作为 OneDrive Microsoft 应用凭据的长期存储位置。
 

@@ -32,7 +32,7 @@ If you are new to the repository, read this page first and then [`module-designs
 | How a REST endpoint is implemented | The corresponding `src/api/routes/**` file | Route handlers parse parameters, wrap auth, and adapt responses |
 | Where file, team, share, and upload rules live | `src/services/**` | Business semantics are centralized in the service layer |
 | How data is queried and written | `src/db/repository/**` | Repository code encapsulates database access and cross-database compatibility details |
-| How file content reaches disk, S3, or remote nodes | `src/storage/**` | Driver abstractions, concrete drivers, and remote protocol code live here |
+| How file content reaches disk, object storage, OneDrive, or remote nodes | `src/storage/**` | Connector descriptors, driver abstractions, concrete drivers, and remote protocol code live here |
 | Why WebDAV is different from REST | `src/webdav/**` | This is a separate protocol entry layer |
 | Why team spaces reuse personal-space semantics | `src/services/workspace_scope_service.rs`, `src/services/workspace_storage_service/`, `src/services/workspace_storage_core.rs`, `src/services/folder_service/`, `src/services/file_service/` | Scope switching, upload orchestration, and the unified storage core all live here |
 | How the schema evolves | `migration/`, `src/entities/**` | Migration files and entities need to be read together |
@@ -103,7 +103,7 @@ Things to remember:
 2. `src/api/routes/internal_storage.rs` validates internal signatures or presigned access
 3. `master_binding_service` resolves primary-node bindings and ingress policies
 4. `driver_registry` returns the actual storage driver
-5. The request is handled by the local / S3 / remote driver capability interface
+5. The request is handled by the local / object-storage / remote driver capability interface
 
 If you are debugging remote-node writes, do not start in the normal `files` / `upload` routes.
 
@@ -147,8 +147,10 @@ WebDAV does not go through `src/api/routes/**`. Instead:
 ├─────────────────────────────────────────────┤
 │ Infrastructure layer                        │
 │  - SeaORM + migration                       │
-│  - StorageDriver(Local/S3/TencentCOS/Remote)│
-│  - CacheBackend(Memory / Redis / Noop)      │
+│  - StorageConnector descriptor / action     │
+│  - StorageDriver(Local/S3/Azure/OneDrive)   │
+│  - StorageDriver(Tencent COS / Remote)      │
+│  - CacheBackend(Memory / Redis)             │
 ├─────────────────────────────────────────────┤
 │ Data layer                                  │
 │  - users / teams / team_members             │
@@ -187,7 +189,8 @@ The practical rule of thumb in this repository remains:
 | `src/api/routes/internal_storage.rs` | Follower internal object storage protocol |
 | `src/api/routes/remote_tunnel.rs` | Primary-side remote-node reverse tunnel internal entry |
 | `src/services/` | Central business rule layer |
-| `src/storage/drivers/` | Local, S3, and remote drivers |
+| `src/storage/connectors/` | Storage connectors: descriptors, fields, actions, connection tests, upload workflows, and credential requirements |
+| `src/storage/drivers/` | Local, S3-compatible, Azure Blob, Tencent COS, OneDrive, and remote drivers |
 | `src/storage/remote_protocol/tunnel/` | Reverse tunnel transport runtime, auth, registry, and streaming responses |
 | `src/webdav/` | WebDAV filesystem, auth, locks, and DeltaV support |
 | `frontend-panel/` | React 19 + Vite frontend; build artifacts are served by the backend |
@@ -398,7 +401,7 @@ Adding a category requires updating the allowed list and frontend zh/en i18n. Un
 | New follower internal protocol capability | `src/api/routes/internal_storage.rs`, `src/storage/remote_protocol.rs` |
 | Permissions, quota, locks, versions, share scope, team semantics | `src/services/**` |
 | New query, pagination, or filter condition | `src/db/repository/**` |
-| Local / S3 / remote object read/write and presign rules | `src/storage/**` |
+| Storage connector descriptors, connection tests, driver actions, upload strategies, and object read/write rules | `src/storage/**` |
 | WebDAV protocol behavior | `src/webdav/**` |
 | Table fields, indexes, defaults | `migration/` + `src/entities/**` |
 | Frontend page, state management, SDK call | `frontend-panel/src/**` |

@@ -1,6 +1,6 @@
 # 管理 API
 
-以下路径都相对于 `/api/v1`，且都需要管理员权限。
+以下路径都相对于 `/api/v1`。除存储 OAuth provider 回调 `/admin/policies/storage-authorization/callback` 外，本页接口都需要管理员权限。
 
 这页只保留管理端最值得记住的接口分组；更偏使用体验的内容见 [管理面板](../../../docs/guide/admin-console.md)。
 
@@ -60,9 +60,15 @@
 | `GET` | `/admin/policies/{id}/capacity` | 读取策略容量观测状态 |
 | `PATCH` | `/admin/policies/{id}` | 更新策略 |
 | `DELETE` | `/admin/policies/{id}` | 删除策略 |
+| `GET` | `/admin/policies/storage-drivers` | 列出存储 connector descriptor |
+| `GET` | `/admin/policies/storage-credential-providers` | 列出存储 OAuth 凭据 provider |
 | `POST` | `/admin/policies/{id}/test` | 测试已保存策略 |
 | `POST` | `/admin/policies/{id}/action` | 对已保存策略执行存储 action |
 | `POST` | `/admin/policies/{id}/promote-s3-driver` | 把通用 S3-compatible 策略提升为受支持的专用驱动 |
+| `POST` | `/admin/policies/{id}/storage-authorization/start` | 为策略启动存储 OAuth 授权 |
+| `GET` | `/admin/policies/{id}/storage-credentials` | 列出策略已保存的存储 OAuth 凭据 |
+| `POST` | `/admin/policies/{id}/storage-credentials/{provider}/validate` | 验证策略已保存的存储 OAuth 凭据 |
+| `GET` | `/admin/policies/storage-authorization/callback` | 存储 OAuth provider 回调入口，不要求管理员 JWT，处理后重定向到管理页 |
 | `POST` | `/admin/policies/test` | 用临时参数测试连接 |
 | `POST` | `/admin/policies/action` | 用草稿策略参数执行存储 action |
 
@@ -85,28 +91,109 @@
 
 当前实现注意点：
 
-- `driver_type` 当前支持 `local`、`s3`、`tencent_cos` 和 `remote`
+- `driver_type` 当前支持 `local`、`s3`、`azure_blob`、`tencent_cos`、`remote` 和 `onedrive`
+- `GET /admin/policies/storage-drivers` 返回 `StorageConnectorDescriptor` 列表，前端应以 descriptor 的 `capabilities`、`fields`、`upload_workflows`、`actions` 和 `credential_mode` 决定表单、连接测试、上传/下载策略和操作入口，不要在前端维护一份 driver-type 能力矩阵
 - 创建和更新都会采用请求里的 `chunk_size`
 - `options` 当前承载策略级行为：
-  - S3 / Remote 上传下载策略，例如 `{"s3_upload_strategy":"presigned","s3_download_strategy":"presigned","remote_upload_strategy":"presigned","remote_download_strategy":"presigned"}`
+  - S3-compatible / Azure Blob / Tencent COS 这类对象存储 connector 继续复用 `s3_upload_strategy` / `s3_download_strategy` 表达传输策略，例如 `{"s3_upload_strategy":"presigned","s3_download_strategy":"presigned"}`
+  - Remote 上传下载策略，例如 `{"remote_upload_strategy":"presigned","remote_download_strategy":"presigned"}`
   - 本地策略的内容去重开关 `content_dedup`
   - 通用 S3 path-style 访问开关：`s3_path_style`，默认 `true`
   - S3 连接 / 读取 / 操作超时：`s3_connect_timeout_secs`、`s3_read_timeout_secs`、`s3_operation_timeout_secs`
   - 存储原生缩略图 / 图片预览：`storage_native_processing_enabled`、`thumbnail_processor`、`thumbnail_extensions`
   - 存储原生媒体元数据：`storage_native_media_metadata_enabled`、`media_metadata_extensions`
+  - OneDrive 位置选项：`onedrive_account_mode`、`onedrive_tenant`、`onedrive_site_id`、`onedrive_drive_id`、`onedrive_group_id`、`onedrive_root_item_id`
+- `application_config.microsoft_graph` 用于保存 OneDrive / Microsoft Graph 应用配置；client secret 只写入加密存储，API 响应只暴露 `client_secret_configured`
+- `driver_type = "azure_blob"` 使用 Azure Blob Block Blob 能力，预签名上传使用 SAS URL，前端直传时需要带 `x-ms-blob-type: BlockBlob`
+- `driver_type = "onedrive"` 使用 Microsoft Graph OAuth 凭据，授权前需要先保存策略和 `application_config.microsoft_graph`
 - `driver_type = "tencent_cos"` 普通读写复用 S3-compatible 对象存储路径，会校验 Tencent COS endpoint 形态；策略启用后可通过 COS CI 暴露原生缩略图、图片预览和媒体元数据能力
-- 内置 Local、S3-compatible 和 Remote 驱动不暴露存储原生缩略图、图片预览或媒体元数据能力
+- 内置 Local、S3-compatible、Azure Blob、OneDrive 和 Remote 驱动不暴露存储原生缩略图、图片预览或媒体元数据能力
 - 旧配置 `{"presigned_upload":true}` 仍兼容，等价于 S3 预签名上传策略
-- `POST /admin/policies/{id}/promote-s3-driver` 当前支持把通用 `s3` 策略提升为 `tencent_cos`。请求体是 `{ "target_driver_type": "tencent_cos" }`。提升时不允许改变 bucket；若该策略还有活动上传 session，或目标驱动不能接受当前 endpoint / bucket 组合，会直接拒绝。
+- `POST /admin/policies/{id}/promote-s3-driver` 当前支持把通用 `s3` 策略提升为 `tencent_cos`。请求体必须包含目标驱动和当前 endpoint / bucket，例如 `{ "target_driver_type": "tencent_cos", "endpoint": "https://bucket-1250000000.cos.ap-guangzhou.myqcloud.com", "bucket": "bucket-1250000000" }`。提升时不允许改变 bucket；若该策略还有活动上传 session，或目标驱动不能接受当前 endpoint / bucket 组合，会直接拒绝。
 - REST 已经可以通过 `allowed_types` 管理策略允许的 MIME / 类型列表；不传时创建会使用空列表，更新会保持原值
 - `driver_type = "remote"` 时需要绑定 `remote_node_id`，远端节点本身通过 `/admin/remote-nodes` 管理
 - 当前 `PATCH` 不能修改 `driver_type`
 - `GET /admin/policies` 支持 `limit`、`offset`、`sort_by`、`sort_order`
 - `GET /admin/policies/{id}/capacity` 返回 `StoragePolicyCapacityInfo`，其中 `capacity.status` 为 `supported` / `unsupported` / `unavailable`：
   - Local 驱动通过文件系统容量接口返回 `total_bytes`、`available_bytes`、`used_bytes`
-  - S3 驱动明确返回 `StorageErrorKind::Unsupported`，服务层转换成 `unsupported` 状态，不伪造 bucket 容量
+  - S3-compatible 和 Azure Blob 驱动明确返回 `StorageErrorKind::Unsupported`，服务层转换成 `unsupported` 状态，不伪造 bucket / account 容量
+  - OneDrive 驱动通过 Microsoft Graph drive quota 返回容量信息
   - Remote 驱动通过 follower 内部协议 `/internal/storage/capacity` 转发实际接收落点的容量能力
 - `DELETE /admin/policies/{id}` 支持 `?force=true`；这只会强制清理仍引用该策略的上传 session，仍有 blob 或策略组项引用时照样拒绝删除。若清理后还有临时对象或 multipart upload 需要延后处理，会创建 `storage_policy_temp_cleanup` 后台任务
+
+### 存储连接测试
+
+`POST /admin/policies/{id}/test` 和 `POST /admin/policies/test` 成功时返回普通空成功响应：
+
+```json
+{
+  "code": "success",
+  "msg": "",
+  "data": {}
+}
+```
+
+连接失败时不再返回 `StoragePolicyProbeResult` 这类成功 payload，而是走标准错误响应，并通过 `error.diagnostic` 暴露脱敏诊断：
+
+```json
+{
+  "code": "storage.auth_failed",
+  "msg": "storage authentication failed",
+  "error": {
+    "retryable": false,
+    "diagnostic": {
+      "kind": "auth",
+      "message": "credentials were rejected by the storage provider"
+    }
+  }
+}
+```
+
+草稿测试请求支持可选 `policy_id`。编辑已保存策略时，如果 `access_key`、`secret_key` 等敏感字段为空，S3-compatible、Azure Blob 和 Tencent COS connector 会从该策略已保存凭据补齐空白字段；新建未保存策略时仍必须传完整凭据。
+
+### 存储 OAuth 凭据
+
+这组接口当前主要服务 OneDrive / Microsoft Graph connector：
+
+- `GET /admin/policies/storage-credential-providers` 会列出 provider。当前 `microsoft_graph` 可用，`google_drive` 只是预留且 `supported = false`
+- 创建或更新 OneDrive 策略时，先通过 `application_config.microsoft_graph` 保存 Microsoft Graph app 配置；client secret 会加密落库
+- `POST /admin/policies/{id}/storage-authorization/start` 只需要发送 provider，后端会复用已保存的 application config 发起授权
+- 授权成功后，回调入口会写入 `storage_policy_credentials` 并重定向到 `/admin/policies?storage_authorization=success&policy_id=...`；这条 callback 不要求管理员 JWT，因为它由 Microsoft Graph 等 provider 从浏览器跳回
+- `GET /admin/policies/{id}/storage-credentials` 返回凭据状态、租户、账号标签、scope、过期和刷新时间，不返回 access token / refresh token
+- `POST /admin/policies/{id}/storage-credentials/{provider}/validate` 会用已保存凭据验证实际可用性，并按结果更新 `authorized`、`reauth_required`、`permission_denied` 或 `invalid`
+
+启动授权请求示例：
+
+```http
+POST /api/v1/admin/policies/12/storage-authorization/start
+```
+
+```json
+{
+  "provider": "microsoft_graph"
+}
+```
+
+成功响应里的 `authorization_url` 交给浏览器跳转：
+
+```json
+{
+  "code": "success",
+  "msg": "",
+  "data": {
+    "authorization_url": "https://login.microsoftonline.com/common/oauth2/v2.0/authorize?...",
+    "expires_in": 300,
+    "provider": "microsoft_graph",
+    "microsoft_graph": {
+      "cloud": "global",
+      "tenant": "common",
+      "client_id": "00000000-0000-0000-0000-000000000000",
+      "client_secret_configured": true,
+      "scopes": ["offline_access", "Files.ReadWrite.All", "Sites.ReadWrite.All"]
+    }
+  }
+}
+```
 
 ### 存储策略 action
 

@@ -196,6 +196,10 @@ AWS S3 的 region 要和 bucket 所在 region 一致。
 - 凭证能读写目标位置
 - path-style / region 没填错
 
+编辑已有策略时，如果 Access Key 或 Secret Key 字段留空，草稿连接测试会复用这条策略已经保存的凭据。这样轮换 endpoint、region、path-style 或 prefix 时，不需要为了测试连接重新粘贴 secret。新建策略没有可复用凭据，仍然必须把必填凭据填完整。
+
+连接测试失败时，后台会优先展示后端返回的诊断说明。脚本或 API 客户端可以读取标准错误响应里的 `error.diagnostic.message`；这里会尽量保留服务商返回的可排查信息，同时脱敏 secret、SAS、account key 等敏感值。
+
 如果连接测试失败，不要继续把用户切到这条策略。先按下面顺序查：
 
 1. Endpoint 从 AsterDrive 服务器能不能访问

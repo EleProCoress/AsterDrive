@@ -62,7 +62,7 @@
 | `POST` | `/teams/{team_id}/files/upload/init` | 协商团队上传模式 |
 | `GET` | `/teams/{team_id}/files/upload/sessions` | 列出团队空间可恢复上传 session |
 | `PUT` | `/teams/{team_id}/files/upload/{upload_id}/{chunk_number}` | 上传团队分片 |
-| `POST` | `/teams/{team_id}/files/upload/{upload_id}/presign-parts` | 批量申请团队 S3 multipart part URL |
+| `POST` | `/teams/{team_id}/files/upload/{upload_id}/presign-parts` | 批量申请团队对象存储 / remote multipart part URL |
 | `POST` | `/teams/{team_id}/files/upload/{upload_id}/complete` | 完成团队上传 |
 | `GET` | `/teams/{team_id}/files/upload/{upload_id}` | 查询团队上传进度 |
 | `DELETE` | `/teams/{team_id}/files/upload/{upload_id}` | 取消团队上传 |

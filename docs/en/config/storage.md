@@ -52,7 +52,36 @@ If you are migrating existing data, do not directly change the old policy path, 
 | Single-file size limit | Maximum upload size. `0` = unlimited. |
 | Chunk size | Size of each chunk for large-file uploads |
 | Default policy | Preferred by newly created default groups or default routing rules |
-| Extra options | Local content deduplication, S3/COS upload and download modes, S3 path-style access, remote upload and download modes, storage-native processing, and so on |
+| Extra options | Local content deduplication, S3 / Azure Blob / COS upload and download modes, S3 path-style access, OneDrive target-drive location, remote upload and download modes, storage-native processing, and so on |
+
+The storage policy form is not driven only by frontend hardcoded provider fields. AsterDrive reads each driver's `StorageConnector` descriptor from the backend, including fields, capabilities, upload workflows, and management actions. When a storage backend grows or changes, the admin UI can follow the backend descriptor instead of re-creating a parallel capability table.
+
+## Reading Connection Tests
+
+Storage policies have two connection-test paths:
+
+- **Test saved policy**: probe the policy already saved in the database.
+- **Test draft settings**: probe the current form values before saving. For static-credential backends such as S3, Azure Blob, and Tencent COS, blank credential fields can reuse the saved credentials for the same policy.
+
+A successful connection test means the AsterDrive server can reach the backend and the basic read/write path for credentials, bucket / container / drive / follower ingress is usable. It does not prove that browsers can directly reach object storage or a follower node. If you use `presigned`, still check browser networking, HTTPS certificates, CORS, and exposed response headers.
+
+When a connection test fails, the admin console prefers the standard error response's `error.diagnostic.message`. The diagnostic is derived from backend storage errors, keeps useful troubleshooting context where possible, and redacts sensitive values such as SAS tokens, account keys, and secret keys. Scripts and third-party clients can read the same shape:
+
+```json
+{
+  "code": "storage.permission_denied",
+  "msg": "Storage permission denied",
+  "error": {
+    "retryable": false,
+    "diagnostic": {
+      "kind": "permission",
+      "message": "provider denied access to the target prefix"
+    }
+  }
+}
+```
+
+The top-level `code` remains the stable error code. `diagnostic.message` is administrator-facing text and should not be used for program branches.
 
 ::: warning Storage-native processing can incur provider charges
 `Storage-native processing` is a master switch on each storage policy. AsterDrive only calls native data-processing features exposed by the resolved storage driver after this switch is enabled. For Tencent COS policies, this maps to COS CI.
@@ -88,7 +117,7 @@ When configuring it, keep the field names straight: Endpoint is the Blob service
 
 Suitable when files should be written to Microsoft Graph-accessible OneDrive, SharePoint document libraries, or Microsoft 365 group drives.
 
-OneDrive policies require a Microsoft app registration and administrator delegated OAuth authorization. The target drive can be resolved automatically after authorization, or specified with a Drive ID, SharePoint site ID, or group ID. See the [OneDrive storage policy tutorial](/en/storage/onedrive) for the full flow.
+OneDrive policies require a Microsoft app registration and administrator delegated OAuth authorization. Save the policy and Microsoft Graph application credentials before starting authorization; the authorization request does not carry unsaved Client ID / Secret drafts. The target drive can be resolved automatically after authorization, or specified with a Drive ID, SharePoint site ID, or group ID. See the [OneDrive storage policy tutorial](/en/storage/onedrive) for the full flow.
 
 ### `tencent_cos`
 
