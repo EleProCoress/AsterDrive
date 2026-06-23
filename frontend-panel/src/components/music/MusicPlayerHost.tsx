@@ -26,6 +26,7 @@ import { resolveApiResourceUrl } from "@/lib/apiUrl";
 import { prepareAuthenticatedResource } from "@/lib/authenticatedResource";
 import { formatBytes } from "@/lib/format";
 import { logger } from "@/lib/logger";
+import { resourceRequestPath } from "@/lib/resourceRequest";
 import { supportsThumbnailExtension } from "@/lib/thumbnailSupport";
 import { cn } from "@/lib/utils";
 import { ApiPendingError } from "@/services/http";
@@ -583,11 +584,27 @@ export function MusicPlayerHost() {
 	useEffect(() => {
 		latestTrackIdRef.current = track?.id ?? null;
 	}, [track?.id]);
+	const trackResource = track?.resource ?? null;
+	const trackResourcePath = trackResource
+		? resourceRequestPath(trackResource)
+		: null;
+	const trackResourceRef = useRef(trackResource);
+	useEffect(() => {
+		trackResourceRef.current = trackResource;
+	}, [trackResource]);
+	const trackNameRef = useRef(track?.name ?? "");
+	useEffect(() => {
+		trackNameRef.current = track?.name ?? "";
+	}, [track?.name]);
+	const translateRef = useRef(t);
+	useEffect(() => {
+		translateRef.current = t;
+	}, [t]);
 	const source = useMemo(
-		() => (track ? resolveApiResourceUrl(track.path) : null),
-		[track],
+		() => (trackResourcePath ? resolveApiResourceUrl(trackResourcePath) : null),
+		[trackResourcePath],
 	);
-	const trackKey = track ? `${track.id}:${track.path}` : null;
+	const trackKey = track?.id ?? null;
 	const progress =
 		duration > 0 && Number.isFinite(duration)
 			? Math.min(100, Math.max(0, (currentTime / duration) * 100))
@@ -991,7 +1008,7 @@ export function MusicPlayerHost() {
 
 	useEffect(() => {
 		const audio = audioRef.current;
-		if (!audio || !source || !track) return;
+		if (!audio || !source || !activeTrackId) return;
 		void playRequestVersion;
 
 		if (!playRequested) {
@@ -1000,16 +1017,17 @@ export function MusicPlayerHost() {
 		}
 
 		let cancelled = false;
-		const trackId = track.id;
-		const trackName = track.name;
-		const trackPath = track.path;
+		const trackId = activeTrackId;
+		const trackName = trackNameRef.current;
+		const playbackResource = trackResourceRef.current;
+		if (!playbackResource) return;
 		const controller = new AbortController();
 		let prepared = false;
 		playbackPreparationFailedRef.current = false;
 		playbackPreparationPendingRef.current = true;
 		void (async () => {
 			try {
-				await prepareAuthenticatedResource(trackPath, {
+				await prepareAuthenticatedResource(playbackResource, {
 					signal: controller.signal,
 				});
 				if (cancelled || latestTrackIdRef.current !== trackId) return;
@@ -1030,7 +1048,7 @@ export function MusicPlayerHost() {
 				}
 				playbackPreparationPendingRef.current = false;
 				logger.warn("music playback start failed", trackName, playError);
-				setError(t("music_player_load_failed"));
+				setError(translateRef.current("music_player_load_failed"));
 				setPlaybackRequested(false);
 				setPlaying(false);
 				scheduleNextAfterPlaybackError(trackId);
@@ -1050,8 +1068,7 @@ export function MusicPlayerHost() {
 		setPlaybackRequested,
 		setPlaying,
 		source,
-		t,
-		track,
+		activeTrackId,
 	]);
 
 	if (!track) {

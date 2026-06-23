@@ -11,7 +11,7 @@ import { useTranslation } from "react-i18next";
 import { Navigate, useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import type { FileBrowserContextValue } from "@/components/files/FileBrowserContext";
-import { getImagePreviewNavigation } from "@/components/files/preview/imagePreviewNavigation";
+import { getImagePreviewNavigation } from "@/components/files/preview/navigation/imagePreviewNavigation";
 import { TagLibraryManagerDialog } from "@/components/files/TagLibraryManagerDialog";
 import { TagManagerDialog } from "@/components/files/TagManagerDialog";
 import { AppLayout } from "@/components/layout/AppLayout";
@@ -20,6 +20,10 @@ import { usePageTitle } from "@/hooks/usePageTitle";
 import { useSelectionShortcuts } from "@/hooks/useSelectionShortcuts";
 import { startAuthenticatedDownload } from "@/lib/authenticatedDownload";
 import { subscribeStorageChange } from "@/lib/storageChangeBus";
+import {
+	beginLocalStorageDeleteMutation,
+	decideVirtualStorageViewRefresh,
+} from "@/lib/storageMutationCoordinator";
 import {
 	FILE_CATEGORY_BY_ROUTE_SEGMENT,
 	workspaceFolderPath,
@@ -116,17 +120,6 @@ function categoryResultsReducer(
 
 function getCategoryLabelKey(category: FileCategory) {
 	return `search:category_${category}`;
-}
-
-function tagEventAffectsCategoryResults(event: {
-	file_ids: number[];
-	kind: string;
-	root_affected: boolean;
-}) {
-	return (
-		event.kind.startsWith("tag.") &&
-		(event.root_affected || event.file_ids.length > 0)
-	);
 }
 
 export default function CategoryBrowserPage() {
@@ -248,12 +241,17 @@ export default function CategoryBrowserPage() {
 	useEffect(() => {
 		if (!category) return;
 		return subscribeStorageChange((event) => {
-			if (!tagEventAffectsCategoryResults(event)) {
+			if (
+				!decideVirtualStorageViewRefresh(event, {
+					currentWorkspace: workspace,
+					view: "category",
+				})
+			) {
 				return;
 			}
 			void loadCategory(0, "replace");
 		});
-	}, [category, loadCategory]);
+	}, [category, loadCategory, workspace]);
 
 	const activeInfoTarget = useMemo<FileBrowserInfoTarget | null>(() => {
 		if (!infoTarget?.file) return null;
@@ -376,15 +374,20 @@ export default function CategoryBrowserPage() {
 	const handleDelete = useCallback(
 		async (type: "file" | "folder", id: number) => {
 			if (type !== "file") return;
+			const mutation = beginLocalStorageDeleteMutation({
+				workspace,
+				fileIds: [id],
+			});
 			try {
 				await fileService.deleteFile(id);
 				toast.success(t("files:delete_success"));
 				void loadCategory(0, "replace");
 			} catch (deleteError) {
+				mutation.rollback();
 				handleApiError(deleteError);
 			}
 		},
-		[loadCategory, t],
+		[loadCategory, t, workspace],
 	);
 
 	const handleVersions = useCallback(

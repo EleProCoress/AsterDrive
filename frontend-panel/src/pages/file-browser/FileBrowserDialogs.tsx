@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 import { FilePreview } from "@/components/files/FilePreview";
-import type { ImagePreviewNavigation } from "@/components/files/preview/imagePreviewNavigation";
+import type { ImagePreviewNavigation } from "@/components/files/preview/navigation/imagePreviewNavigation";
+import type { FilePreviewResources } from "@/components/files/preview/resources/filePreviewResources";
 import { useRetainedDialogValue } from "@/hooks/useRetainedDialogValue";
 import {
 	ArchiveTaskNameDialog,
@@ -219,14 +220,36 @@ export function FileBrowserDialogs({
 								}
 							: undefined
 					}
-					previewLinkFactory={() =>
-						fileService.createPreviewLink(retainedPreviewState.file.id)
-					}
-					archivePreviewFactory={(options) =>
-						fileService.getArchivePreview(retainedPreviewState.file.id, options)
-					}
-					wopiSessionFactory={(appKey) =>
-						fileService.createWopiSession(retainedPreviewState.file.id, appKey)
+					resources={
+						{
+							scope: "personal",
+							paths: {
+								download: fileService.downloadPath(
+									retainedPreviewState.file.id,
+								),
+								imagePreview: fileService.imagePreviewPath(
+									retainedPreviewState.file.id,
+								),
+								thumbnail: fileService.thumbnailPath(
+									retainedPreviewState.file.id,
+								),
+							},
+							resolve: fileService.resolveResourceHandle,
+							actions: {
+								createExternalPreviewLink: () =>
+									fileService.createPreviewLink(retainedPreviewState.file.id),
+								loadArchiveManifest: (options) =>
+									fileService.getArchivePreview(
+										retainedPreviewState.file.id,
+										options,
+									),
+								launchWopiSession: (appKey) =>
+									fileService.createWopiSession(
+										retainedPreviewState.file.id,
+										appKey,
+									),
+							},
+						} satisfies FilePreviewResources
 					}
 				/>
 			) : null}

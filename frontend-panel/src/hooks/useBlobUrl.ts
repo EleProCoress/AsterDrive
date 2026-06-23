@@ -6,6 +6,8 @@ import {
 	type ResourcePath,
 	resourceCacheKey,
 	resourceCanonicalEtag,
+	resourceConditionalHeaders,
+	resourceCredentials,
 	resourceRequestPath,
 } from "@/lib/resourceRequest";
 import { api } from "@/services/http";
@@ -40,6 +42,7 @@ interface FetchBlobUrlOptions {
 	previousBlob?: Blob;
 	previousEtag: string | null;
 	previousObjectUrl?: string;
+	resource: ResourcePath;
 	requestPath: string;
 }
 
@@ -309,10 +312,16 @@ async function fetchBlobUrlFromNetwork({
 	previousBlob,
 	previousEtag,
 	previousObjectUrl,
+	resource,
 	requestPath,
 }: FetchBlobUrlOptions): Promise<string> {
 	const headers: Record<string, string> = {};
-	if (previousObjectUrl && previousEtag && !canonicalEtag) {
+	if (
+		previousObjectUrl &&
+		previousEtag &&
+		!canonicalEtag &&
+		resourceConditionalHeaders(resource) === "allowed"
+	) {
 		headers["If-None-Match"] = previousEtag;
 	}
 	const MAX_RETRIES = 5;
@@ -322,7 +331,10 @@ async function fetchBlobUrlFromNetwork({
 			api.client.get(requestPath, {
 				headers,
 				responseType: "blob",
-				withCredentials: shouldSendResourceCredentials(requestPath),
+				withCredentials: resourceCredentials(
+					resource,
+					shouldSendResourceCredentials,
+				),
 				validateStatus: (status) =>
 					status === 200 ||
 					status === 304 ||
@@ -523,6 +535,7 @@ async function acquireBlobUrl(
 					previousBlob: persisted.blob,
 					previousEtag: persisted.etag,
 					previousObjectUrl: objectUrl,
+					resource,
 					requestPath,
 				}).catch(() => {});
 
@@ -538,6 +551,7 @@ async function acquireBlobUrl(
 			previousBlob,
 			previousEtag,
 			previousObjectUrl,
+			resource,
 			requestPath,
 		});
 	})();
@@ -600,6 +614,12 @@ export function useBlobUrl(
 	const cacheKey = resource ? resourceCacheKey(resource) : null;
 	const requestPath = resource ? resourceRequestPath(resource) : null;
 	const canonicalEtag = resource ? resourceCanonicalEtag(resource) : null;
+	const shouldIncludeCredentials = resource
+		? resourceCredentials(resource, shouldSendResourceCredentials)
+		: false;
+	const conditionalHeaders = resource
+		? resourceConditionalHeaders(resource)
+		: "allowed";
 
 	const retry = () => {
 		setError(false);
@@ -620,6 +640,8 @@ export function useBlobUrl(
 		const effectiveResource: ResourcePath = {
 			cacheKey,
 			etag: canonicalEtag,
+			credentials: shouldIncludeCredentials ? "include" : "omit",
+			conditionalHeaders,
 			requestPath,
 		};
 
@@ -662,7 +684,15 @@ export function useBlobUrl(
 			unsubscribe();
 			releaseBlobUrl(cacheKey);
 		};
-	}, [cacheKey, canonicalEtag, lane, requestPath, retryCount]);
+	}, [
+		cacheKey,
+		canonicalEtag,
+		conditionalHeaders,
+		lane,
+		requestPath,
+		retryCount,
+		shouldIncludeCredentials,
+	]);
 
 	return { blob, blobUrl, error, loading, retry };
 }

@@ -64,6 +64,28 @@ const mockState = vi.hoisted(() => ({
 	},
 	readInternalDragData: vi.fn(),
 	refreshUser: vi.fn(),
+	resolveResourceHandle: vi.fn(
+		async (
+			fileId: number,
+			request: { delivery_mode: string; representation?: string },
+		) => ({
+			kind: "ready",
+			identity: {
+				cacheKey: `/files/${fileId}/download`,
+				etag: null,
+				scope: "personal",
+			},
+			request: {
+				url: `/files/${fileId}/download?disposition=inline`,
+				credentials: "include",
+				conditionalHeaders: "allowed",
+				redirectPolicy: "same_origin_only",
+			},
+			delivery: {
+				mode: request.delivery_mode,
+			},
+		}),
+	),
 	authUser: {
 		id: 1,
 		role: "user" as "admin" | "user",
@@ -589,9 +611,7 @@ vi.mock("@/components/files/FilePreview", () => ({
 		imageNavigation,
 		onClose,
 		onFileUpdated,
-		previewLinkFactory,
-		archivePreviewFactory,
-		wopiSessionFactory,
+		resources,
 	}: {
 		file: { id: number; name: string };
 		open?: boolean;
@@ -603,9 +623,14 @@ vi.mock("@/components/files/FilePreview", () => ({
 		};
 		onClose: () => void;
 		onFileUpdated?: () => void;
-		previewLinkFactory?: () => unknown;
-		archivePreviewFactory?: () => unknown;
-		wopiSessionFactory?: (appKey: string) => unknown;
+		resources?: {
+			actions?: {
+				createExternalPreviewLink?: () => unknown;
+				loadArchiveManifest?: () => unknown;
+				launchWopiSession?: (appKey: string) => unknown;
+			};
+			resolve?: (fileId: number, request: { delivery_mode: string }) => unknown;
+		};
 	}) =>
 		open ? (
 			<div>
@@ -623,13 +648,32 @@ vi.mock("@/components/files/FilePreview", () => ({
 				<button type="button" onClick={onFileUpdated}>
 					refresh-preview-file
 				</button>
-				<button type="button" onClick={() => previewLinkFactory?.()}>
+				<button
+					type="button"
+					onClick={() =>
+						resources?.resolve?.(file.id, {
+							delivery_mode: "blob_url",
+						})
+					}
+				>
+					resolve-preview-resource
+				</button>
+				<button
+					type="button"
+					onClick={() => resources?.actions?.createExternalPreviewLink?.()}
+				>
 					create-preview-link
 				</button>
-				<button type="button" onClick={() => archivePreviewFactory?.()}>
+				<button
+					type="button"
+					onClick={() => resources?.actions?.loadArchiveManifest?.()}
+				>
 					get-archive-preview
 				</button>
-				<button type="button" onClick={() => wopiSessionFactory?.("office")}>
+				<button
+					type="button"
+					onClick={() => resources?.actions?.launchWopiSession?.("office")}
+				>
 					create-wopi-session
 				</button>
 				<button
@@ -968,6 +1012,9 @@ vi.mock("@/services/fileService", () => ({
 			mockState.createWopiSession(...args),
 		downloadPath: (id: number) => `/files/${id}/download`,
 		getMediaMetadata: vi.fn(async () => null),
+		imagePreviewPath: (id: number) => `/files/${id}/image-preview`,
+		resolveResourceHandle: (...args: unknown[]) =>
+			mockState.resolveResourceHandle(...args),
 		setFileLock: (...args: unknown[]) => mockState.setFileLock(...args),
 		setFolderLock: (...args: unknown[]) => mockState.setFolderLock(...args),
 		thumbnailPath: (id: number) => `/files/${id}/thumbnail`,
@@ -1143,6 +1190,7 @@ describe("FileBrowserPage", () => {
 		mockState.thumbnailSupportStore.load.mockReset();
 		mockState.readInternalDragData.mockReset();
 		mockState.refreshUser.mockReset();
+		mockState.resolveResourceHandle.mockClear();
 		mockState.authUser = {
 			id: 1,
 			role: "user",
@@ -1901,29 +1949,39 @@ describe("FileBrowserPage", () => {
 		}
 	});
 
-	it("moves items, dispatches folder-tree updates, and shows the formatted move toast", async () => {
-		render(<FileBrowserPage />);
+	it("moves items, publishes storage updates, and shows the formatted move toast", async () => {
+		const { subscribeStorageChange } = await import("@/lib/storageChangeBus");
+		const storageEvents: unknown[] = [];
+		const unsubscribe = subscribeStorageChange((event) => {
+			storageEvents.push(event);
+		});
 
 		vi.useFakeTimers();
+		try {
+			render(<FileBrowserPage />);
 
-		fireEvent.click(screen.getByRole("button", { name: "move-selection" }));
+			fireEvent.click(screen.getByRole("button", { name: "move-selection" }));
 
-		await Promise.resolve();
-		await Promise.resolve();
-		expect(mockState.store.moveToFolder).toHaveBeenCalledWith([7], [8], 20);
-		await vi.advanceTimersByTimeAsync(FILE_BROWSER_FEEDBACK_DURATION_MS);
-		await Promise.resolve();
-		await Promise.resolve();
-		vi.useRealTimers();
+			await Promise.resolve();
+			await Promise.resolve();
+			expect(mockState.store.moveToFolder).toHaveBeenCalledWith([7], [8], 20);
+			await vi.advanceTimersByTimeAsync(FILE_BROWSER_FEEDBACK_DURATION_MS);
+			await Promise.resolve();
+			await Promise.resolve();
 
-		expect(mockState.dispatchEvent).toHaveBeenCalledWith(
-			expect.objectContaining({
-				type: "folder-tree-move",
-			}),
-		);
-		expect(mockState.toastSuccess).toHaveBeenCalledWith("move:ok", {
-			description: "move:desc",
-		});
+			expect(storageEvents).toContainEqual(
+				expect.objectContaining({
+					folder_ids: [8],
+					kind: "folder.updated",
+				}),
+			);
+			expect(mockState.toastSuccess).toHaveBeenCalledWith("move:ok", {
+				description: "move:desc",
+			});
+		} finally {
+			unsubscribe();
+			vi.useRealTimers();
+		}
 	});
 
 	it("handles trash drops via the layout and refreshes selection and user state", async () => {
@@ -2008,7 +2066,7 @@ describe("FileBrowserPage", () => {
 			screen.getByRole("button", { name: "refresh-preview-file" }),
 		);
 		fireEvent.click(
-			screen.getByRole("button", { name: "create-preview-link" }),
+			screen.getByRole("button", { name: "resolve-preview-resource" }),
 		);
 		fireEvent.click(
 			screen.getByRole("button", { name: "get-archive-preview" }),
@@ -2018,7 +2076,10 @@ describe("FileBrowserPage", () => {
 		);
 
 		expect(mockState.store.refresh).toHaveBeenCalledTimes(1);
-		expect(mockState.createPreviewLink).toHaveBeenCalledWith(31);
+		expect(mockState.resolveResourceHandle).toHaveBeenCalledWith(31, {
+			delivery_mode: "blob_url",
+		});
+		expect(mockState.createPreviewLink).not.toHaveBeenCalled();
 		expect(mockState.getArchivePreview).toHaveBeenCalledWith(31, undefined);
 		expect(mockState.createWopiSession).toHaveBeenCalledWith(31, "office");
 

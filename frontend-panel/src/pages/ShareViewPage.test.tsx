@@ -10,15 +10,19 @@ import { FOLDER_LIMIT } from "@/lib/constants";
 import ShareViewPage, { SharePreviewElement } from "@/pages/ShareViewPage";
 import { ApiError } from "@/services/http";
 import { useFileStore } from "@/stores/fileStore";
+import type { FileResourceHandleRequest } from "@/types/api";
 import { ApiErrorCode } from "@/types/api-helpers";
 
 const TEST_SHARE_PASSWORD = "TEST_PASSWORD";
 
 interface CapturedPreviewFactories {
-	archivePreviewFactory?: () => Promise<unknown>;
-	loadMusicBackendMetadata?: (signal?: AbortSignal) => Promise<unknown>;
-	mediaStreamLinkFactory?: () => Promise<unknown>;
-	previewLinkFactory?: () => Promise<unknown>;
+	archiveManifestLoader?: () => Promise<unknown>;
+	createMediaStreamSession?: () => Promise<unknown>;
+	createExternalPreviewLink?: () => Promise<unknown>;
+	resolve?: (
+		fileId: number,
+		request: FileResourceHandleRequest,
+	) => Promise<unknown>;
 }
 
 const mockState = vi.hoisted(() => ({
@@ -344,39 +348,42 @@ vi.mock("@/components/files/FilePreview", () => ({
 	FilePreview: ({
 		file,
 		open = true,
-		downloadPath,
-		imagePreviewPath,
-		thumbnailPath,
+		resources,
 		editable,
-		archivePreviewFactory,
 		imageNavigation,
-		loadMusicBackendMetadata,
-		mediaStreamLinkFactory,
 		onClose,
-		previewLinkFactory,
 	}: {
 		file: { id: number; name: string };
 		open?: boolean;
-		downloadPath?: string;
-		imagePreviewPath?: string;
-		thumbnailPath?: string;
+		resources?: {
+			paths: {
+				download: string;
+				imagePreview?: string;
+				thumbnail?: string;
+			};
+			resolve?: (
+				fileId: number,
+				request: FileResourceHandleRequest,
+			) => Promise<unknown>;
+			actions?: {
+				loadArchiveManifest?: () => Promise<unknown>;
+				createMediaStreamSession?: () => Promise<unknown>;
+				createExternalPreviewLink?: () => Promise<unknown>;
+			};
+		};
 		editable?: boolean;
-		archivePreviewFactory?: () => Promise<unknown>;
 		imageNavigation?: {
 			nextFile?: { id: number; name: string };
 			onNavigate: (file: { id: number; name: string }) => void;
 			previousFile?: { id: number; name: string };
 		};
-		loadMusicBackendMetadata?: (signal?: AbortSignal) => Promise<unknown>;
-		mediaStreamLinkFactory?: () => Promise<unknown>;
 		onClose?: () => void;
-		previewLinkFactory?: () => Promise<unknown>;
 	}) => {
 		mockState.previewFactories = {
-			archivePreviewFactory,
-			loadMusicBackendMetadata,
-			mediaStreamLinkFactory,
-			previewLinkFactory,
+			archiveManifestLoader: resources?.actions?.loadArchiveManifest,
+			createMediaStreamSession: resources?.actions?.createMediaStreamSession,
+			createExternalPreviewLink: resources?.actions?.createExternalPreviewLink,
+			resolve: resources?.resolve,
 		};
 
 		return open ? (
@@ -384,23 +391,23 @@ vi.mock("@/components/files/FilePreview", () => ({
 				<div
 					data-testid="file-preview"
 					data-name={file.name}
-					data-download-path={downloadPath ?? ""}
-					data-image-preview-path={imagePreviewPath ?? ""}
-					data-thumbnail-path={thumbnailPath ?? ""}
+					data-download-path={resources?.paths.download ?? ""}
+					data-image-preview-path={resources?.paths.imagePreview ?? ""}
+					data-thumbnail-path={resources?.paths.thumbnail ?? ""}
 					data-editable={String(Boolean(editable))}
 					data-next-image={imageNavigation?.nextFile?.name ?? ""}
 					data-previous-image={imageNavigation?.previousFile?.name ?? ""}
 					data-has-archive-preview-factory={String(
-						Boolean(archivePreviewFactory),
+						Boolean(resources?.actions?.loadArchiveManifest),
 					)}
 					data-has-media-stream-link-factory={String(
-						Boolean(mediaStreamLinkFactory),
+						Boolean(resources?.actions?.createMediaStreamSession),
 					)}
 				/>
 				<button
 					type="button"
 					onClick={() => {
-						void previewLinkFactory?.();
+						void resources?.actions?.createExternalPreviewLink?.();
 					}}
 				>
 					call-preview-link
@@ -408,7 +415,7 @@ vi.mock("@/components/files/FilePreview", () => ({
 				<button
 					type="button"
 					onClick={() => {
-						void archivePreviewFactory?.();
+						void resources?.actions?.loadArchiveManifest?.();
 					}}
 				>
 					call-archive-preview
@@ -416,15 +423,7 @@ vi.mock("@/components/files/FilePreview", () => ({
 				<button
 					type="button"
 					onClick={() => {
-						void loadMusicBackendMetadata?.(new AbortController().signal);
-					}}
-				>
-					call-music-metadata
-				</button>
-				<button
-					type="button"
-					onClick={() => {
-						void mediaStreamLinkFactory?.();
+						void resources?.actions?.createMediaStreamSession?.();
 					}}
 				>
 					call-stream-link
@@ -782,29 +781,6 @@ describe("ShareViewPage", () => {
 		});
 	});
 
-	async function collectPreviewFactoryErrors() {
-		const factories = mockState.previewFactories;
-		if (!factories) {
-			throw new Error("collectPreviewFactoryErrors: preview factories missing");
-		}
-
-		const errors: string[] = [];
-		const promises = [
-			factories.previewLinkFactory?.(),
-			factories.archivePreviewFactory?.(),
-			factories.loadMusicBackendMetadata?.(new AbortController().signal),
-			factories.mediaStreamLinkFactory?.(),
-		];
-		for (const promise of promises) {
-			if (promise) {
-				await promise.catch((error: Error) => {
-					errors.push(error.message);
-				});
-			}
-		}
-		return errors;
-	}
-
 	it("renders an unavailable panel for expired shares", async () => {
 		mockState.getInfo.mockRejectedValueOnce(
 			new ApiError(ApiErrorCode.ShareExpired, "expired"),
@@ -816,7 +792,7 @@ describe("ShareViewPage", () => {
 		expect(screen.getByText("unavailable")).toBeInTheDocument();
 	});
 
-	it("guards retained preview factories while share info is unavailable", async () => {
+	it("does not render retained preview resources while share info is unavailable", () => {
 		render(
 			<SharePreviewElement
 				info={null}
@@ -834,17 +810,8 @@ describe("ShareViewPage", () => {
 			/>,
 		);
 
-		expect(await screen.findByTestId("file-preview")).toHaveAttribute(
-			"data-name",
-			"orphaned-preview.mp3",
-		);
-
-		await expect(collectPreviewFactoryErrors()).resolves.toEqual([
-			"share preview link is unavailable",
-			"share archive preview is unavailable",
-			"share media metadata is unavailable",
-			"share media stream is unavailable",
-		]);
+		expect(screen.queryByTestId("file-preview")).not.toBeInTheDocument();
+		expect(mockState.previewFactories).toBeNull();
 	});
 
 	it("maps share load errors to the public unavailable panel", async () => {
@@ -1111,9 +1078,6 @@ describe("ShareViewPage", () => {
 		fireEvent.click(
 			screen.getByRole("button", { name: "call-archive-preview" }),
 		);
-		fireEvent.click(
-			screen.getByRole("button", { name: "call-music-metadata" }),
-		);
 		fireEvent.click(screen.getByRole("button", { name: "call-stream-link" }));
 
 		await waitFor(() => {
@@ -1125,6 +1089,42 @@ describe("ShareViewPage", () => {
 			expect(mockState.createStreamSession).toHaveBeenCalledWith("share-token");
 		});
 		expect(mockState.getMediaMetadata).not.toHaveBeenCalled();
+		await expect(
+			mockState.previewFactories?.resolve?.(-1, {
+				delivery_mode: "direct_url",
+				representation: "original",
+			}),
+		).resolves.toMatchObject({
+			identity: {
+				cacheKey: "/s/share-token/download",
+				scope: "share",
+			},
+			request: {
+				url: "/s/share-token/download",
+			},
+			delivery: {
+				mimeType: "application/pdf",
+				mode: "direct_url",
+			},
+		});
+		await expect(
+			mockState.previewFactories?.resolve?.(-1, {
+				delivery_mode: "blob_url",
+				representation: "thumbnail",
+			}),
+		).resolves.toMatchObject({
+			identity: {
+				cacheKey: "/s/share-token/thumbnail",
+				scope: "share",
+			},
+			request: {
+				url: "/s/share-token/thumbnail",
+			},
+			delivery: {
+				mimeType: "image/webp",
+				mode: "blob_url",
+			},
+		});
 
 		fireEvent.click(screen.getByRole("button", { name: /files:download/i }));
 
@@ -1167,7 +1167,7 @@ describe("ShareViewPage", () => {
 		);
 	});
 
-	it("loads media data support when the preview element has not bootstrapped it", async () => {
+	it("does not bootstrap media metadata support from the preview element", async () => {
 		mockState.mediaDataSupportStore.isLoaded = false;
 		mockState.getInfo.mockResolvedValueOnce({
 			download_count: 0,
@@ -1185,12 +1185,10 @@ describe("ShareViewPage", () => {
 		render(<ShareViewPage />);
 
 		expect(await screen.findByText("Manual.pdf")).toBeInTheDocument();
-		await waitFor(() => {
-			expect(mockState.mediaDataSupportStore.load).toHaveBeenCalledTimes(1);
-		});
+		expect(mockState.mediaDataSupportStore.load).not.toHaveBeenCalled();
 	});
 
-	it("passes media metadata loaders to audio file share previews", async () => {
+	it("falls back to file preview for shared audio without preview metadata loaders", async () => {
 		mockState.getInfo.mockResolvedValueOnce({
 			download_count: 0,
 			has_password: false,
@@ -1216,16 +1214,7 @@ describe("ShareViewPage", () => {
 			"data-download-path",
 			"/s/share-token/download",
 		);
-
-		fireEvent.click(
-			screen.getByRole("button", { name: "call-music-metadata" }),
-		);
-
-		await waitFor(() => {
-			expect(mockState.getMediaMetadata).toHaveBeenCalledWith("share-token", {
-				signal: expect.any(AbortSignal),
-			});
-		});
+		expect(mockState.getMediaMetadata).not.toHaveBeenCalled();
 	});
 
 	it("plays shared music directly without opening the file preview", async () => {
@@ -1375,9 +1364,6 @@ describe("ShareViewPage", () => {
 		fireEvent.click(
 			screen.getByRole("button", { name: "call-archive-preview" }),
 		);
-		fireEvent.click(
-			screen.getByRole("button", { name: "call-music-metadata" }),
-		);
 		fireEvent.click(screen.getByRole("button", { name: "call-stream-link" }));
 
 		await waitFor(() => {
@@ -1396,6 +1382,24 @@ describe("ShareViewPage", () => {
 			);
 		});
 		expect(mockState.getFolderFileMediaMetadata).not.toHaveBeenCalled();
+		await expect(
+			mockState.previewFactories?.resolve?.(5, {
+				delivery_mode: "blob_url",
+				representation: "auto",
+			}),
+		).resolves.toMatchObject({
+			identity: {
+				cacheKey: "/s/share-token/files/5/download",
+				scope: "share",
+			},
+			request: {
+				url: "/s/share-token/files/5/download",
+			},
+			delivery: {
+				mimeType: "text/plain",
+				mode: "blob_url",
+			},
+		});
 
 		fireEvent.click(
 			screen.getByRole("button", { name: "download:nested.txt" }),
@@ -1415,14 +1419,14 @@ describe("ShareViewPage", () => {
 	it("passes adjacent image navigation to folder share previews and updates folder-specific paths", async () => {
 		mockState.thumbnailSupportStore.config = {
 			audio_thumbnail: { enabled: false, extensions: [] },
-			extensions: ["jpg", "jpeg", "nef", "png", "webp"],
+			extensions: ["heic", "jpg", "jpeg", "png", "webp"],
 			image_preview: {
 				enabled: true,
-				extensions: ["jpg", "jpeg", "nef", "png", "webp"],
+				extensions: ["heic", "jpg", "jpeg", "png", "webp"],
 			},
 			image_thumbnail: {
 				enabled: true,
-				extensions: ["jpg", "jpeg", "nef", "png", "webp"],
+				extensions: ["heic", "jpg", "jpeg", "png", "webp"],
 			},
 			version: 1,
 			video_thumbnail: { enabled: false, extensions: [] },
@@ -1448,8 +1452,8 @@ describe("ShareViewPage", () => {
 				{ id: 12, mime_type: "image/jpeg", name: "second.jpg", size: 12 },
 				{
 					id: 13,
-					mime_type: "application/octet-stream",
-					name: "capture.nef",
+					mime_type: "image/heic",
+					name: "capture.heic",
 					size: 13,
 				},
 			],
@@ -1472,7 +1476,7 @@ describe("ShareViewPage", () => {
 		);
 		expect(screen.getByTestId("file-preview")).toHaveAttribute(
 			"data-previous-image",
-			"capture.nef",
+			"capture.heic",
 		);
 		expect(screen.getByTestId("file-preview")).toHaveAttribute(
 			"data-next-image",
@@ -1494,13 +1498,13 @@ describe("ShareViewPage", () => {
 		);
 		expect(screen.getByTestId("file-preview")).toHaveAttribute(
 			"data-next-image",
-			"capture.nef",
+			"capture.heic",
 		);
 
 		fireEvent.click(screen.getByRole("button", { name: "next-image" }));
 		expect(await screen.findByTestId("file-preview")).toHaveAttribute(
 			"data-name",
-			"capture.nef",
+			"capture.heic",
 		);
 		expect(screen.getByTestId("file-preview")).toHaveAttribute(
 			"data-download-path",
@@ -1514,6 +1518,24 @@ describe("ShareViewPage", () => {
 			"data-next-image",
 			"first.png",
 		);
+		await expect(
+			mockState.previewFactories?.resolve?.(13, {
+				delivery_mode: "blob_url",
+				representation: "auto",
+			}),
+		).resolves.toMatchObject({
+			identity: {
+				cacheKey: "/s/share-token/files/13/image-preview",
+				scope: "share",
+			},
+			request: {
+				url: "/s/share-token/files/13/image-preview",
+			},
+			delivery: {
+				mimeType: "image/webp",
+				mode: "blob_url",
+			},
+		});
 
 		fireEvent.click(screen.getByRole("button", { name: "previous-image" }));
 		expect(await screen.findByTestId("file-preview")).toHaveAttribute(
@@ -1799,7 +1821,7 @@ describe("ShareViewPage", () => {
 		}
 	});
 
-	it("passes folder media metadata loaders to audio folder previews", async () => {
+	it("falls back to file preview for folder audio without preview metadata loaders", async () => {
 		mockState.getInfo.mockResolvedValueOnce({
 			has_password: false,
 			name: "Shared Root",
@@ -1831,18 +1853,7 @@ describe("ShareViewPage", () => {
 			"data-download-path",
 			"/s/share-token/files/4/download",
 		);
-
-		fireEvent.click(
-			screen.getByRole("button", { name: "call-music-metadata" }),
-		);
-
-		await waitFor(() => {
-			expect(mockState.getFolderFileMediaMetadata).toHaveBeenCalledWith(
-				"share-token",
-				4,
-				{ signal: expect.any(AbortSignal) },
-			);
-		});
+		expect(mockState.getFolderFileMediaMetadata).not.toHaveBeenCalled();
 	});
 
 	it("plays shared folder music directly from the folder listing", async () => {
