@@ -57,7 +57,7 @@ docker run -d \
   -e ASTER__AUTH__BOOTSTRAP_INSECURE_COOKIES=true \
   -e ASTER__DATABASE__URL="sqlite:///data/asterdrive.db?mode=rwc" \
   -v "$(pwd)/data:/data" \
-  ghcr.io/apts-1547/asterdrive:latest
+  ghcr.io/astercommunity/asterdrive:latest
 ```
 
 这只会在第一次初始化时把浏览器 Cookie 的 HTTPS 要求设成关闭。  
@@ -88,7 +88,7 @@ upload_temp_dir = "/data/.uploads"
 ```yaml
 services:
   asterdrive:
-    image: ghcr.io/apts-1547/asterdrive:latest
+    image: ghcr.io/astercommunity/asterdrive:latest
     ports:
       - "3000:3000"
     environment:
@@ -190,7 +190,7 @@ docker compose up -d
 如果是用 `docker run` 直接运行的，步骤一致——拉取新镜像、停止旧容器、用同一条命令再次启动即可（bind mount 的 `./data` 不会受影响）：
 
 ```bash
-docker pull ghcr.io/apts-1547/asterdrive:latest
+docker pull ghcr.io/astercommunity/asterdrive:latest
 docker rm -f asterdrive
 # 再次执行前面"先试跑一遍"里的 docker run 命令
 ```

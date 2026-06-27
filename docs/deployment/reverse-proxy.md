@@ -227,7 +227,7 @@ certificatesResolvers:
 ```yaml
 services:
   asterdrive:
-    image: ghcr.io/apts-1547/asterdrive:latest
+    image: ghcr.io/astercommunity/asterdrive:latest
     labels:
       - traefik.enable=true
 

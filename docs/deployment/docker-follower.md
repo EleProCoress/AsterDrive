@@ -103,7 +103,7 @@ sudo chown -R 10001:10001 ./data
 ```yaml
 services:
   asterdrive-follower:
-    image: ghcr.io/apts-1547/asterdrive:latest
+    image: ghcr.io/astercommunity/asterdrive:latest
     container_name: asterdrive-follower
     ports:
       - "3001:3000"

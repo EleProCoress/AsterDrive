@@ -103,7 +103,7 @@ This example assumes the follower is exposed on host port `3001`:
 ```yaml
 services:
   asterdrive-follower:
-    image: ghcr.io/apts-1547/asterdrive:latest
+    image: ghcr.io/astercommunity/asterdrive:latest
     container_name: asterdrive-follower
     ports:
       - "3001:3000"

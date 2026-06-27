@@ -80,7 +80,7 @@ docker run -d \
   -e ASTER__AUTH__BOOTSTRAP_INSECURE_COOKIES=true \
   -e "ASTER__DATABASE__URL=sqlite:///data/asterdrive.db?mode=rwc" \
   -v "$(pwd)/data:/data" \
-  ghcr.io/apts-1547/asterdrive:latest
+  ghcr.io/astercommunity/asterdrive:latest
 ```
 
 Open:

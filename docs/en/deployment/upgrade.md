@@ -24,7 +24,7 @@ The most common and simplest scenario.
 
 ```bash
 # Pull the latest image
-docker pull ghcr.io/apts-1547/asterdrive:latest
+docker pull ghcr.io/astercommunity/asterdrive:latest
 
 # Restart the container
 docker compose down

@@ -57,7 +57,7 @@ docker run -d \
   -e ASTER__AUTH__BOOTSTRAP_INSECURE_COOKIES=true \
   -e ASTER__DATABASE__URL="sqlite:///data/asterdrive.db?mode=rwc" \
   -v "$(pwd)/data:/data" \
-  ghcr.io/apts-1547/asterdrive:latest
+  ghcr.io/astercommunity/asterdrive:latest
 ```
 
 This only disables the browser Cookie HTTPS requirement during first initialization.  
@@ -88,7 +88,7 @@ Restart the container after editing for changes to take effect.
 ```yaml
 services:
   asterdrive:
-    image: ghcr.io/apts-1547/asterdrive:latest
+    image: ghcr.io/astercommunity/asterdrive:latest
     ports:
       - "3000:3000"
     environment:
@@ -192,7 +192,7 @@ docker compose up -d
 If you run directly with `docker run`, the steps are the same: pull the new image, stop the old container, and start it again with the same command. The bind-mounted `./data` is not affected:
 
 ```bash
-docker pull ghcr.io/apts-1547/asterdrive:latest
+docker pull ghcr.io/astercommunity/asterdrive:latest
 docker rm -f asterdrive
 # Run the docker run command from "Try It First" again
 ```

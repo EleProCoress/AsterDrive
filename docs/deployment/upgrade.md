@@ -24,7 +24,7 @@
 
 ```bash
 # 拉最新镜像
-docker pull ghcr.io/apts-1547/asterdrive:latest
+docker pull ghcr.io/astercommunity/asterdrive:latest
 
 # 重启容器
 docker compose down
