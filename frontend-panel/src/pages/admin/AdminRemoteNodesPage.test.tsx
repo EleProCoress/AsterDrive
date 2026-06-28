@@ -65,8 +65,9 @@ vi.mock("@/components/admin/admin-remote-nodes-page/RemoteNodeDialog", () => ({
 	RemoteNodeDialog: ({
 		editingNode,
 		form,
-		managedIngressDriverDescriptors,
-		managedIngressDriverDescriptorsError,
+		managedIngressDriverDescriptors = [],
+		managedIngressDriverDescriptorsError = null,
+		managedIngressProfiles = [],
 		managedIngressProfilesEnabled,
 		managedIngressProfilesError,
 		mode,
@@ -84,8 +85,9 @@ vi.mock("@/components/admin/admin-remote-nodes-page/RemoteNodeDialog", () => ({
 	}: {
 		editingNode: { id: number; name: string } | null;
 		form: { base_url: string; is_enabled: boolean; name: string };
-		managedIngressDriverDescriptors: unknown[];
-		managedIngressDriverDescriptorsError: string | null;
+		managedIngressDriverDescriptors?: unknown[];
+		managedIngressDriverDescriptorsError?: string | null;
+		managedIngressProfiles?: unknown[];
 		managedIngressProfilesEnabled: boolean;
 		managedIngressProfilesError: string | null;
 		mode: "create" | "edit";
@@ -119,6 +121,9 @@ vi.mock("@/components/admin/admin-remote-nodes-page/RemoteNodeDialog", () => ({
 				</div>
 				<div data-testid="managed-ingress-error">
 					{managedIngressProfilesError ?? ""}
+				</div>
+				<div data-testid="managed-ingress-profile-count">
+					{managedIngressProfiles.length}
 				</div>
 				<div data-testid="managed-ingress-driver-count">
 					{managedIngressDriverDescriptors.length}
@@ -858,6 +863,9 @@ describe("AdminRemoteNodesPage", () => {
 		expect(
 			screen.getByTestId("managed-ingress-driver-count"),
 		).toHaveTextContent("0");
+		expect(
+			screen.getByTestId("managed-ingress-profile-count"),
+		).toHaveTextContent("1");
 		expect(screen.getByTestId("managed-ingress-error")).toBeEmptyDOMElement();
 		expect(mockState.handleApiError).toHaveBeenCalledWith(expect.any(Error));
 	});
