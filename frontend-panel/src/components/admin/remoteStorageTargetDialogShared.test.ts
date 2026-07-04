@@ -1,16 +1,27 @@
 import { describe, expect, it } from "vitest";
 import {
-	buildCreateManagedIngressProfilePayload,
-	buildUpdateManagedIngressProfilePayload,
-	getManagedIngressProfileForm,
-} from "@/components/admin/managedIngressProfileDialogShared";
-import type { RemoteIngressProfileInfo } from "@/types/api";
+	buildCreateRemoteStorageTargetPayload,
+	buildUpdateRemoteStorageTargetPayload,
+	getRemoteStorageTargetForm,
+} from "@/components/admin/remoteStorageTargetDialogShared";
+import type { RemoteStorageTargetInfo } from "@/types/api";
 
-describe("managedIngressProfileDialogShared", () => {
-	it("maps an existing ingress profile into form state", () => {
+const localFields = new Set(["base_path", "max_file_size", "is_default"]);
+const s3Fields = new Set([
+	"endpoint",
+	"bucket",
+	"access_key",
+	"secret_key",
+	"base_path",
+	"max_file_size",
+	"is_default",
+]);
+
+describe("remoteStorageTargetDialogShared", () => {
+	it("maps an existing remote storage target into form state", () => {
 		expect(
-			getManagedIngressProfileForm({
-				profile_key: "igp_demo",
+			getRemoteStorageTargetForm({
+				target_key: "igp_demo",
 				name: "Follower Cache",
 				driver_type: "local",
 				endpoint: "",
@@ -23,7 +34,7 @@ describe("managedIngressProfileDialogShared", () => {
 				last_error: "",
 				created_at: "",
 				updated_at: "",
-			} as RemoteIngressProfileInfo),
+			} as RemoteStorageTargetInfo),
 		).toEqual({
 			name: "Follower Cache",
 			driver_type: "local",
@@ -39,17 +50,20 @@ describe("managedIngressProfileDialogShared", () => {
 
 	it("builds create payloads with trimmed s3 fields", () => {
 		expect(
-			buildCreateManagedIngressProfilePayload({
-				name: "Archive",
-				driver_type: "s3",
-				endpoint: " https://s3.example.test/uploads ",
-				bucket: " uploads ",
-				access_key: "ACCESS",
-				secret_key: "SECRET",
-				base_path: "tenant-a/incoming",
-				max_file_size: "8192",
-				is_default: false,
-			}),
+			buildCreateRemoteStorageTargetPayload(
+				{
+					name: "Archive",
+					driver_type: "s3",
+					endpoint: " https://s3.example.test/uploads ",
+					bucket: " uploads ",
+					access_key: "ACCESS",
+					secret_key: "SECRET",
+					base_path: "tenant-a/incoming",
+					max_file_size: "8192",
+					is_default: false,
+				},
+				s3Fields,
+			),
 		).toEqual({
 			name: "Archive",
 			driver_type: "s3",
@@ -65,7 +79,7 @@ describe("managedIngressProfileDialogShared", () => {
 
 	it("omits unchanged s3 credentials from update payloads", () => {
 		expect(
-			buildUpdateManagedIngressProfilePayload(
+			buildUpdateRemoteStorageTargetPayload(
 				{
 					name: "Archive",
 					driver_type: "s3",
@@ -77,8 +91,9 @@ describe("managedIngressProfileDialogShared", () => {
 					max_file_size: "",
 					is_default: true,
 				},
+				s3Fields,
 				{
-					profile_key: "igp_archive",
+					target_key: "igp_archive",
 					name: "Archive",
 					driver_type: "s3",
 					endpoint: "https://s3.example.test",
@@ -91,7 +106,7 @@ describe("managedIngressProfileDialogShared", () => {
 					last_error: "",
 					created_at: "",
 					updated_at: "",
-				} as RemoteIngressProfileInfo,
+				} as RemoteStorageTargetInfo,
 			),
 		).toEqual({
 			name: "Archive",
@@ -106,7 +121,7 @@ describe("managedIngressProfileDialogShared", () => {
 
 	it("requires explicit credentials when switching from local to s3", () => {
 		expect(
-			buildUpdateManagedIngressProfilePayload(
+			buildUpdateRemoteStorageTargetPayload(
 				{
 					name: "Promoted",
 					driver_type: "s3",
@@ -118,8 +133,9 @@ describe("managedIngressProfileDialogShared", () => {
 					max_file_size: "4096",
 					is_default: false,
 				},
+				s3Fields,
 				{
-					profile_key: "igp_local",
+					target_key: "igp_local",
 					name: "Promoted",
 					driver_type: "local",
 					endpoint: "",
@@ -132,7 +148,7 @@ describe("managedIngressProfileDialogShared", () => {
 					last_error: "",
 					created_at: "",
 					updated_at: "",
-				} as RemoteIngressProfileInfo,
+				} as RemoteStorageTargetInfo,
 			),
 		).toEqual({
 			name: "Promoted",
@@ -144,6 +160,35 @@ describe("managedIngressProfileDialogShared", () => {
 			base_path: "tenant-a/incoming",
 			max_file_size: 4096,
 			is_default: false,
+		});
+	});
+
+	it("clears unsupported connection fields from local payloads", () => {
+		expect(
+			buildCreateRemoteStorageTargetPayload(
+				{
+					name: "Local",
+					driver_type: "local",
+					endpoint: "https://unused.example.com",
+					bucket: "unused",
+					access_key: "unused-access",
+					secret_key: "unused-secret",
+					base_path: "tenant-a/local",
+					max_file_size: "0",
+					is_default: true,
+				},
+				localFields,
+			),
+		).toEqual({
+			name: "Local",
+			driver_type: "local",
+			endpoint: "",
+			bucket: "",
+			access_key: "",
+			secret_key: "",
+			base_path: "tenant-a/local",
+			max_file_size: 0,
+			is_default: true,
 		});
 	});
 });

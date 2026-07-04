@@ -241,8 +241,10 @@ pub struct RemoteNodeEnrollmentTokenAuditDetails {
 }
 
 #[derive(Serialize)]
+// TODO(remote-storage-target): detail type name follows the stable audit action
+// names. Payload fields already use target_key.
 pub struct RemoteIngressProfileDeleteAuditDetails<'a> {
-    pub profile_key: &'a str,
+    pub target_key: &'a str,
 }
 
 #[derive(Serialize)]
@@ -401,8 +403,10 @@ pub struct RemoteNodeAuditDetails<'a> {
 }
 
 #[derive(Serialize)]
+// TODO(remote-storage-target): detail type name follows the stable audit action
+// names. Payload fields already use target_key.
 pub struct RemoteIngressProfileAuditDetails<'a> {
-    pub profile_key: &'a str,
+    pub target_key: &'a str,
     pub driver_type: &'a str,
     pub is_default: bool,
 }
@@ -430,9 +434,11 @@ pub struct FollowerObjectAuditDetails<'a> {
 }
 
 #[derive(Serialize)]
+// TODO(remote-storage-target): detail type name follows the stable audit action
+// names. Payload fields already use target_key.
 pub struct FollowerIngressProfileAuditDetails<'a> {
     pub binding_id: i64,
-    pub profile_key: &'a str,
+    pub target_key: &'a str,
     pub driver_type: &'a str,
     pub is_default: bool,
 }

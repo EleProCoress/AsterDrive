@@ -1,19 +1,19 @@
 use std::sync::Arc;
 
-use crate::entities::managed_ingress_profile;
+use crate::entities::remote_storage_target;
 use crate::storage::StorageDriver;
-use crate::storage::remote_protocol::RemoteIngressProfileInfo;
+use crate::storage::remote_protocol::RemoteStorageTargetInfo;
 
 #[derive(Clone)]
-pub struct ResolvedIngressTarget {
+pub struct ResolvedRemoteStorageTarget {
     pub driver: Arc<dyn StorageDriver>,
     pub max_file_size: i64,
 }
 
-impl From<managed_ingress_profile::Model> for RemoteIngressProfileInfo {
-    fn from(model: managed_ingress_profile::Model) -> Self {
+impl From<remote_storage_target::Model> for RemoteStorageTargetInfo {
+    fn from(model: remote_storage_target::Model) -> Self {
         Self {
-            profile_key: model.profile_key,
+            target_key: model.target_key,
             name: model.name,
             driver_type: model.driver_type,
             endpoint: model.endpoint,

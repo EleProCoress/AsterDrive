@@ -1,78 +1,73 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
-	buildCreateManagedIngressProfilePayload,
-	buildUpdateManagedIngressProfilePayload,
-	emptyManagedIngressProfileForm,
-	getManagedIngressProfileForm,
-	isManagedIngressDriverType,
-	type ManagedIngressDriverType,
-	type ManagedIngressProfileFormData,
-} from "@/components/admin/managedIngressProfileDialogShared";
+	buildCreateRemoteStorageTargetPayload,
+	buildUpdateRemoteStorageTargetPayload,
+	emptyRemoteStorageTargetForm,
+	getRemoteStorageTargetForm,
+	isRemoteStorageTargetDriverType,
+	type RemoteStorageTargetDriverType,
+	type RemoteStorageTargetFormData,
+} from "@/components/admin/remoteStorageTargetDialogShared";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { ADMIN_CONTROL_HEIGHT_CLASS } from "@/lib/constants";
 import type {
-	ManagedIngressDriverDescriptor,
-	RemoteCreateIngressProfileRequest,
-	RemoteIngressProfileInfo,
-	RemoteUpdateIngressProfileRequest,
+	RemoteCreateStorageTargetRequest,
+	RemoteStorageTargetDriverDescriptor,
+	RemoteStorageTargetInfo,
+	RemoteUpdateStorageTargetRequest,
 } from "@/types/api";
-import { RemoteNodeManagedIngressForm } from "./RemoteNodeManagedIngressForm";
-import { RemoteNodeManagedIngressProfilesList } from "./RemoteNodeManagedIngressProfilesList";
+import { RemoteNodeRemoteStorageTargetForm } from "./RemoteNodeRemoteStorageTargetForm";
+import { RemoteNodeRemoteStorageTargetsList } from "./RemoteNodeRemoteStorageTargetsList";
 
-type SupportedManagedIngressDriverDescriptor =
-	ManagedIngressDriverDescriptor & {
-		driver_type: ManagedIngressDriverType;
+type SupportedRemoteStorageTargetDriverDescriptor =
+	RemoteStorageTargetDriverDescriptor & {
+		driver_type: RemoteStorageTargetDriverType;
 	};
 
-interface RemoteNodeManagedIngressSectionProps {
-	driverDescriptors: ManagedIngressDriverDescriptor[];
+interface RemoteNodeRemoteStorageTargetSectionProps {
+	driverDescriptors: RemoteStorageTargetDriverDescriptor[];
 	errorMessage: string | null;
 	loading: boolean;
-	onCreateProfile: (
-		payload: RemoteCreateIngressProfileRequest,
+	onCreateTarget: (payload: RemoteCreateStorageTargetRequest) => Promise<void>;
+	onDeleteTarget: (target: RemoteStorageTargetInfo) => Promise<void>;
+	onUpdateTarget: (
+		targetKey: string,
+		payload: RemoteUpdateStorageTargetRequest,
 	) => Promise<void>;
-	onDeleteProfile: (profile: RemoteIngressProfileInfo) => Promise<void>;
-	onUpdateProfile: (
-		profileKey: string,
-		payload: RemoteUpdateIngressProfileRequest,
-	) => Promise<void>;
-	profiles: RemoteIngressProfileInfo[];
+	targets: RemoteStorageTargetInfo[];
 }
 
-export function RemoteNodeManagedIngressSection({
+export function RemoteNodeRemoteStorageTargetSection({
 	driverDescriptors,
 	errorMessage,
 	loading,
-	onCreateProfile,
-	onDeleteProfile,
-	onUpdateProfile,
-	profiles,
-}: RemoteNodeManagedIngressSectionProps) {
+	onCreateTarget,
+	onDeleteTarget,
+	onUpdateTarget,
+	targets,
+}: RemoteNodeRemoteStorageTargetSectionProps) {
 	const { t } = useTranslation("admin");
 	const [draftMode, setDraftMode] = useState<"create" | "edit" | null>(null);
-	const [editingProfileKey, setEditingProfileKey] = useState<string | null>(
-		null,
-	);
-	const [form, setForm] = useState<ManagedIngressProfileFormData>(
-		emptyManagedIngressProfileForm,
+	const [editingTargetKey, setEditingTargetKey] = useState<string | null>(null);
+	const [form, setForm] = useState<RemoteStorageTargetFormData>(
+		emptyRemoteStorageTargetForm,
 	);
 	const [submitting, setSubmitting] = useState(false);
-	const [pendingDeleteProfileKey, setPendingDeleteProfileKey] = useState<
+	const [pendingDeleteTargetKey, setPendingDeleteTargetKey] = useState<
 		string | null
 	>(null);
-	const editingProfile =
+	const editingTarget =
 		draftMode === "edit"
-			? (profiles.find(
-					(profile) => profile.profile_key === editingProfileKey,
-				) ?? null)
+			? (targets.find((target) => target.target_key === editingTargetKey) ??
+				null)
 			: null;
 	const activeDraftMode =
-		draftMode === "edit" && editingProfile == null ? null : draftMode;
+		draftMode === "edit" && editingTarget == null ? null : draftMode;
 	const supportedDriverDescriptors = driverDescriptors.flatMap(
-		(descriptor): SupportedManagedIngressDriverDescriptor[] =>
-			isManagedIngressDriverType(descriptor.driver_type)
+		(descriptor): SupportedRemoteStorageTargetDriverDescriptor[] =>
+			isRemoteStorageTargetDriverType(descriptor.driver_type)
 				? [{ ...descriptor, driver_type: descriptor.driver_type }]
 				: [],
 	);
@@ -92,10 +87,10 @@ export function RemoteNodeManagedIngressSection({
 	const activeFieldNames = new Set(
 		activeDriverDescriptor?.fields.map((field) => field.name) ?? [],
 	);
-	const activePendingDeleteProfileKey = profiles.some(
-		(profile) => profile.profile_key === pendingDeleteProfileKey,
+	const activePendingDeleteTargetKey = targets.some(
+		(target) => target.target_key === pendingDeleteTargetKey,
 	)
-		? pendingDeleteProfileKey
+		? pendingDeleteTargetKey
 		: null;
 
 	const startCreate = () => {
@@ -103,29 +98,29 @@ export function RemoteNodeManagedIngressSection({
 			return;
 		}
 		setDraftMode("create");
-		setEditingProfileKey(null);
+		setEditingTargetKey(null);
 		setForm({
-			...emptyManagedIngressProfileForm,
+			...emptyRemoteStorageTargetForm,
 			driver_type: firstSupportedDriverType,
-			is_default: profiles.length === 0,
+			is_default: targets.length === 0,
 		});
 	};
 
-	const startEdit = (profile: RemoteIngressProfileInfo) => {
+	const startEdit = (target: RemoteStorageTargetInfo) => {
 		setDraftMode("edit");
-		setEditingProfileKey(profile.profile_key);
-		setForm(getManagedIngressProfileForm(profile));
+		setEditingTargetKey(target.target_key);
+		setForm(getRemoteStorageTargetForm(target));
 	};
 
 	const resetDraft = () => {
 		setDraftMode(null);
-		setEditingProfileKey(null);
-		setForm(emptyManagedIngressProfileForm);
+		setEditingTargetKey(null);
+		setForm(emptyRemoteStorageTargetForm);
 	};
 
-	const setField = <K extends keyof ManagedIngressProfileFormData>(
+	const setField = <K extends keyof RemoteStorageTargetFormData>(
 		key: K,
-		value: ManagedIngressProfileFormData[K],
+		value: RemoteStorageTargetFormData[K],
 	) => setForm((current) => ({ ...current, [key]: value }));
 
 	const nameError = form.name.trim()
@@ -159,7 +154,7 @@ export function RemoteNodeManagedIngressSection({
 			: null;
 	const requiresS3Credentials =
 		activeFieldNames.has("access_key") &&
-		(activeDraftMode === "create" || editingProfile?.driver_type !== "s3");
+		(activeDraftMode === "create" || editingTarget?.driver_type !== "s3");
 	const accessKeyError =
 		requiresS3Credentials && !form.access_key.trim()
 			? t("remote_node_ingress_profile_access_key_required")
@@ -169,7 +164,7 @@ export function RemoteNodeManagedIngressSection({
 			? t("remote_node_ingress_profile_secret_key_required")
 			: null;
 	const defaultToggleLocked =
-		activeDraftMode === "edit" && editingProfile?.is_default;
+		activeDraftMode === "edit" && editingTarget?.is_default;
 	const submitDisabled =
 		submitting ||
 		Boolean(errorMessage) ||
@@ -192,11 +187,17 @@ export function RemoteNodeManagedIngressSection({
 		setSubmitting(true);
 		try {
 			if (activeDraftMode === "create") {
-				await onCreateProfile(buildCreateManagedIngressProfilePayload(form));
-			} else if (editingProfile != null) {
-				await onUpdateProfile(
-					editingProfile.profile_key,
-					buildUpdateManagedIngressProfilePayload(form, editingProfile),
+				await onCreateTarget(
+					buildCreateRemoteStorageTargetPayload(form, activeFieldNames),
+				);
+			} else if (editingTarget != null) {
+				await onUpdateTarget(
+					editingTarget.target_key,
+					buildUpdateRemoteStorageTargetPayload(
+						form,
+						activeFieldNames,
+						editingTarget,
+					),
 				);
 			}
 			resetDraft();
@@ -205,10 +206,10 @@ export function RemoteNodeManagedIngressSection({
 		}
 	};
 
-	const handleDeleteProfile = async (profile: RemoteIngressProfileInfo) => {
-		setPendingDeleteProfileKey(null);
-		await onDeleteProfile(profile);
-		if (editingProfileKey === profile.profile_key) {
+	const handleDeleteTarget = async (target: RemoteStorageTargetInfo) => {
+		setPendingDeleteTargetKey(null);
+		await onDeleteTarget(target);
+		if (editingTargetKey === target.target_key) {
 			resetDraft();
 		}
 	};
@@ -249,14 +250,14 @@ export function RemoteNodeManagedIngressSection({
 			) : null}
 
 			{activeDraftMode != null ? (
-				<RemoteNodeManagedIngressForm
+				<RemoteNodeRemoteStorageTargetForm
 					accessKeyError={accessKeyError}
 					bucketError={bucketError}
 					defaultToggleLocked={Boolean(defaultToggleLocked)}
 					driverDescriptors={supportedDriverDescriptors}
 					driverTypeError={driverTypeError}
 					draftMode={activeDraftMode}
-					editingProfile={editingProfile}
+					editingProfile={editingTarget}
 					endpointError={endpointError}
 					form={form}
 					localPathError={localPathError}
@@ -271,17 +272,17 @@ export function RemoteNodeManagedIngressSection({
 				/>
 			) : null}
 
-			<RemoteNodeManagedIngressProfilesList
+			<RemoteNodeRemoteStorageTargetsList
 				errorMessage={errorMessage}
 				loading={loading}
-				pendingDeleteProfileKey={activePendingDeleteProfileKey}
-				onCancelDelete={() => setPendingDeleteProfileKey(null)}
-				onConfirmDeleteProfile={(profile) => void handleDeleteProfile(profile)}
-				onRequestDeleteProfile={(profile) =>
-					setPendingDeleteProfileKey(profile.profile_key)
+				pendingDeleteTargetKey={activePendingDeleteTargetKey}
+				onCancelDelete={() => setPendingDeleteTargetKey(null)}
+				onConfirmDeleteTarget={(target) => void handleDeleteTarget(target)}
+				onRequestDeleteTarget={(target) =>
+					setPendingDeleteTargetKey(target.target_key)
 				}
-				onEditProfile={startEdit}
-				profiles={profiles}
+				onEditTarget={startEdit}
+				targets={targets}
 			/>
 		</section>
 	);

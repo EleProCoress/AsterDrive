@@ -7,10 +7,10 @@ import {
 } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { RemoteNodeManagedIngressSection } from "@/components/admin/admin-remote-nodes-page/RemoteNodeManagedIngressSection";
+import { RemoteNodeRemoteStorageTargetSection } from "@/components/admin/admin-remote-nodes-page/RemoteNodeRemoteStorageTargetSection";
 import type {
-	ManagedIngressDriverDescriptor,
-	RemoteIngressProfileInfo,
+	RemoteStorageTargetDriverDescriptor,
+	RemoteStorageTargetInfo,
 } from "@/types/api";
 
 vi.mock("react-i18next", () => ({
@@ -149,8 +149,8 @@ vi.mock("@/lib/format", () => ({
 }));
 
 const profile = (
-	overrides: Partial<RemoteIngressProfileInfo> = {},
-): RemoteIngressProfileInfo => ({
+	overrides: Partial<RemoteStorageTargetInfo> = {},
+): RemoteStorageTargetInfo => ({
 	applied_revision: 2,
 	base_path: "incoming",
 	bucket: "",
@@ -162,12 +162,12 @@ const profile = (
 	last_error: "",
 	max_file_size: 0,
 	name: "Local ingress",
-	profile_key: "local-default",
+	target_key: "local-default",
 	updated_at: "2026-05-02T00:00:00Z",
 	...overrides,
 });
 
-const localDriverDescriptor: ManagedIngressDriverDescriptor = {
+const localDriverDescriptor: RemoteStorageTargetDriverDescriptor = {
 	description_key: "remote_node_ingress_profile_local_scope_hint",
 	driver_type: "local",
 	fields: [
@@ -202,7 +202,7 @@ const localDriverDescriptor: ManagedIngressDriverDescriptor = {
 	label_key: "remote_node_ingress_profile_driver_local",
 };
 
-const s3DriverDescriptor: ManagedIngressDriverDescriptor = {
+const s3DriverDescriptor: RemoteStorageTargetDriverDescriptor = {
 	description_key: "remote_node_ingress_profile_s3_path_hint",
 	driver_type: "s3",
 	fields: [
@@ -279,58 +279,58 @@ function renderSection({
 	driverDescriptors = defaultDriverDescriptors,
 	errorMessage = null,
 	loading = false,
-	onCreateProfile = vi.fn().mockResolvedValue(undefined),
-	onDeleteProfile = vi.fn().mockResolvedValue(undefined),
-	onUpdateProfile = vi.fn().mockResolvedValue(undefined),
-	profiles = [] as RemoteIngressProfileInfo[],
+	onCreateTarget = vi.fn().mockResolvedValue(undefined),
+	onDeleteTarget = vi.fn().mockResolvedValue(undefined),
+	onUpdateTarget = vi.fn().mockResolvedValue(undefined),
+	targets = [] as RemoteStorageTargetInfo[],
 } = {}) {
 	render(
-		<RemoteNodeManagedIngressSection
+		<RemoteNodeRemoteStorageTargetSection
 			driverDescriptors={driverDescriptors}
 			errorMessage={errorMessage}
 			loading={loading}
-			onCreateProfile={onCreateProfile}
-			onDeleteProfile={onDeleteProfile}
-			onUpdateProfile={onUpdateProfile}
-			profiles={profiles}
+			onCreateTarget={onCreateTarget}
+			onDeleteTarget={onDeleteTarget}
+			onUpdateTarget={onUpdateTarget}
+			targets={targets}
 		/>,
 	);
 	return {
-		onCreateProfile,
-		onDeleteProfile,
-		onUpdateProfile,
+		onCreateTarget,
+		onDeleteTarget,
+		onUpdateTarget,
 	};
 }
 
-describe("RemoteNodeManagedIngressSection", () => {
+describe("RemoteNodeRemoteStorageTargetSection", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
 	});
 
 	it("shows loading, empty and error states", () => {
 		const { rerender } = render(
-			<RemoteNodeManagedIngressSection
+			<RemoteNodeRemoteStorageTargetSection
 				driverDescriptors={defaultDriverDescriptors}
 				errorMessage={null}
 				loading
-				onCreateProfile={vi.fn()}
-				onDeleteProfile={vi.fn()}
-				onUpdateProfile={vi.fn()}
-				profiles={[]}
+				onCreateTarget={vi.fn()}
+				onDeleteTarget={vi.fn()}
+				onUpdateTarget={vi.fn()}
+				targets={[]}
 			/>,
 		);
 
 		expect(screen.getByText("core:loading")).toBeInTheDocument();
 
 		rerender(
-			<RemoteNodeManagedIngressSection
+			<RemoteNodeRemoteStorageTargetSection
 				driverDescriptors={defaultDriverDescriptors}
 				errorMessage={null}
 				loading={false}
-				onCreateProfile={vi.fn()}
-				onDeleteProfile={vi.fn()}
-				onUpdateProfile={vi.fn()}
-				profiles={[]}
+				onCreateTarget={vi.fn()}
+				onDeleteTarget={vi.fn()}
+				onUpdateTarget={vi.fn()}
+				targets={[]}
 			/>,
 		);
 
@@ -339,14 +339,14 @@ describe("RemoteNodeManagedIngressSection", () => {
 		).toBeInTheDocument();
 
 		rerender(
-			<RemoteNodeManagedIngressSection
+			<RemoteNodeRemoteStorageTargetSection
 				driverDescriptors={defaultDriverDescriptors}
 				errorMessage="cannot reach node"
 				loading={false}
-				onCreateProfile={vi.fn()}
-				onDeleteProfile={vi.fn()}
-				onUpdateProfile={vi.fn()}
-				profiles={[]}
+				onCreateTarget={vi.fn()}
+				onDeleteTarget={vi.fn()}
+				onUpdateTarget={vi.fn()}
+				targets={[]}
 			/>,
 		);
 
@@ -359,7 +359,7 @@ describe("RemoteNodeManagedIngressSection", () => {
 	});
 
 	it("creates the first local profile as the default", async () => {
-		const { onCreateProfile } = renderSection();
+		const { onCreateTarget } = renderSection();
 
 		fireEvent.click(
 			screen.getByRole("button", {
@@ -381,7 +381,7 @@ describe("RemoteNodeManagedIngressSection", () => {
 		fireEvent.click(screen.getByRole("button", { name: /core:create/ }));
 
 		await waitFor(() => {
-			expect(onCreateProfile).toHaveBeenCalledWith({
+			expect(onCreateTarget).toHaveBeenCalledWith({
 				access_key: "",
 				base_path: "teams/incoming",
 				bucket: "",
@@ -398,7 +398,7 @@ describe("RemoteNodeManagedIngressSection", () => {
 		).not.toBeInTheDocument();
 	});
 
-	it("does not create profiles when no supported driver descriptor is returned", () => {
+	it("does not create targets when no supported driver descriptor is returned", () => {
 		renderSection({ driverDescriptors: [] });
 
 		expect(
@@ -409,7 +409,7 @@ describe("RemoteNodeManagedIngressSection", () => {
 	});
 
 	it("validates S3 credentials on create and submits normalized fields", async () => {
-		const { onCreateProfile } = renderSection({ profiles: [profile()] });
+		const { onCreateTarget } = renderSection({ targets: [profile()] });
 
 		fireEvent.click(
 			screen.getByRole("button", {
@@ -449,7 +449,7 @@ describe("RemoteNodeManagedIngressSection", () => {
 		fireEvent.click(screen.getByRole("button", { name: /core:create/ }));
 
 		await waitFor(() => {
-			expect(onCreateProfile).toHaveBeenCalledWith(
+			expect(onCreateTarget).toHaveBeenCalledWith(
 				expect.objectContaining({
 					access_key: "access",
 					bucket: "raw-bucket",
@@ -462,7 +462,7 @@ describe("RemoteNodeManagedIngressSection", () => {
 		});
 	});
 
-	it("edits existing S3 profiles without requiring unchanged credentials", async () => {
+	it("edits existing S3 targets without requiring unchanged credentials", async () => {
 		const existing = profile({
 			base_path: "prefix",
 			bucket: "bucket-a",
@@ -470,9 +470,9 @@ describe("RemoteNodeManagedIngressSection", () => {
 			endpoint: "https://s3.example.com",
 			is_default: true,
 			name: "S3 ingress",
-			profile_key: "s3-default",
+			target_key: "s3-default",
 		});
-		const { onUpdateProfile } = renderSection({ profiles: [existing] });
+		const { onUpdateTarget } = renderSection({ targets: [existing] });
 
 		fireEvent.click(screen.getByRole("button", { name: "core:edit" }));
 		expect(
@@ -487,7 +487,7 @@ describe("RemoteNodeManagedIngressSection", () => {
 		fireEvent.click(screen.getByRole("button", { name: /save_changes/ }));
 
 		await waitFor(() => {
-			expect(onUpdateProfile).toHaveBeenCalledWith("s3-default", {
+			expect(onUpdateTarget).toHaveBeenCalledWith("s3-default", {
 				base_path: "next-prefix",
 				bucket: "bucket-a",
 				driver_type: "s3",
@@ -501,16 +501,16 @@ describe("RemoteNodeManagedIngressSection", () => {
 
 	it("confirms deletion and resets an edited draft when the profile disappears", async () => {
 		const existing = profile();
-		const onDeleteProfile = vi.fn().mockResolvedValue(undefined);
+		const onDeleteTarget = vi.fn().mockResolvedValue(undefined);
 		const { rerender } = render(
-			<RemoteNodeManagedIngressSection
+			<RemoteNodeRemoteStorageTargetSection
 				driverDescriptors={defaultDriverDescriptors}
 				errorMessage={null}
 				loading={false}
-				onCreateProfile={vi.fn()}
-				onDeleteProfile={onDeleteProfile}
-				onUpdateProfile={vi.fn()}
-				profiles={[existing]}
+				onCreateTarget={vi.fn()}
+				onDeleteTarget={onDeleteTarget}
+				onUpdateTarget={vi.fn()}
+				targets={[existing]}
 			/>,
 		);
 
@@ -520,14 +520,14 @@ describe("RemoteNodeManagedIngressSection", () => {
 		).toBeInTheDocument();
 
 		rerender(
-			<RemoteNodeManagedIngressSection
+			<RemoteNodeRemoteStorageTargetSection
 				driverDescriptors={defaultDriverDescriptors}
 				errorMessage={null}
 				loading={false}
-				onCreateProfile={vi.fn()}
-				onDeleteProfile={onDeleteProfile}
-				onUpdateProfile={vi.fn()}
-				profiles={[]}
+				onCreateTarget={vi.fn()}
+				onDeleteTarget={onDeleteTarget}
+				onUpdateTarget={vi.fn()}
+				targets={[]}
 			/>,
 		);
 
@@ -536,14 +536,14 @@ describe("RemoteNodeManagedIngressSection", () => {
 		).not.toBeInTheDocument();
 
 		rerender(
-			<RemoteNodeManagedIngressSection
+			<RemoteNodeRemoteStorageTargetSection
 				driverDescriptors={defaultDriverDescriptors}
 				errorMessage={null}
 				loading={false}
-				onCreateProfile={vi.fn()}
-				onDeleteProfile={onDeleteProfile}
-				onUpdateProfile={vi.fn()}
-				profiles={[existing]}
+				onCreateTarget={vi.fn()}
+				onDeleteTarget={onDeleteTarget}
+				onUpdateTarget={vi.fn()}
+				targets={[existing]}
 			/>,
 		);
 		fireEvent.click(screen.getByRole("button", { name: "core:delete" }));
@@ -559,13 +559,13 @@ describe("RemoteNodeManagedIngressSection", () => {
 				name: "core:cancel",
 			}),
 		);
-		expect(onDeleteProfile).not.toHaveBeenCalled();
+		expect(onDeleteTarget).not.toHaveBeenCalled();
 
 		fireEvent.click(screen.getByRole("button", { name: "core:delete" }));
 		fireEvent.click(screen.getAllByRole("button", { name: "core:delete" })[0]);
 
 		await waitFor(() => {
-			expect(onDeleteProfile).toHaveBeenCalledWith(existing);
+			expect(onDeleteTarget).toHaveBeenCalledWith(existing);
 		});
 	});
 });

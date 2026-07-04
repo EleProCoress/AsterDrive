@@ -4,33 +4,33 @@ import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { ADMIN_ICON_BUTTON_CLASS } from "@/lib/constants";
 import { formatBytes, formatDateTime } from "@/lib/format";
-import type { RemoteIngressProfileInfo } from "@/types/api";
+import type { RemoteStorageTargetInfo } from "@/types/api";
 import {
-	getRemoteNodeManagedIngressDriverBadgeTone,
-	getRemoteNodeManagedIngressProfileStatus,
-} from "./remoteNodeManagedIngressPresentation";
+	getRemoteNodeRemoteStorageTargetDriverBadgeTone,
+	getRemoteNodeRemoteStorageTargetProfileStatus,
+} from "./remoteNodeRemoteStorageTargetPresentation";
 
-interface RemoteNodeManagedIngressProfilesListProps {
+interface RemoteNodeRemoteStorageTargetsListProps {
 	errorMessage: string | null;
 	loading: boolean;
-	pendingDeleteProfileKey: string | null;
+	pendingDeleteTargetKey: string | null;
 	onCancelDelete: () => void;
-	onConfirmDeleteProfile: (profile: RemoteIngressProfileInfo) => void;
-	onRequestDeleteProfile: (profile: RemoteIngressProfileInfo) => void;
-	onEditProfile: (profile: RemoteIngressProfileInfo) => void;
-	profiles: RemoteIngressProfileInfo[];
+	onConfirmDeleteTarget: (target: RemoteStorageTargetInfo) => void;
+	onRequestDeleteTarget: (target: RemoteStorageTargetInfo) => void;
+	onEditTarget: (target: RemoteStorageTargetInfo) => void;
+	targets: RemoteStorageTargetInfo[];
 }
 
-export function RemoteNodeManagedIngressProfilesList({
+export function RemoteNodeRemoteStorageTargetsList({
 	errorMessage,
 	loading,
-	pendingDeleteProfileKey,
+	pendingDeleteTargetKey,
 	onCancelDelete,
-	onConfirmDeleteProfile,
-	onRequestDeleteProfile,
-	onEditProfile,
-	profiles,
-}: RemoteNodeManagedIngressProfilesListProps) {
+	onConfirmDeleteTarget,
+	onRequestDeleteTarget,
+	onEditTarget,
+	targets,
+}: RemoteNodeRemoteStorageTargetsListProps) {
 	const { t } = useTranslation("admin");
 
 	return (
@@ -42,7 +42,7 @@ export function RemoteNodeManagedIngressProfilesList({
 						{t("core:loading")}
 					</span>
 				</div>
-			) : profiles.length === 0 ? (
+			) : targets.length === 0 ? (
 				<div className="rounded-2xl border border-dashed border-border/70 bg-muted/10 p-4">
 					<p className="text-sm font-medium text-foreground">
 						{t("remote_node_ingress_profiles_empty")}
@@ -52,15 +52,15 @@ export function RemoteNodeManagedIngressProfilesList({
 					</p>
 				</div>
 			) : (
-				profiles.map((profile) => (
-					<RemoteNodeManagedIngressProfileCard
-						key={profile.profile_key}
-						deleteConfirming={pendingDeleteProfileKey === profile.profile_key}
+				targets.map((target) => (
+					<RemoteNodeRemoteStorageTargetCard
+						key={target.target_key}
+						deleteConfirming={pendingDeleteTargetKey === target.target_key}
 						onCancelDelete={onCancelDelete}
-						onConfirmDelete={() => onConfirmDeleteProfile(profile)}
-						onRequestDelete={() => onRequestDeleteProfile(profile)}
-						onEdit={() => onEditProfile(profile)}
-						profile={profile}
+						onConfirmDelete={() => onConfirmDeleteTarget(target)}
+						onRequestDelete={() => onRequestDeleteTarget(target)}
+						onEdit={() => onEditTarget(target)}
+						target={target}
 					/>
 				))
 			)}
@@ -68,25 +68,25 @@ export function RemoteNodeManagedIngressProfilesList({
 	);
 }
 
-interface RemoteNodeManagedIngressProfileCardProps {
+interface RemoteNodeRemoteStorageTargetCardProps {
 	deleteConfirming: boolean;
 	onCancelDelete: () => void;
 	onConfirmDelete: () => void;
 	onRequestDelete: () => void;
 	onEdit: () => void;
-	profile: RemoteIngressProfileInfo;
+	target: RemoteStorageTargetInfo;
 }
 
-function RemoteNodeManagedIngressProfileCard({
+function RemoteNodeRemoteStorageTargetCard({
 	deleteConfirming,
 	onCancelDelete,
 	onConfirmDelete,
 	onRequestDelete,
 	onEdit,
-	profile,
-}: RemoteNodeManagedIngressProfileCardProps) {
+	target,
+}: RemoteNodeRemoteStorageTargetCardProps) {
 	const { t } = useTranslation("admin");
-	const status = getRemoteNodeManagedIngressProfileStatus(profile);
+	const status = getRemoteNodeRemoteStorageTargetProfileStatus(target);
 
 	return (
 		<article className="rounded-2xl border border-border/70 bg-muted/10 p-4">
@@ -94,19 +94,19 @@ function RemoteNodeManagedIngressProfileCard({
 				<div className="min-w-0">
 					<div className="flex flex-wrap items-center gap-2">
 						<h4 className="truncate text-sm font-semibold text-foreground">
-							{profile.name}
+							{target.name}
 						</h4>
 						<Badge
 							variant="outline"
-							className={getRemoteNodeManagedIngressDriverBadgeTone(
-								profile.driver_type,
+							className={getRemoteNodeRemoteStorageTargetDriverBadgeTone(
+								target.driver_type,
 							)}
 						>
-							{profile.driver_type === "s3"
+							{target.driver_type === "s3"
 								? t("remote_node_ingress_profile_driver_s3")
 								: t("remote_node_ingress_profile_driver_local")}
 						</Badge>
-						{profile.is_default ? (
+						{target.is_default ? (
 							<Badge
 								variant="outline"
 								className="border-blue-500/60 bg-blue-500/10 text-blue-700 dark:text-blue-300"
@@ -119,7 +119,7 @@ function RemoteNodeManagedIngressProfileCard({
 						</Badge>
 					</div>
 					<p className="mt-1 break-all font-mono text-xs text-muted-foreground">
-						{profile.profile_key}
+						{target.target_key}
 					</p>
 				</div>
 
@@ -174,7 +174,7 @@ function RemoteNodeManagedIngressProfileCard({
 				<div className="mt-3 rounded-xl border border-destructive/30 bg-destructive/5 p-3 text-sm duration-150 animate-in fade-in slide-in-from-top-1 motion-reduce:animate-none">
 					<p className="font-medium text-destructive">
 						{t("remote_node_ingress_profile_delete_title", {
-							name: profile.name,
+							name: target.name,
 						})}
 					</p>
 					<p className="mt-1 text-muted-foreground">
@@ -189,7 +189,7 @@ function RemoteNodeManagedIngressProfileCard({
 						{t("base_path")}
 					</dt>
 					<dd className="mt-1 break-all font-medium">
-						{profile.base_path || "."}
+						{target.base_path || "."}
 					</dd>
 				</div>
 				<div>
@@ -197,24 +197,24 @@ function RemoteNodeManagedIngressProfileCard({
 						{t("max_file_size")}
 					</dt>
 					<dd className="mt-1 font-medium">
-						{profile.max_file_size > 0
-							? formatBytes(profile.max_file_size)
+						{target.max_file_size > 0
+							? formatBytes(target.max_file_size)
 							: t("core:unlimited")}
 					</dd>
 				</div>
-				{profile.driver_type === "s3" ? (
+				{target.driver_type === "s3" ? (
 					<>
 						<div>
 							<dt className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
 								{t("endpoint")}
 							</dt>
-							<dd className="mt-1 break-all font-medium">{profile.endpoint}</dd>
+							<dd className="mt-1 break-all font-medium">{target.endpoint}</dd>
 						</div>
 						<div>
 							<dt className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
 								{t("bucket")}
 							</dt>
-							<dd className="mt-1 break-all font-medium">{profile.bucket}</dd>
+							<dd className="mt-1 break-all font-medium">{target.bucket}</dd>
 						</div>
 					</>
 				) : null}
@@ -223,7 +223,7 @@ function RemoteNodeManagedIngressProfileCard({
 						{t("remote_node_ingress_profile_revision")}
 					</dt>
 					<dd className="mt-1 font-medium">
-						{profile.applied_revision} / {profile.desired_revision}
+						{target.applied_revision} / {target.desired_revision}
 					</dd>
 				</div>
 				<div>
@@ -231,7 +231,7 @@ function RemoteNodeManagedIngressProfileCard({
 						{t("core:updated_at")}
 					</dt>
 					<dd className="mt-1 font-medium">
-						{formatDateTime(profile.updated_at)}
+						{formatDateTime(target.updated_at)}
 					</dd>
 				</div>
 			</dl>
@@ -241,7 +241,7 @@ function RemoteNodeManagedIngressProfileCard({
 					{t("remote_node_ingress_profile_last_error")}
 				</div>
 				<div className="mt-1 break-all text-sm">
-					{profile.last_error ||
+					{target.last_error ||
 						t("remote_node_ingress_profile_last_error_empty")}
 				</div>
 			</div>
