@@ -87,6 +87,7 @@ fn draft_connection(driver_type: DriverType) -> StorageConnectorConnectionInput 
         secret_key: String::new(),
         base_path: "tenant-b".to_string(),
         remote_node_id: None,
+        remote_storage_target_key: None,
         options: StoragePolicyOptions::default(),
     }
 }
@@ -124,6 +125,22 @@ async fn assert_saved_credentials_driver_mismatch_for_driver(driver_type: Driver
     assert_eq!(
         error.api_error_code(),
         ApiErrorCode::PolicyActionParameterInvalid
+    );
+}
+
+#[tokio::test]
+async fn non_remote_draft_connection_rejects_remote_storage_target_key() {
+    let db = setup_connector_test_db().await;
+    let mut input = draft_connection(DriverType::Local);
+    input.remote_storage_target_key = Some("rst_unexpected".to_string());
+
+    let error = normalize_policy_connection(&db, input)
+        .await
+        .expect_err("local policy drafts must not accept remote target keys");
+
+    assert_eq!(
+        error.api_error_code(),
+        ApiErrorCode::PolicyRemoteNodeUnexpected
     );
 }
 
@@ -520,6 +537,7 @@ fn onedrive_prepare_connection_for_storage_clears_legacy_policy_key_fields() {
             secret_key: "legacy-client-secret".to_string(),
             base_path: "docs".to_string(),
             remote_node_id: None,
+            remote_storage_target_key: None,
             options: StoragePolicyOptions::default(),
         },
         &StorageConnectorApplicationConfigInput {
@@ -548,6 +566,7 @@ fn non_onedrive_connectors_reject_microsoft_graph_application_config() {
             secret_key: "secret".to_string(),
             base_path: String::new(),
             remote_node_id: None,
+            remote_storage_target_key: None,
             options: StoragePolicyOptions::default(),
         },
         &StorageConnectorApplicationConfigInput {
@@ -924,6 +943,7 @@ fn mock_policy(driver_type: DriverType, chunk_size: i64, options: &str) -> stora
         secret_key: String::new(),
         base_path: String::new(),
         remote_node_id: None,
+        remote_storage_target_key: None,
         max_file_size: 0,
         allowed_types: StoredStoragePolicyAllowedTypes::empty(),
         options: options.to_string().into(),

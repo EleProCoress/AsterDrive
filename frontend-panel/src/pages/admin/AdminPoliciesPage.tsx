@@ -73,13 +73,19 @@ import {
 	parseSortSearchParam,
 	type SortOrder,
 } from "@/lib/pagination";
-import { adminPolicyService } from "@/services/adminService";
+import {
+	adminPolicyService,
+	adminRemoteNodeService,
+} from "@/services/adminService";
 import { ApiError } from "@/services/http";
 import type { AdminPolicySortBy } from "@/types/adminSort";
 import type {
 	DeletePolicyQuery,
 	DriverType,
+	RemoteCreateStorageTargetRequest,
 	RemoteNodeInfo,
+	RemoteStorageTargetDriverDescriptor,
+	RemoteStorageTargetInfo,
 	StorageConnectorDescriptor,
 	StoragePolicy,
 	StoragePolicyCapacityInfo,
@@ -330,6 +336,28 @@ function useAdminPoliciesPageContent() {
 	const [remoteNodes, setRemoteNodes] = useState<RemoteNodeInfo[]>(
 		() => readAdminRemoteNodeLookup() ?? [],
 	);
+	const [remoteStorageTargets, setRemoteStorageTargets] = useState<
+		RemoteStorageTargetInfo[]
+	>([]);
+	const [remoteStorageTargetsLoading, setRemoteStorageTargetsLoading] =
+		useState(false);
+	const [remoteStorageTargetsError, setRemoteStorageTargetsError] = useState<
+		string | null
+	>(null);
+	const remoteStorageTargetsRequestSerial = useRef(0);
+	const [
+		remoteStorageTargetDriverDescriptors,
+		setRemoteStorageTargetDriverDescriptors,
+	] = useState<RemoteStorageTargetDriverDescriptor[]>([]);
+	const [
+		remoteStorageTargetDriverDescriptorsLoading,
+		setRemoteStorageTargetDriverDescriptorsLoading,
+	] = useState(false);
+	const [
+		remoteStorageTargetDriverDescriptorsError,
+		setRemoteStorageTargetDriverDescriptorsError,
+	] = useState<string | null>(null);
+	const remoteStorageTargetDriverDescriptorsRequestSerial = useRef(0);
 	const [storageDriverDescriptors, setStorageDriverDescriptors] = useState<
 		StorageConnectorDescriptor[]
 	>(() => readAdminStorageDriverDescriptors() ?? []);
@@ -457,6 +485,148 @@ function useAdminPoliciesPageContent() {
 		remoteNodes.map((node) => [node.id, node.name] as const),
 	);
 
+	const loadRemoteStorageTargetsForPolicy = useCallback(
+		async (
+			remoteNodeId: number,
+			{
+				selectTargetKey,
+				showErrorToast = true,
+			}: { selectTargetKey?: string; showErrorToast?: boolean } = {},
+		) => {
+			const requestSerial = ++remoteStorageTargetsRequestSerial.current;
+			setRemoteStorageTargetsLoading(true);
+			setRemoteStorageTargetsError(null);
+
+			try {
+				const targets =
+					await adminRemoteNodeService.listStorageTargets(remoteNodeId);
+				if (requestSerial !== remoteStorageTargetsRequestSerial.current) {
+					return;
+				}
+				setRemoteStorageTargets(targets);
+				setRemoteStorageTargetsError(null);
+				setForm((prev) => {
+					if (prev.remote_node_id !== String(remoteNodeId)) {
+						return prev;
+					}
+					if (
+						selectTargetKey &&
+						targets.some((target) => target.target_key === selectTargetKey)
+					) {
+						return {
+							...prev,
+							remote_storage_target_key: selectTargetKey,
+						};
+					}
+					if (
+						prev.remote_storage_target_key &&
+						targets.some(
+							(target) => target.target_key === prev.remote_storage_target_key,
+						)
+					) {
+						return prev;
+					}
+					const fallbackTarget =
+						targets.find((target) => target.is_default) ?? targets[0];
+					return {
+						...prev,
+						remote_storage_target_key: fallbackTarget?.target_key ?? "",
+					};
+				});
+			} catch (error) {
+				if (requestSerial !== remoteStorageTargetsRequestSerial.current) {
+					return;
+				}
+				setRemoteStorageTargets([]);
+				setRemoteStorageTargetsError(t("remote_storage_targets_load_failed"));
+				if (showErrorToast) {
+					handleApiError(error);
+				}
+			} finally {
+				if (requestSerial === remoteStorageTargetsRequestSerial.current) {
+					setRemoteStorageTargetsLoading(false);
+				}
+			}
+		},
+		[t],
+	);
+
+	const loadRemoteStorageTargetDriverDescriptorsForPolicy = useCallback(
+		async (
+			remoteNodeId: number,
+			{ showErrorToast = true }: { showErrorToast?: boolean } = {},
+		) => {
+			const requestSerial =
+				++remoteStorageTargetDriverDescriptorsRequestSerial.current;
+			setRemoteStorageTargetDriverDescriptorsLoading(true);
+			setRemoteStorageTargetDriverDescriptorsError(null);
+
+			try {
+				const descriptors =
+					await adminRemoteNodeService.listStorageTargetDrivers(remoteNodeId);
+				if (
+					requestSerial !==
+					remoteStorageTargetDriverDescriptorsRequestSerial.current
+				) {
+					return;
+				}
+				setRemoteStorageTargetDriverDescriptors(descriptors);
+				setRemoteStorageTargetDriverDescriptorsError(null);
+			} catch (error) {
+				if (
+					requestSerial !==
+					remoteStorageTargetDriverDescriptorsRequestSerial.current
+				) {
+					return;
+				}
+				setRemoteStorageTargetDriverDescriptors([]);
+				setRemoteStorageTargetDriverDescriptorsError(
+					t("remote_storage_target_drivers_load_failed"),
+				);
+				if (showErrorToast) {
+					handleApiError(error);
+				}
+			} finally {
+				if (
+					requestSerial ===
+					remoteStorageTargetDriverDescriptorsRequestSerial.current
+				) {
+					setRemoteStorageTargetDriverDescriptorsLoading(false);
+				}
+			}
+		},
+		[t],
+	);
+
+	useEffect(() => {
+		const remoteNodeId = Number(form.remote_node_id);
+		const canLoadTargets =
+			dialogOpen &&
+			supportsRemoteNodeBinding(currentStorageDriverDescriptor) &&
+			Number.isSafeInteger(remoteNodeId) &&
+			remoteNodeId > 0;
+		if (!canLoadTargets) {
+			remoteStorageTargetsRequestSerial.current += 1;
+			remoteStorageTargetDriverDescriptorsRequestSerial.current += 1;
+			setRemoteStorageTargets([]);
+			setRemoteStorageTargetsLoading(false);
+			setRemoteStorageTargetsError(null);
+			setRemoteStorageTargetDriverDescriptors([]);
+			setRemoteStorageTargetDriverDescriptorsLoading(false);
+			setRemoteStorageTargetDriverDescriptorsError(null);
+			return;
+		}
+
+		void loadRemoteStorageTargetsForPolicy(remoteNodeId);
+		void loadRemoteStorageTargetDriverDescriptorsForPolicy(remoteNodeId);
+	}, [
+		currentStorageDriverDescriptor,
+		dialogOpen,
+		form.remote_node_id,
+		loadRemoteStorageTargetDriverDescriptorsForPolicy,
+		loadRemoteStorageTargetsForPolicy,
+	]);
+
 	useEffect(() => {
 		setSearchParams(
 			buildOffsetPaginationSearchParams({
@@ -533,6 +703,33 @@ function useAdminPoliciesPageContent() {
 			}
 		},
 		[],
+	);
+
+	const createRemoteStorageTargetForPolicy = useCallback(
+		async (payload: RemoteCreateStorageTargetRequest) => {
+			const remoteNodeId = Number(form.remote_node_id);
+			if (!Number.isSafeInteger(remoteNodeId) || remoteNodeId <= 0) {
+				const error = new Error(t("policy_wizard_remote_node_required"));
+				toast.error(error.message);
+				throw error;
+			}
+
+			try {
+				const created = await adminRemoteNodeService.createStorageTarget(
+					remoteNodeId,
+					payload,
+				);
+				toast.success(t("remote_node_ingress_profile_created"));
+				await loadRemoteStorageTargetsForPolicy(remoteNodeId, {
+					selectTargetKey: created.target_key,
+					showErrorToast: false,
+				});
+			} catch (error) {
+				handleApiError(error);
+				throw error;
+			}
+		},
+		[form.remote_node_id, loadRemoteStorageTargetsForPolicy, t],
 	);
 
 	const handlePageSizeChange = (value: string | null) => {
@@ -617,6 +814,14 @@ function useAdminPoliciesPageContent() {
 		setStorageCredentials([]);
 		setStorageCredentialsLoading(false);
 		setValidatedConnectionKey(null);
+		remoteStorageTargetsRequestSerial.current += 1;
+		remoteStorageTargetDriverDescriptorsRequestSerial.current += 1;
+		setRemoteStorageTargets([]);
+		setRemoteStorageTargetsLoading(false);
+		setRemoteStorageTargetsError(null);
+		setRemoteStorageTargetDriverDescriptors([]);
+		setRemoteStorageTargetDriverDescriptorsLoading(false);
+		setRemoteStorageTargetDriverDescriptorsError(null);
 		setCreateStep(0);
 		setCreateStepTouched(false);
 	}, []);
@@ -837,6 +1042,14 @@ function useAdminPoliciesPageContent() {
 				};
 			}
 
+			if (key === "remote_node_id") {
+				return {
+					...prev,
+					remote_node_id: value as string,
+					remote_storage_target_key: "",
+				};
+			}
+
 			return { ...prev, [key]: value };
 		});
 	};
@@ -861,6 +1074,7 @@ function useAdminPoliciesPageContent() {
 					...prevWithoutS3PathStyle,
 					driver_type: driverType,
 					remote_node_id: "",
+					remote_storage_target_key: "",
 					storage_native_processing_enabled: nextSupportsStorageNativeProcessing
 						? prev.storage_native_processing_enabled
 						: false,
@@ -899,6 +1113,7 @@ function useAdminPoliciesPageContent() {
 					media_metadata_extensions: [],
 					remote_download_strategy: "relay_stream",
 					remote_upload_strategy: "relay_stream",
+					remote_storage_target_key: "",
 				};
 			}
 
@@ -911,6 +1126,7 @@ function useAdminPoliciesPageContent() {
 					access_key: "",
 					secret_key: "",
 					remote_node_id: "",
+					remote_storage_target_key: "",
 					content_dedup: false,
 					onedrive_cloud: prev.onedrive_cloud || "global",
 					onedrive_account_mode: prev.onedrive_account_mode || "work_or_school",
@@ -948,6 +1164,7 @@ function useAdminPoliciesPageContent() {
 				access_key: "",
 				secret_key: "",
 				remote_node_id: "",
+				remote_storage_target_key: "",
 				storage_native_processing_enabled: false,
 				thumbnail_processor: null,
 				thumbnail_extensions: [],
@@ -1438,6 +1655,14 @@ function useAdminPoliciesPageContent() {
 		}
 
 		if (
+			supportsRemoteNodeBinding(currentStorageDriverDescriptor) &&
+			form.remote_node_id &&
+			!form.remote_storage_target_key
+		) {
+			return;
+		}
+
+		if (
 			supportsApplicationCredentials(currentStorageDriverDescriptor) &&
 			!microsoftGraphCredentials(form).client_id.trim()
 		) {
@@ -1473,6 +1698,16 @@ function useAdminPoliciesPageContent() {
 		) {
 			setCreateStepTouched(true);
 			setCreateStep(1);
+			return;
+		}
+		if (
+			supportsRemoteNodeBinding(currentStorageDriverDescriptor) &&
+			(!form.remote_node_id || !form.remote_storage_target_key)
+		) {
+			setCreateStepTouched(true);
+			if (editingId === null) {
+				setCreateStep(1);
+			}
 			return;
 		}
 		void submitPolicy();
@@ -1692,6 +1927,18 @@ function useAdminPoliciesPageContent() {
 						s3DriverPromotionTarget?.driverLabel ?? null
 					}
 					remoteNodes={remoteNodes}
+					remoteStorageTargetDriverDescriptors={
+						remoteStorageTargetDriverDescriptors
+					}
+					remoteStorageTargetDriverDescriptorsError={
+						remoteStorageTargetDriverDescriptorsError
+					}
+					remoteStorageTargetDriverDescriptorsLoading={
+						remoteStorageTargetDriverDescriptorsLoading
+					}
+					remoteStorageTargets={remoteStorageTargets}
+					remoteStorageTargetsError={remoteStorageTargetsError}
+					remoteStorageTargetsLoading={remoteStorageTargetsLoading}
 					submitting={submitting}
 					createStep={createStep}
 					createStepTouched={createStepTouched}
@@ -1708,6 +1955,7 @@ function useAdminPoliciesPageContent() {
 					onConfirmS3DriverPromotion={confirmS3DriverPromotion}
 					onStartStorageAuthorization={startStorageAuthorization}
 					onValidateStorageCredential={validateStorageCredential}
+					onCreateRemoteStorageTarget={createRemoteStorageTargetForPolicy}
 					onDialogOpenChange={handleDialogOpenChange}
 					onSubmit={handleSubmit}
 					onRequestS3DriverPromotion={requestS3DriverPromotion}

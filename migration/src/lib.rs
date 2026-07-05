@@ -19,6 +19,7 @@ use sea_orm_migration::sea_orm::{
 };
 
 mod column;
+mod index_helpers;
 mod m20260512_000001_baseline_schema;
 mod m20260515_000001_add_passkeys;
 mod m20260517_000001_add_external_auth;
@@ -45,6 +46,8 @@ mod m20260618_000001_rename_upload_session_object_fields;
 mod m20260619_000001_add_storage_connector_application_configs;
 mod m20260620_000001_enforce_json_text_not_null;
 mod m20260704_000001_rename_managed_ingress_profiles_to_remote_storage_targets;
+mod m20260704_000002_add_remote_storage_target_key_to_storage_policies;
+mod m20260705_000001_drop_remote_storage_target_max_file_size;
 mod search_acceleration;
 mod time;
 
@@ -153,6 +156,10 @@ impl MigratorTrait for CurrentMigrator {
             Box::new(
                 m20260704_000001_rename_managed_ingress_profiles_to_remote_storage_targets::Migration,
             ),
+            Box::new(
+                m20260704_000002_add_remote_storage_target_key_to_storage_policies::Migration,
+            ),
+            Box::new(m20260705_000001_drop_remote_storage_target_max_file_size::Migration),
         ]
     }
 }

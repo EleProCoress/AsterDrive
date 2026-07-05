@@ -524,6 +524,7 @@ async fn create_remote_policy_via_service_with_options(
     remote_node_id: i64,
     name: &str,
     base_path: &str,
+    target_key: &str,
     options: StoragePolicyOptions,
     chunk_size: i64,
 ) -> storage_policy::Model {
@@ -539,6 +540,7 @@ async fn create_remote_policy_via_service_with_options(
                 secret_key: String::new(),
                 base_path: base_path.to_string(),
                 remote_node_id: Some(remote_node_id),
+                remote_storage_target_key: Some(target_key.to_string()),
                 options: Default::default(),
             },
             max_file_size: 0,
@@ -546,6 +548,7 @@ async fn create_remote_policy_via_service_with_options(
             is_default: false,
             allowed_types: None,
             options: Some(options),
+            remote_storage_target_key: Some(target_key.to_string()),
             application_config: Default::default(),
         },
     )
@@ -718,18 +721,12 @@ async fn create_managed_local_ingress_for_binding(
         .await
         .expect("provider master binding lookup should succeed")
         .expect("provider master binding should exist");
-    let max_file_size = provider_state
-        .policy_snapshot
-        .system_default_policy()
-        .map(|policy| policy.max_file_size)
-        .unwrap_or(0);
     remote_storage_target_service::create(
         &provider_state.follower_view(),
         &binding,
         RemoteCreateStorageTargetRequest::Local(RemoteCreateLocalStorageTargetRequest {
             name: format!("Managed {base_path}"),
             base_path: base_path.to_string(),
-            max_file_size,
             is_default: true,
         }),
     )
@@ -840,7 +837,6 @@ async fn test_remote_ingress_profiles_use_reverse_tunnel_without_base_url() {
         RemoteCreateStorageTargetRequest::Local(RemoteCreateLocalStorageTargetRequest {
             name: "Reverse Landing".to_string(),
             base_path: "reverse-landing".to_string(),
-            max_file_size: 0,
             is_default: true,
         }),
     )
@@ -933,7 +929,6 @@ async fn test_remote_ingress_profiles_auto_empty_base_url_uses_reverse_tunnel() 
         RemoteCreateStorageTargetRequest::Local(RemoteCreateLocalStorageTargetRequest {
             name: "Auto Tunnel Landing".to_string(),
             base_path: "auto-tunnel-landing".to_string(),
-            max_file_size: 0,
             is_default: true,
         }),
     )
@@ -986,7 +981,6 @@ async fn test_remote_ingress_profile_create_rejects_driver_missing_from_capabili
             access_key: "access".to_string(),
             secret_key: "secret".to_string(),
             base_path: "unsupported-s3".to_string(),
-            max_file_size: 0,
             is_default: true,
         }),
     )
@@ -1000,7 +994,7 @@ async fn test_remote_ingress_profile_create_rejects_driver_missing_from_capabili
     assert!(
         error
             .message()
-            .contains("does not declare managed ingress support for the s3 driver"),
+            .contains("does not declare remote storage target support for the s3 driver"),
         "unexpected error message: {}",
         error.message()
     );
@@ -1055,7 +1049,7 @@ async fn test_remote_ingress_profile_update_rejects_driver_missing_from_capabili
     assert!(
         error
             .message()
-            .contains("does not declare managed ingress support for the s3 driver"),
+            .contains("does not declare remote storage target support for the s3 driver"),
         "unexpected error message: {}",
         error.message()
     );
@@ -1100,9 +1094,7 @@ async fn test_remote_ingress_profile_update_without_driver_change_keeps_remote_a
         ApiErrorCode::ManagedIngressDriverUnsupported
     );
     assert!(
-        error
-            .message()
-            .contains("update remote remote storage target"),
+        error.message().contains("update remote storage target"),
         "unexpected error message: {}",
         error.message()
     );
@@ -1163,7 +1155,7 @@ async fn test_remote_ingress_profile_driver_descriptors_follow_remote_capabiliti
                 .iter()
                 .map(|field| field["name"].as_str().unwrap_or_default())
                 .collect::<Vec<_>>(),
-            vec!["base_path", "max_file_size", "is_default"]
+            vec!["base_path", "is_default"]
         );
     }
 }
@@ -1613,7 +1605,6 @@ async fn test_remote_storage_target_handles_remote_writes_without_legacy_binding
         RemoteCreateStorageTargetRequest::Local(RemoteCreateLocalStorageTargetRequest {
             name: "Managed Local".to_string(),
             base_path: "managed-a".to_string(),
-            max_file_size: 0,
             is_default: true,
         }),
     )
@@ -1650,6 +1641,127 @@ async fn test_remote_storage_target_handles_remote_writes_without_legacy_binding
 
     provider_server.stop().await;
     let _ = tokio::fs::remove_dir_all(managed_root.join("managed-a")).await;
+    let _ = tokio::fs::remove_dir(&managed_root).await;
+}
+
+#[tokio::test]
+async fn test_remote_policy_uses_selected_remote_storage_target_key() {
+    let provider_state = common::setup().await;
+    let consumer_state = common::setup().await;
+    let provider_server = spawn_internal_storage_server(provider_state.follower_view()).await;
+    let managed_root = PathBuf::from(
+        &provider_state
+            .config
+            .server
+            .follower
+            .remote_storage_target_local_root,
+    );
+    let consumer_node = managed_follower_service::create(
+        &consumer_state,
+        managed_follower_service::CreateRemoteNodeInput {
+            name: "selected-target-node".to_string(),
+            base_url: provider_server.base_url.clone(),
+            transport_mode: RemoteNodeTransportMode::Direct,
+            is_enabled: true,
+        },
+    )
+    .await
+    .expect("consumer remote node should be created");
+    let consumer_node_model =
+        managed_follower_repo::find_by_id(consumer_state.writer_db(), consumer_node.id)
+            .await
+            .expect("consumer remote node should be queryable");
+
+    let (provider_binding, _) = master_binding_service::upsert_from_enrollment(
+        provider_state.writer_db(),
+        master_binding_service::UpsertMasterBindingInput {
+            name: "selected-target-binding".to_string(),
+            master_url: "http://master.example.com".to_string(),
+            access_key: consumer_node_model.access_key.clone(),
+            secret_key: consumer_node_model.secret_key.clone(),
+            is_enabled: true,
+        },
+    )
+    .await
+    .expect("provider binding should be created");
+    provider_state
+        .driver_registry
+        .reload_master_bindings(provider_state.writer_db())
+        .await
+        .expect("provider binding registry should reload");
+    create_managed_local_ingress_for_binding(
+        &provider_state,
+        &consumer_node_model.access_key,
+        "default-target",
+    )
+    .await;
+    wait_for_remote_probe(&consumer_state, consumer_node.id).await;
+
+    let selected_target = remote_storage_target_service::create_remote(
+        &consumer_state,
+        consumer_node.id,
+        RemoteCreateStorageTargetRequest::Local(RemoteCreateLocalStorageTargetRequest {
+            name: "Selected Target".to_string(),
+            base_path: "selected-target".to_string(),
+            is_default: false,
+        }),
+    )
+    .await
+    .expect("selected remote storage target should be created through primary");
+    assert!(!selected_target.is_default);
+
+    let remote_policy = create_remote_policy_via_service_with_options(
+        &consumer_state,
+        consumer_node.id,
+        "Selected Target Policy",
+        "policy-prefix",
+        &selected_target.target_key,
+        StoragePolicyOptions::default(),
+        5_242_880,
+    )
+    .await;
+    assert_eq!(
+        remote_policy.remote_storage_target_key.as_deref(),
+        Some(selected_target.target_key.as_str())
+    );
+
+    let driver = consumer_state
+        .driver_registry()
+        .get_driver(&remote_policy)
+        .expect("remote policy driver should resolve");
+    driver
+        .put("selected.bin", b"selected target payload")
+        .await
+        .expect("remote policy should write through selected target");
+
+    let selected_path = managed_ingress_object_path(
+        &provider_state,
+        "selected-target",
+        &provider_binding.storage_namespace,
+        "policy-prefix",
+        "selected.bin",
+    );
+    let default_path = managed_ingress_object_path(
+        &provider_state,
+        "default-target",
+        &provider_binding.storage_namespace,
+        "policy-prefix",
+        "selected.bin",
+    );
+    assert_eq!(
+        tokio::fs::read(&selected_path)
+            .await
+            .expect("selected target object should exist"),
+        b"selected target payload"
+    );
+    assert!(
+        tokio::fs::metadata(&default_path).await.is_err(),
+        "selected policy object must not be written to the binding default target"
+    );
+
+    provider_server.stop().await;
+    let _ = tokio::fs::remove_dir_all(managed_root.join("selected-target")).await;
+    let _ = tokio::fs::remove_dir_all(managed_root.join("default-target")).await;
     let _ = tokio::fs::remove_dir(&managed_root).await;
 }
 
@@ -1851,7 +1963,6 @@ async fn test_follower_internal_storage_records_binding_and_profile_audit_logs()
             RemoteCreateLocalStorageTargetRequest {
                 name: "Profile Audit Local".to_string(),
                 base_path: "profile-audit-a".to_string(),
-                max_file_size: 0,
                 is_default: true,
             },
         ))
@@ -1970,7 +2081,6 @@ async fn test_remote_storage_target_api_isolates_multiple_primary_bindings() {
                 RemoteCreateLocalStorageTargetRequest {
                     name: name.to_string(),
                     base_path: "shared-profile".to_string(),
-                    max_file_size: 0,
                     is_default: true,
                 },
             ))
@@ -2057,7 +2167,6 @@ async fn test_remote_storage_target_api_isolates_multiple_primary_bindings() {
         RemoteCreateStorageTargetRequest::Local(RemoteCreateLocalStorageTargetRequest {
             name: "Second A".to_string(),
             base_path: "secondary-a".to_string(),
-            max_file_size: 0,
             is_default: false,
         }),
     )
@@ -2114,11 +2223,13 @@ async fn test_internal_storage_presigned_put_rejects_payload_exceeding_ingress_l
     .await;
 
     let path = "/api/v1/internal/storage/objects/too-large.bin";
+    let request_target = format!("{path}?max_file_size=8");
     let expires_at = Utc::now().timestamp() + 300;
-    let signature = sign_presigned_request(secret_key, "PUT", path, access_key, expires_at);
+    let signature =
+        sign_presigned_request(secret_key, "PUT", &request_target, access_key, expires_at);
     let req = test::TestRequest::put()
         .uri(&format!(
-            "{path}?aster_access_key={access_key}&aster_expires={expires_at}&aster_signature={signature}"
+            "{request_target}&aster_access_key={access_key}&aster_expires={expires_at}&aster_signature={signature}"
         ))
         .insert_header((
             actix_web::http::header::CONTENT_TYPE,
@@ -2175,10 +2286,11 @@ async fn test_internal_storage_presigned_put_ignores_bytes_beyond_declared_conte
         .expect("provider base_url should contain port");
     let object_key = "declared-length-only.bin";
     let path = format!("/api/v1/internal/storage/objects/{object_key}");
+    let signed_path = format!("{path}?max_file_size=0");
     let expires_at = Utc::now().timestamp() + 300;
-    let signature = sign_presigned_request(secret_key, "PUT", &path, access_key, expires_at);
+    let signature = sign_presigned_request(secret_key, "PUT", &signed_path, access_key, expires_at);
     let request_target = format!(
-        "{path}?aster_access_key={access_key}&aster_expires={expires_at}&aster_signature={signature}"
+        "{signed_path}&aster_access_key={access_key}&aster_expires={expires_at}&aster_signature={signature}"
     );
     let mut request = format!(
         "PUT {request_target} HTTP/1.1\r\nHost: {host}:{port}\r\nContent-Type: application/octet-stream\r\nContent-Length: 4\r\nConnection: close\r\n\r\n"
@@ -2262,7 +2374,7 @@ async fn test_internal_storage_compose_rejects_expected_size_exceeding_ingress_l
         expected_size: 16,
     })
     .expect("compose request body should serialize");
-    let path = "/api/v1/internal/storage/compose";
+    let path = "/api/v1/internal/storage/compose?max_file_size=8";
     let timestamp = Utc::now().timestamp();
     let nonce = "compose-limit-test";
     let signature = sign_internal_request(
@@ -3723,6 +3835,7 @@ async fn test_reverse_tunnel_policy_connection_test_uses_tunnel_registry() {
                 secret_key: String::new(),
                 base_path: "reverse-policy-test".to_string(),
                 remote_node_id: Some(consumer_node.id),
+                remote_storage_target_key: None,
                 options: Default::default(),
             },
         },
@@ -4195,6 +4308,7 @@ async fn test_reverse_tunnel_remote_policy_rejects_presigned_strategies() {
             secret_key: String::new(),
             base_path: "reverse-presigned".to_string(),
             remote_node_id: Some(node.id),
+            remote_storage_target_key: None,
             options: Default::default(),
         },
         max_file_size: 0,
@@ -4202,6 +4316,7 @@ async fn test_reverse_tunnel_remote_policy_rejects_presigned_strategies() {
         is_default: false,
         allowed_types: None,
         options: Some(options),
+        remote_storage_target_key: None,
         application_config: Default::default(),
     };
 
@@ -4271,6 +4386,7 @@ async fn test_auto_empty_url_remote_policy_rejects_presigned_strategies() {
                 secret_key: String::new(),
                 base_path: "auto-empty-presigned".to_string(),
                 remote_node_id: Some(node.id),
+                remote_storage_target_key: None,
                 options: Default::default(),
             },
             max_file_size: 0,
@@ -4281,6 +4397,7 @@ async fn test_auto_empty_url_remote_policy_rejects_presigned_strategies() {
                 remote_upload_strategy: Some(RemoteUploadStrategy::Presigned),
                 ..Default::default()
             }),
+            remote_storage_target_key: None,
             application_config: Default::default(),
         },
     )
@@ -4392,7 +4509,7 @@ async fn test_remote_node_update_rejects_reverse_tunnel_when_referenced_policy_u
         RemoteStorageCapabilities::current(),
     )
     .await;
-    let _policy = create_remote_policy_via_service_with_options(
+    let _policy = create_remote_policy_with_options(
         &consumer_state,
         node.id,
         "Direct Presigned Before Reverse Switch",
@@ -4705,6 +4822,7 @@ async fn test_disabling_remote_node_syncs_follower_binding_and_blocks_remote_use
                 secret_key: String::new(),
                 base_path: String::new(),
                 remote_node_id: Some(consumer_node.id),
+                remote_storage_target_key: None,
                 options: Default::default(),
             },
             max_file_size: 0,
@@ -4712,6 +4830,7 @@ async fn test_disabling_remote_node_syncs_follower_binding_and_blocks_remote_use
             is_default: false,
             allowed_types: Some(Vec::new()),
             options: Some(StoragePolicyOptions::default()),
+            remote_storage_target_key: None,
             application_config: Default::default(),
         },
     )

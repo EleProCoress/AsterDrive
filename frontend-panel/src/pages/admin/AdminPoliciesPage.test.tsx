@@ -19,6 +19,7 @@ import { ApiErrorCode } from "@/types/api-helpers";
 
 const mockState = vi.hoisted(() => ({
 	create: vi.fn(),
+	createStorageTarget: vi.fn(),
 	dryRunMigration: vi.fn(),
 	executeDraftPolicyAction: vi.fn(),
 	executeSavedPolicyAction: vi.fn(),
@@ -30,6 +31,8 @@ const mockState = vi.hoisted(() => ({
 	listAllPolicies: vi.fn(),
 	listPolicies: vi.fn(),
 	listRemoteNodes: vi.fn(),
+	listStorageTargetDrivers: vi.fn(),
+	listStorageTargets: vi.fn(),
 	listStorageDriverDescriptors: vi.fn(),
 	listStorageCredentials: vi.fn(),
 	loading: false,
@@ -37,6 +40,10 @@ const mockState = vi.hoisted(() => ({
 	promoteS3CompatibleDriver: vi.fn(),
 	reload: vi.fn(),
 	remoteNodes: [] as Array<Record<string, unknown>>,
+	remoteStorageTargetsByNode: {} as Record<
+		number,
+		Array<Record<string, unknown>>
+	>,
 	searchParams: "",
 	setSearchParams: vi.fn(),
 	testConnection: vi.fn(),
@@ -49,6 +56,38 @@ const mockState = vi.hoisted(() => ({
 	validateStorageCredential: vi.fn(),
 }));
 
+const mockTranslate = vi.hoisted(
+	() => (key: string, values?: Record<string, string | number>) => {
+		if (typeof values?.driver === "string") {
+			return `${key}:${values.driver}`;
+		}
+		switch (key) {
+			case "driver_type_local":
+				return "Local";
+			case "driver_type_s3":
+				return "S3";
+			case "driver_type_tencent_cos":
+				return "Tencent COS";
+			case "driver_type_azure_blob":
+				return "Azure Blob";
+			case "driver_type_remote":
+				return "Remote";
+			case "driver_type_onedrive":
+				return "OneDrive";
+			case "azure_blob_account_name":
+				return "Account Name";
+			case "azure_blob_account_key":
+				return "Account Key";
+			case "access_key":
+				return "Access Key";
+			case "secret_key":
+				return "Secret Key";
+			default:
+				return key;
+		}
+	},
+);
+
 vi.mock("react-router-dom", () => ({
 	useNavigate: () => mockState.navigate,
 	useSearchParams: () => [
@@ -59,35 +98,7 @@ vi.mock("react-router-dom", () => ({
 
 vi.mock("react-i18next", () => ({
 	useTranslation: () => ({
-		t: (key: string, values?: Record<string, string | number>) => {
-			if (typeof values?.driver === "string") {
-				return `${key}:${values.driver}`;
-			}
-			switch (key) {
-				case "driver_type_local":
-					return "Local";
-				case "driver_type_s3":
-					return "S3";
-				case "driver_type_tencent_cos":
-					return "Tencent COS";
-				case "driver_type_azure_blob":
-					return "Azure Blob";
-				case "driver_type_remote":
-					return "Remote";
-				case "driver_type_onedrive":
-					return "OneDrive";
-				case "azure_blob_account_name":
-					return "Account Name";
-				case "azure_blob_account_key":
-					return "Account Key";
-				case "access_key":
-					return "Access Key";
-				case "secret_key":
-					return "Secret Key";
-				default:
-					return key;
-			}
-		},
+		t: mockTranslate,
 	}),
 	initReactI18next: {
 		type: "3rdParty",
@@ -288,7 +299,13 @@ vi.mock("@/components/ui/dialog", () => ({
 }));
 
 vi.mock("@/components/ui/icon", () => ({
-	Icon: ({ name }: { name: string }) => <span>{name}</span>,
+	Icon: ({
+		"aria-hidden": ariaHidden,
+		name,
+	}: {
+		"aria-hidden"?: boolean;
+		name: string;
+	}) => <span aria-hidden={ariaHidden}>{name}</span>,
 }));
 
 vi.mock("@/components/ui/input", () => ({
@@ -577,7 +594,13 @@ vi.mock("@/services/adminService", () => ({
 			mockState.validateStorageCredential(...args),
 	},
 	adminRemoteNodeService: {
+		createStorageTarget: (...args: unknown[]) =>
+			mockState.createStorageTarget(...args),
 		list: (...args: unknown[]) => mockState.listRemoteNodes(...args),
+		listStorageTargetDrivers: (...args: unknown[]) =>
+			mockState.listStorageTargetDrivers(...args),
+		listStorageTargets: (...args: unknown[]) =>
+			mockState.listStorageTargets(...args),
 	},
 }));
 
@@ -598,9 +621,58 @@ function createPolicy(overrides: Record<string, unknown> = {}) {
 		name: "Local Policy",
 		options: {},
 		remote_node_id: null,
+		remote_storage_target_key: null,
 		updated_at: "2026-03-28T00:00:00Z",
 		...overrides,
 	};
+}
+
+function createRemoteStorageTarget(overrides: Record<string, unknown> = {}) {
+	return {
+		applied_revision: 1,
+		base_path: "",
+		bucket: "",
+		created_at: "2026-03-28T00:00:00Z",
+		desired_revision: 1,
+		driver_type: "local",
+		endpoint: "",
+		is_default: false,
+		last_error: "",
+		name: "Default Target",
+		target_key: "rst_default",
+		updated_at: "2026-03-28T00:00:00Z",
+		...overrides,
+	};
+}
+
+function createRemoteStorageTargetDriverDescriptors() {
+	return [
+		{
+			description_key: "remote_node_ingress_profile_local_scope_hint",
+			driver_type: "local",
+			fields: [
+				{
+					help_key: "remote_node_ingress_profile_local_path_hint",
+					kind: "text",
+					label_key: "base_path",
+					name: "base_path",
+					placeholder: "tenant-a/incoming",
+					required: true,
+					secret: false,
+				},
+				{
+					help_key: "remote_node_ingress_profile_default_hint",
+					kind: "boolean",
+					label_key: "remote_node_ingress_profile_default_toggle",
+					name: "is_default",
+					placeholder: null,
+					required: false,
+					secret: false,
+				},
+			],
+			label_key: "remote_node_ingress_profile_driver_local",
+		},
+	];
 }
 
 function fieldDescriptor(
@@ -1097,12 +1169,27 @@ async function openMigrationDialog() {
 	await screen.findByText("policy_migration_title");
 }
 
+async function waitForDefaultRemoteStorageTargetSelection() {
+	await screen.findByText("remote_storage_target_hint:local");
+}
+
+function deferred<T>() {
+	let resolve!: (value: T) => void;
+	let reject!: (reason?: unknown) => void;
+	const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+		resolve = resolvePromise;
+		reject = rejectPromise;
+	});
+	return { promise, reject, resolve };
+}
+
 describe("AdminPoliciesPage", () => {
 	beforeEach(() => {
 		mockState.executeDraftPolicyAction.mockReset();
 		mockState.executeSavedPolicyAction.mockReset();
 		mockState.getPolicy.mockReset();
 		mockState.create.mockReset();
+		mockState.createStorageTarget.mockReset();
 		mockState.dryRunMigration.mockReset();
 		mockState.createMigration.mockReset();
 		mockState.deletePolicy.mockReset();
@@ -1113,6 +1200,8 @@ describe("AdminPoliciesPage", () => {
 		mockState.listAllPolicies.mockReset();
 		mockState.listPolicies.mockReset();
 		mockState.listRemoteNodes.mockReset();
+		mockState.listStorageTargetDrivers.mockReset();
+		mockState.listStorageTargets.mockReset();
 		mockState.listStorageDriverDescriptors.mockReset();
 		mockState.listStorageCredentials.mockReset();
 		mockState.loading = false;
@@ -1120,6 +1209,7 @@ describe("AdminPoliciesPage", () => {
 		mockState.promoteS3CompatibleDriver.mockReset();
 		mockState.reload.mockReset();
 		mockState.remoteNodes = [];
+		mockState.remoteStorageTargetsByNode = {};
 		mockState.searchParams = "";
 		mockState.setSearchParams.mockReset();
 		mockState.testConnection.mockReset();
@@ -1174,6 +1264,29 @@ describe("AdminPoliciesPage", () => {
 			items: mockState.remoteNodes,
 			total: mockState.remoteNodes.length,
 		}));
+		mockState.listStorageTargets.mockImplementation(async (nodeId: number) =>
+			(
+				mockState.remoteStorageTargetsByNode[nodeId] ?? [
+					createRemoteStorageTarget(),
+				]
+			).map((target) => ({ ...target })),
+		);
+		mockState.listStorageTargetDrivers.mockResolvedValue(
+			createRemoteStorageTargetDriverDescriptors(),
+		);
+		mockState.createStorageTarget.mockImplementation(
+			async (nodeId: number, payload: Record<string, unknown>) => {
+				const created = createRemoteStorageTarget({
+					...payload,
+					target_key: payload.target_key ?? "rst_created",
+				});
+				mockState.remoteStorageTargetsByNode[nodeId] = [
+					...(mockState.remoteStorageTargetsByNode[nodeId] ?? []),
+					created,
+				];
+				return created;
+			},
+		);
 		mockState.listStorageDriverDescriptors.mockResolvedValue(
 			createStorageDriverDescriptors(),
 		);
@@ -2957,6 +3070,7 @@ describe("AdminPoliciesPage", () => {
 			).toBeInTheDocument();
 		});
 		fireEvent.click(screen.getByRole("button", { name: "select-item:7" }));
+		await waitForDefaultRemoteStorageTargetSelection();
 
 		fireEvent.click(screen.getByRole("button", { name: /test_connection/i }));
 
@@ -2972,6 +3086,7 @@ describe("AdminPoliciesPage", () => {
 					remote_upload_strategy: "relay_stream",
 				},
 				remote_node_id: 7,
+				remote_storage_target_key: "rst_default",
 				secret_key: undefined,
 			});
 		});
@@ -2997,9 +3112,369 @@ describe("AdminPoliciesPage", () => {
 					remote_upload_strategy: "relay_stream",
 				},
 				remote_node_id: 7,
+				remote_storage_target_key: "rst_default",
 				secret_key: "",
 			});
 		});
+	});
+
+	it("keeps a saved remote storage target when editing an existing remote policy", async () => {
+		mockState.remoteNodes = [
+			{
+				id: 11,
+				name: "Edge Saved",
+				base_url: "https://remote-saved.example.com",
+			},
+		];
+		mockState.remoteStorageTargetsByNode[11] = [
+			createRemoteStorageTarget({
+				is_default: true,
+				name: "Default Saved Target",
+				target_key: "rst_default_saved",
+			}),
+			createRemoteStorageTarget({
+				is_default: false,
+				name: "Cold Saved Target",
+				target_key: "rst_cold_saved",
+			}),
+		];
+		mockState.items = [
+			createPolicy({
+				id: 111,
+				name: "Remote Saved Archive",
+				driver_type: "remote",
+				remote_node_id: 11,
+				remote_storage_target_key: "rst_cold_saved",
+				options: {
+					remote_download_strategy: "relay_stream",
+					remote_upload_strategy: "relay_stream",
+				},
+			}),
+		];
+
+		render(<AdminPoliciesPage />);
+
+		openEditPolicy("Remote Saved Archive");
+
+		await screen.findByText("remote_storage_target_hint:local");
+		fireEvent.click(screen.getByRole("button", { name: /save_changes/i }));
+
+		await waitFor(() => {
+			expect(mockState.update).toHaveBeenCalledWith(
+				111,
+				expect.objectContaining({
+					remote_node_id: 11,
+					remote_storage_target_key: "rst_cold_saved",
+				}),
+			);
+		});
+	});
+
+	it("does not show a missing remote target error in edit mode until save is attempted", async () => {
+		mockState.remoteNodes = [
+			{
+				id: 14,
+				name: "Edge Legacy",
+				base_url: "https://remote-legacy.example.com",
+			},
+		];
+		mockState.remoteStorageTargetsByNode[14] = [];
+		mockState.items = [
+			createPolicy({
+				id: 114,
+				name: "Remote Legacy Archive",
+				driver_type: "remote",
+				remote_node_id: 14,
+				remote_storage_target_key: null,
+				options: {
+					remote_download_strategy: "relay_stream",
+					remote_upload_strategy: "relay_stream",
+				},
+			}),
+		];
+
+		render(<AdminPoliciesPage />);
+
+		openEditPolicy("Remote Legacy Archive");
+
+		await screen.findByText("remote_storage_targets_empty");
+		expect(
+			screen.queryByText("policy_wizard_remote_storage_target_required"),
+		).not.toBeInTheDocument();
+
+		fireEvent.click(screen.getByRole("button", { name: /save_changes/i }));
+
+		await waitFor(() => {
+			expect(
+				screen.getByText("policy_wizard_remote_storage_target_required"),
+			).toBeInTheDocument();
+		});
+		expect(mockState.update).not.toHaveBeenCalled();
+	});
+
+	it("ignores stale remote target responses after switching selected remote nodes", async () => {
+		const firstTargets = deferred<Array<Record<string, unknown>>>();
+		const secondTargets = deferred<Array<Record<string, unknown>>>();
+		const firstDrivers =
+			deferred<ReturnType<typeof createRemoteStorageTargetDriverDescriptors>>();
+		const secondDrivers =
+			deferred<ReturnType<typeof createRemoteStorageTargetDriverDescriptors>>();
+		mockState.remoteNodes = [
+			{
+				id: 21,
+				name: "Edge Slow",
+				base_url: "https://remote-slow.example.com",
+			},
+			{
+				id: 22,
+				name: "Edge Fast",
+				base_url: "https://remote-fast.example.com",
+			},
+		];
+		mockState.listStorageTargets
+			.mockReturnValueOnce(firstTargets.promise)
+			.mockReturnValueOnce(secondTargets.promise);
+		mockState.listStorageTargetDrivers
+			.mockReturnValueOnce(firstDrivers.promise)
+			.mockReturnValueOnce(secondDrivers.promise);
+
+		render(<AdminPoliciesPage />);
+
+		openCreateWizard("remote");
+		fireEvent.change(screen.getByLabelText("core:name"), {
+			target: { value: "Remote Fast Archive" },
+		});
+		await waitFor(() => {
+			expect(
+				screen.getByRole("button", { name: "select-item:21" }),
+			).toBeInTheDocument();
+		});
+		fireEvent.click(screen.getByRole("button", { name: "select-item:21" }));
+		fireEvent.click(screen.getByRole("button", { name: "select-item:22" }));
+
+		secondTargets.resolve([
+			createRemoteStorageTarget({
+				name: "Fast Target",
+				target_key: "rst_fast",
+			}),
+		]);
+		secondDrivers.resolve(createRemoteStorageTargetDriverDescriptors());
+		await screen.findByText("remote_storage_target_hint:local");
+
+		firstTargets.resolve([
+			createRemoteStorageTarget({
+				name: "Slow Target",
+				target_key: "rst_slow",
+			}),
+		]);
+		firstDrivers.resolve(createRemoteStorageTargetDriverDescriptors());
+
+		await waitFor(() => {
+			expect(screen.getByText("Fast Target")).toBeInTheDocument();
+		});
+		expect(screen.queryByText("Slow Target")).not.toBeInTheDocument();
+
+		fireEvent.click(
+			screen.getByRole("button", { name: "policy_wizard_review" }),
+		);
+		fireEvent.click(screen.getByRole("button", { name: /core:create/i }));
+
+		await waitFor(() => {
+			expect(mockState.create).toHaveBeenCalledWith(
+				expect.objectContaining({
+					driver_type: "remote",
+					remote_node_id: 22,
+					remote_storage_target_key: "rst_fast",
+				}),
+			);
+		});
+	});
+
+	it("shows remote target load failures without submitting incomplete remote policies", async () => {
+		mockState.remoteNodes = [
+			{
+				id: 12,
+				name: "Edge Failure",
+				base_url: "https://remote-failure.example.com",
+			},
+		];
+		mockState.listStorageTargets.mockRejectedValueOnce(
+			new Error("targets unavailable"),
+		);
+		mockState.listStorageTargetDrivers.mockRejectedValueOnce(
+			new Error("drivers unavailable"),
+		);
+
+		render(<AdminPoliciesPage />);
+
+		openCreateWizard("remote");
+		fireEvent.change(screen.getByLabelText("core:name"), {
+			target: { value: "Remote Missing Target" },
+		});
+		await waitFor(() => {
+			expect(
+				screen.getByRole("button", { name: "select-item:12" }),
+			).toBeInTheDocument();
+		});
+		fireEvent.click(screen.getByRole("button", { name: "select-item:12" }));
+
+		await waitFor(() => {
+			expect(
+				screen.getAllByText("remote_storage_targets_load_failed").length,
+			).toBeGreaterThan(0);
+		});
+		expect(mockState.handleApiError).toHaveBeenCalledTimes(2);
+
+		fireEvent.click(
+			screen.getByRole("button", { name: "policy_wizard_review" }),
+		);
+		expect(mockState.create).not.toHaveBeenCalled();
+		expect(mockState.testParams).not.toHaveBeenCalled();
+	});
+
+	it("quick-creates a remote storage target from the policy wizard and binds it", async () => {
+		mockState.remoteNodes = [
+			{
+				id: 13,
+				name: "Edge Quick",
+				base_url: "https://remote-quick.example.com",
+			},
+		];
+
+		render(<AdminPoliciesPage />);
+
+		openCreateWizard("remote");
+		fireEvent.change(screen.getByLabelText("core:name"), {
+			target: { value: "Remote Quick Archive" },
+		});
+		await waitFor(() => {
+			expect(
+				screen.getByRole("button", { name: "select-item:13" }),
+			).toBeInTheDocument();
+		});
+		fireEvent.click(screen.getByRole("button", { name: "select-item:13" }));
+		await waitForDefaultRemoteStorageTargetSelection();
+
+		fireEvent.click(
+			screen.getByRole("button", {
+				name: "policy_remote_storage_targets_quick_create",
+			}),
+		);
+		expect(
+			screen.getByText("remote_node_ingress_profile_form_create_title"),
+		).toBeInTheDocument();
+
+		const nameInputs = screen.getAllByLabelText("core:name");
+		fireEvent.change(nameInputs[nameInputs.length - 1], {
+			target: { value: "Policy target" },
+		});
+		const basePathInputs = screen.getAllByLabelText("base_path");
+		fireEvent.change(basePathInputs[basePathInputs.length - 1], {
+			target: { value: "policy/target" },
+		});
+		fireEvent.click(screen.getByRole("button", { name: /core:create/ }));
+
+		await waitFor(() => {
+			expect(mockState.createStorageTarget).toHaveBeenCalledWith(13, {
+				access_key: "",
+				base_path: "policy/target",
+				bucket: "",
+				driver_type: "local",
+				endpoint: "",
+				is_default: false,
+				name: "Policy target",
+				secret_key: "",
+			});
+		});
+		expect(mockState.toastSuccess).toHaveBeenCalledWith(
+			"remote_node_ingress_profile_created",
+		);
+
+		fireEvent.click(
+			screen.getByRole("button", { name: "policy_wizard_review" }),
+		);
+		fireEvent.click(screen.getByRole("button", { name: /core:create/i }));
+
+		await waitFor(() => {
+			expect(mockState.create).toHaveBeenCalledWith(
+				expect.objectContaining({
+					driver_type: "remote",
+					name: "Remote Quick Archive",
+					remote_node_id: 13,
+					remote_storage_target_key: "rst_created",
+				}),
+			);
+		});
+	});
+
+	it("keeps the quick-create target draft open when remote target creation fails", async () => {
+		const createError = new Error("target create failed");
+		mockState.remoteNodes = [
+			{
+				id: 14,
+				name: "Edge Quick Failure",
+				base_url: "https://remote-quick-failure.example.com",
+			},
+		];
+		mockState.createStorageTarget.mockRejectedValueOnce(createError);
+
+		render(<AdminPoliciesPage />);
+
+		openCreateWizard("remote");
+		fireEvent.change(screen.getByLabelText("core:name"), {
+			target: { value: "Remote Quick Failure Archive" },
+		});
+		await waitFor(() => {
+			expect(
+				screen.getByRole("button", { name: "select-item:14" }),
+			).toBeInTheDocument();
+		});
+		fireEvent.click(screen.getByRole("button", { name: "select-item:14" }));
+		await waitForDefaultRemoteStorageTargetSelection();
+
+		fireEvent.click(
+			screen.getByRole("button", {
+				name: "policy_remote_storage_targets_quick_create",
+			}),
+		);
+		const nameInputs = screen.getAllByLabelText("core:name");
+		const basePathInputs = screen.getAllByLabelText("base_path");
+		expect(nameInputs.length).toBeGreaterThan(0);
+		expect(basePathInputs.length).toBeGreaterThan(0);
+		fireEvent.change(nameInputs[nameInputs.length - 1], {
+			target: { value: "Failed policy target" },
+		});
+		fireEvent.change(basePathInputs[basePathInputs.length - 1], {
+			target: { value: "policy/failed-target" },
+		});
+		fireEvent.click(screen.getByRole("button", { name: /core:create/ }));
+
+		await waitFor(() => {
+			expect(mockState.createStorageTarget).toHaveBeenCalledWith(14, {
+				access_key: "",
+				base_path: "policy/failed-target",
+				bucket: "",
+				driver_type: "local",
+				endpoint: "",
+				is_default: false,
+				name: "Failed policy target",
+				secret_key: "",
+			});
+		});
+		await waitFor(() => {
+			expect(mockState.handleApiError).toHaveBeenCalledWith(createError);
+		});
+
+		expect(
+			screen.getByText("remote_node_ingress_profile_form_create_title"),
+		).toBeInTheDocument();
+		expect(
+			screen.getByDisplayValue("Failed policy target"),
+		).toBeInTheDocument();
+		expect(
+			screen.getByDisplayValue("policy/failed-target"),
+		).toBeInTheDocument();
+		expect(mockState.create).not.toHaveBeenCalled();
 	});
 
 	it("creates a remote policy with presigned upload strategy", async () => {
@@ -3024,6 +3499,7 @@ describe("AdminPoliciesPage", () => {
 			).toBeInTheDocument();
 		});
 		fireEvent.click(screen.getByRole("button", { name: "select-item:9" }));
+		await waitForDefaultRemoteStorageTargetSelection();
 
 		fireEvent.click(
 			screen.getByRole("button", { name: "policy_wizard_review" }),
@@ -3049,6 +3525,7 @@ describe("AdminPoliciesPage", () => {
 					remote_upload_strategy: "presigned",
 				},
 				remote_node_id: 9,
+				remote_storage_target_key: "rst_default",
 				secret_key: "",
 			});
 		});
@@ -3076,6 +3553,7 @@ describe("AdminPoliciesPage", () => {
 			).toBeInTheDocument();
 		});
 		fireEvent.click(screen.getByRole("button", { name: "select-item:10" }));
+		await waitForDefaultRemoteStorageTargetSelection();
 
 		fireEvent.click(
 			screen.getByRole("button", { name: "policy_wizard_review" }),
@@ -3101,6 +3579,7 @@ describe("AdminPoliciesPage", () => {
 					remote_upload_strategy: "relay_stream",
 				},
 				remote_node_id: 10,
+				remote_storage_target_key: "rst_default",
 				secret_key: "",
 			});
 		});
