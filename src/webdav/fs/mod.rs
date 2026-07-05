@@ -19,6 +19,9 @@ use crate::webdav::dav::{
     FsStream, OpenOptions, ReadDirMeta,
 };
 use crate::webdav::dir_entry::AsterDavDirEntry;
+use crate::webdav::download_audit::{
+    WebdavDownloadAuditIdentity, WebdavDownloadRequestKind, record_download,
+};
 use crate::webdav::file::AsterDavFile;
 use crate::webdav::metadata::AsterDavMeta;
 use crate::webdav::path_resolver::{self, ResolvedNode};
@@ -27,6 +30,7 @@ use crate::webdav::path_resolver::{self, ResolvedNode};
 #[derive(Clone)]
 pub struct AsterDavFs {
     state: PrimaryAppState,
+    webdav_account_id: Option<i64>,
     scope: WorkspaceStorageScope,
     /// 限制访问范围：None = 用户全部文件，Some(id) = 只能访问该文件夹及子目录
     root_folder_id: Option<i64>,
@@ -46,6 +50,7 @@ impl AsterDavFs {
     pub fn new(state: PrimaryAppState, user_id: i64, root_folder_id: Option<i64>) -> Self {
         Self::new_with_audit(
             state,
+            None,
             WorkspaceStorageScope::Personal { user_id },
             root_folder_id,
             AuditContext {
@@ -58,12 +63,14 @@ impl AsterDavFs {
 
     pub(crate) fn new_with_audit(
         state: PrimaryAppState,
+        webdav_account_id: Option<i64>,
         scope: WorkspaceStorageScope,
         root_folder_id: Option<i64>,
         audit_ctx: AuditContext,
     ) -> Self {
         Self {
             state,
+            webdav_account_id,
             scope,
             root_folder_id,
             audit_ctx,
@@ -91,7 +98,7 @@ impl AsterDavFs {
         offset: Option<u64>,
         length: Option<u64>,
     ) -> Result<Box<dyn AsyncRead + Unpin + Send>, FsError> {
-        let node = path_resolver::resolve_path_cached_in_scope(
+        let node = path_resolver::resolve_path_cached_for_read_in_scope(
             &self.state,
             self.scope,
             path,
@@ -104,7 +111,7 @@ impl AsterDavFs {
             _ => return Err(FsError::Forbidden),
         };
 
-        let blob = file_repo::find_blob_by_id(self.state.writer_db(), file.blob_id)
+        let blob = file_repo::find_blob_by_id(self.state.reader_db(), file.blob_id)
             .await
             .map_err(|_| FsError::GeneralFailure)?;
         let policy = self
@@ -128,16 +135,19 @@ impl AsterDavFs {
                 .await
                 .map_err(|_| FsError::NotFound)?,
         };
-        let details =
-            file_service::audit_location_details_for_model(&self.state, self.scope, &file).await;
-        audit_service::log_with_details(
+        record_download(
             &self.state,
             &self.audit_ctx,
-            audit_service::AuditAction::FileDownload,
-            crate::services::audit_service::AuditEntityType::File,
-            Some(file.id),
-            Some(&file.name),
-            || details.clone(),
+            WebdavDownloadAuditIdentity {
+                account_id: self.webdav_account_id,
+                scope: self.scope,
+                root_folder_id: self.root_folder_id,
+            },
+            &file,
+            match offset {
+                Some(_) => WebdavDownloadRequestKind::Ranged,
+                None => WebdavDownloadRequestKind::Full,
+            },
         )
         .await;
         Ok(stream)
@@ -279,7 +289,7 @@ impl DavFileSystem for AsterDavFs {
         _meta: ReadDirMeta,
     ) -> FsFuture<'a, FsStream<Box<dyn DavDirEntry>>> {
         Box::pin(async move {
-            let folder_id = match path_resolver::resolve_path_cached_in_scope(
+            let folder_id = match path_resolver::resolve_path_cached_for_read_in_scope(
                 &self.state,
                 self.scope,
                 path,
@@ -315,7 +325,7 @@ impl DavFileSystem for AsterDavFs {
 
             // 批量查询所有 blob（1 次查询替代 N 次）
             let blob_ids: Vec<i64> = files.iter().map(|f| f.blob_id).collect();
-            let blobs = file_repo::find_blobs_by_ids(self.state.writer_db(), &blob_ids)
+            let blobs = file_repo::find_blobs_by_ids(self.state.reader_db(), &blob_ids)
                 .await
                 .map_err(|_| FsError::GeneralFailure)?;
 
@@ -332,7 +342,7 @@ impl DavFileSystem for AsterDavFs {
 
     fn metadata<'a>(&'a self, path: &'a DavPath) -> FsFuture<'a, Box<dyn DavMetaData>> {
         Box::pin(async move {
-            let node = path_resolver::resolve_path_cached_in_scope(
+            let node = path_resolver::resolve_path_cached_for_read_in_scope(
                 &self.state,
                 self.scope,
                 path,
@@ -344,7 +354,7 @@ impl DavFileSystem for AsterDavFs {
                 ResolvedNode::Root => Box::new(AsterDavMeta::root()),
                 ResolvedNode::Folder(f) => Box::new(AsterDavMeta::from_folder(&f)),
                 ResolvedNode::File(f) => {
-                    let blob = file_repo::find_blob_by_id(self.state.writer_db(), f.blob_id)
+                    let blob = file_repo::find_blob_by_id(self.state.reader_db(), f.blob_id)
                         .await
                         .map_err(|_| FsError::GeneralFailure)?;
                     Box::new(AsterDavMeta::from_file(&f, &blob))
@@ -620,13 +630,13 @@ impl DavFileSystem for AsterDavFs {
         Box::pin(async move {
             let (storage_used, storage_quota) = match self.scope {
                 WorkspaceStorageScope::Personal { user_id } => {
-                    let user = user_repo::find_by_id(self.state.writer_db(), user_id)
+                    let user = user_repo::find_by_id(self.state.reader_db(), user_id)
                         .await
                         .map_err(|_| FsError::GeneralFailure)?;
                     (user.storage_used, user.storage_quota)
                 }
                 WorkspaceStorageScope::Team { team_id, .. } => {
-                    let team = team_repo::find_by_id(self.state.writer_db(), team_id)
+                    let team = team_repo::find_by_id(self.state.reader_db(), team_id)
                         .await
                         .map_err(|_| FsError::GeneralFailure)?;
                     (team.storage_used, team.storage_quota)
@@ -654,11 +664,13 @@ impl DavFileSystem for AsterDavFs {
     ) -> Pin<Box<dyn std::future::Future<Output = bool> + Send + 'a>> {
         Box::pin(async move {
             let (entity_type, entity_id) =
-                match resolve_entity(&self.state, self.scope, path, self.root_folder_id).await {
+                match resolve_entity_for_read(&self.state, self.scope, path, self.root_folder_id)
+                    .await
+                {
                     Some(v) => v,
                     None => return false,
                 };
-            property_repo::find_by_entity(self.state.writer_db(), entity_type, entity_id)
+            property_repo::find_by_entity(self.state.reader_db(), entity_type, entity_id)
                 .await
                 .map(|props| {
                     props
@@ -672,33 +684,99 @@ impl DavFileSystem for AsterDavFs {
     fn get_props<'a>(&'a self, path: &'a DavPath, do_content: bool) -> FsFuture<'a, Vec<DavProp>> {
         Box::pin(async move {
             let (entity_type, entity_id) =
-                resolve_entity(&self.state, self.scope, path, self.root_folder_id)
+                resolve_entity_for_read(&self.state, self.scope, path, self.root_folder_id)
                     .await
                     .ok_or(FsError::NotFound)?;
 
             let props =
-                property_repo::find_by_entity(self.state.writer_db(), entity_type, entity_id)
+                property_repo::find_by_entity(self.state.reader_db(), entity_type, entity_id)
                     .await
                     .map_err(|_| FsError::GeneralFailure)?;
 
-            Ok(props
-                .into_iter()
-                .filter(|p| !property_service::is_protected_namespace(&p.namespace))
-                .map(|p| DavProp {
-                    name: p.name,
-                    prefix: None,
-                    namespace: if p.namespace.is_empty() {
-                        None
-                    } else {
-                        Some(p.namespace)
-                    },
-                    xml: if do_content {
-                        p.value.map(|v| v.into_bytes())
-                    } else {
-                        None
-                    },
-                })
-                .collect())
+            Ok(entity_props_to_dav_props(props, do_content))
+        })
+    }
+
+    fn get_props_many<'a>(
+        &'a self,
+        paths: &'a [DavPath],
+        do_content: bool,
+    ) -> FsFuture<'a, HashMap<DavPath, Vec<DavProp>>> {
+        Box::pin(async move {
+            let mut target_paths: HashMap<(EntityType, i64), Vec<DavPath>> = HashMap::new();
+            let mut targets = Vec::new();
+            for path in paths {
+                let Some(target) =
+                    resolve_entity_for_read(&self.state, self.scope, path, self.root_folder_id)
+                        .await
+                else {
+                    continue;
+                };
+                target_paths.entry(target).or_default().push(path.clone());
+                targets.push(target);
+            }
+
+            let props = property_repo::find_by_entities(self.state.reader_db(), &targets)
+                .await
+                .map_err(|_| FsError::GeneralFailure)?;
+            let mut props_by_target: HashMap<(EntityType, i64), Vec<DavProp>> = HashMap::new();
+            for prop in props {
+                if property_service::is_protected_namespace(&prop.namespace) {
+                    continue;
+                }
+                props_by_target
+                    .entry((prop.entity_type, prop.entity_id))
+                    .or_default()
+                    .push(entity_prop_to_dav_prop(prop, do_content));
+            }
+
+            let mut result = HashMap::with_capacity(paths.len());
+            for (target, paths) in target_paths {
+                let props = props_by_target.remove(&target).unwrap_or_default();
+                for path in paths {
+                    result.insert(path, props.clone());
+                }
+            }
+            Ok(result)
+        })
+    }
+
+    fn get_props_many_for_entities<'a>(
+        &'a self,
+        targets: &'a [(DavPath, EntityType, i64)],
+        do_content: bool,
+    ) -> FsFuture<'a, HashMap<DavPath, Vec<DavProp>>> {
+        Box::pin(async move {
+            let mut target_paths: HashMap<(EntityType, i64), Vec<DavPath>> = HashMap::new();
+            let mut entity_targets = Vec::with_capacity(targets.len());
+            for (path, entity_type, entity_id) in targets {
+                let target = (*entity_type, *entity_id);
+                target_paths.entry(target).or_default().push(path.clone());
+                entity_targets.push(target);
+            }
+
+            let props = property_repo::find_by_entities(self.state.reader_db(), &entity_targets)
+                .await
+                .map_err(|_| FsError::GeneralFailure)?;
+            let mut props_by_target: HashMap<(EntityType, i64), Vec<DavProp>> = HashMap::new();
+            for prop in props {
+                if property_service::is_protected_namespace(&prop.namespace) {
+                    continue;
+                }
+                props_by_target
+                    .entry((prop.entity_type, prop.entity_id))
+                    .or_default()
+                    .push(entity_prop_to_dav_prop(prop, do_content));
+            }
+
+            let mut result = HashMap::with_capacity(targets.len());
+            for (target, paths) in target_paths {
+                let props = props_by_target.remove(&target).unwrap_or_default();
+                for path in paths {
+                    result.insert(path, props.clone());
+                }
+            }
+            Ok(result)
         })
     }
 
@@ -799,6 +877,37 @@ impl DavFileSystem for AsterDavFs {
     }
 }
 
+fn entity_props_to_dav_props(
+    props: Vec<crate::entities::entity_property::Model>,
+    do_content: bool,
+) -> Vec<DavProp> {
+    props
+        .into_iter()
+        .filter(|p| !property_service::is_protected_namespace(&p.namespace))
+        .map(|p| entity_prop_to_dav_prop(p, do_content))
+        .collect()
+}
+
+fn entity_prop_to_dav_prop(
+    prop: crate::entities::entity_property::Model,
+    do_content: bool,
+) -> DavProp {
+    DavProp {
+        name: prop.name,
+        prefix: None,
+        namespace: if prop.namespace.is_empty() {
+            None
+        } else {
+            Some(prop.namespace)
+        },
+        xml: if do_content {
+            prop.value.map(|value| value.into_bytes())
+        } else {
+            None
+        },
+    }
+}
+
 /// 从 DavPath 解析出 (entity_type, entity_id)
 async fn resolve_entity(
     state: &PrimaryAppState,
@@ -807,6 +916,21 @@ async fn resolve_entity(
     root_folder_id: Option<i64>,
 ) -> Option<(EntityType, i64)> {
     match path_resolver::resolve_path_cached_in_scope(state, scope, path, root_folder_id).await {
+        Ok(ResolvedNode::File(f)) => Some((EntityType::File, f.id)),
+        Ok(ResolvedNode::Folder(f)) => Some((EntityType::Folder, f.id)),
+        _ => None,
+    }
+}
+
+async fn resolve_entity_for_read(
+    state: &PrimaryAppState,
+    scope: WorkspaceStorageScope,
+    path: &DavPath,
+    root_folder_id: Option<i64>,
+) -> Option<(EntityType, i64)> {
+    match path_resolver::resolve_path_cached_for_read_in_scope(state, scope, path, root_folder_id)
+        .await
+    {
         Ok(ResolvedNode::File(f)) => Some((EntityType::File, f.id)),
         Ok(ResolvedNode::Folder(f)) => Some((EntityType::Folder, f.id)),
         _ => None,

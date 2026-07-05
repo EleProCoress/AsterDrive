@@ -1,5 +1,6 @@
 //! WebDAV 子模块：`db_lock_system`。
 
+use std::collections::HashMap;
 use std::io::Cursor;
 use std::time::{Duration, SystemTime};
 
@@ -18,6 +19,8 @@ use crate::webdav::dav::{
     DavLock, DavLockError, DavLockPreflightError, DavLockSystem, DavPath, LsFuture,
 };
 use crate::webdav::path_resolver::{self, ResolvedNode};
+
+const DISCOVER_MANY_ANCESTOR_CHUNK_SIZE: usize = 500;
 
 /// 数据库支持的 WebDAV 锁系统
 ///
@@ -514,6 +517,56 @@ impl DavLockSystem for DbLockSystem {
                 .filter(|l| l.timeout_at.is_none_or(|t| t >= now))
                 .map(model_to_dav_lock)
                 .collect()
+        })
+    }
+
+    fn discover_many<'a>(
+        &'a self,
+        paths: &'a [DavPath],
+    ) -> LsFuture<'a, HashMap<DavPath, Vec<DavLock>>> {
+        Box::pin(async move {
+            let now = Utc::now();
+            let mut normalized_paths = Vec::with_capacity(paths.len());
+            let mut all_ancestors = Vec::new();
+            for path in paths {
+                let normalized = normalize_path(path);
+                let ancestors = path_ancestors(&normalized);
+                all_ancestors.extend(ancestors.iter().cloned());
+                normalized_paths.push((path.clone(), ancestors));
+            }
+            all_ancestors.sort();
+            all_ancestors.dedup();
+
+            let mut locks = Vec::new();
+            for chunk in all_ancestors.chunks(DISCOVER_MANY_ANCESTOR_CHUNK_SIZE) {
+                locks.extend(
+                    lock_repo::find_ancestors(&self.db, chunk)
+                        .await
+                        .unwrap_or_default(),
+                );
+            }
+            locks.retain(|lock| lock.timeout_at.is_none_or(|timeout_at| timeout_at >= now));
+            locks.sort_by_key(|lock| lock.id);
+
+            let mut locks_by_path: HashMap<String, Vec<DavLock>> = HashMap::new();
+            for lock in &locks {
+                locks_by_path
+                    .entry(lock.path.clone())
+                    .or_default()
+                    .push(model_to_dav_lock(lock));
+            }
+
+            let mut result = HashMap::with_capacity(paths.len());
+            for (path, ancestors) in normalized_paths {
+                let mut discovered = Vec::new();
+                for ancestor in ancestors {
+                    if let Some(locks) = locks_by_path.get(&ancestor) {
+                        discovered.extend(locks.iter().cloned());
+                    }
+                }
+                result.insert(path, discovered);
+            }
+            result
         })
     }
 

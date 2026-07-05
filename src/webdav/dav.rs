@@ -1,5 +1,6 @@
 //! WebDAV 子模块：`dav`。
 
+use std::collections::HashMap;
 use std::future::Future;
 use std::io::SeekFrom;
 use std::pin::Pin;
@@ -184,6 +185,9 @@ pub trait DavMetaData: Send + Sync {
     fn is_dir(&self) -> bool;
     fn etag(&self) -> Option<String>;
     fn created(&self) -> FsResult<SystemTime>;
+    fn property_entity(&self) -> Option<(crate::types::EntityType, i64)> {
+        None
+    }
 
     fn is_empty(&self) -> bool {
         self.len() == 0
@@ -251,6 +255,34 @@ pub trait DavFileSystem: Send + Sync {
         _do_content: bool,
     ) -> FsFuture<'a, Vec<DavProp>> {
         Box::pin(async { Ok(Vec::new()) })
+    }
+
+    fn get_props_many<'a>(
+        &'a self,
+        paths: &'a [DavPath],
+        do_content: bool,
+    ) -> FsFuture<'a, HashMap<DavPath, Vec<DavProp>>> {
+        Box::pin(async move {
+            let mut result = HashMap::with_capacity(paths.len());
+            for path in paths {
+                result.insert(path.clone(), self.get_props(path, do_content).await?);
+            }
+            Ok(result)
+        })
+    }
+
+    fn get_props_many_for_entities<'a>(
+        &'a self,
+        targets: &'a [(DavPath, crate::types::EntityType, i64)],
+        do_content: bool,
+    ) -> FsFuture<'a, HashMap<DavPath, Vec<DavProp>>> {
+        Box::pin(async move {
+            let paths = targets
+                .iter()
+                .map(|(path, _, _)| path.clone())
+                .collect::<Vec<_>>();
+            self.get_props_many(&paths, do_content).await
+        })
     }
 
     fn patch_props<'a>(
@@ -323,6 +355,19 @@ pub trait DavLockSystem: Send + Sync {
     ) -> LsFuture<'_, Result<(), DavLock>>;
 
     fn discover(&self, path: &DavPath) -> LsFuture<'_, Vec<DavLock>>;
+
+    fn discover_many<'a>(
+        &'a self,
+        paths: &'a [DavPath],
+    ) -> LsFuture<'a, HashMap<DavPath, Vec<DavLock>>> {
+        Box::pin(async move {
+            let mut result = HashMap::with_capacity(paths.len());
+            for path in paths {
+                result.insert(path.clone(), self.discover(path).await);
+            }
+            result
+        })
+    }
 
     fn conflicting_locks(&self, path: &DavPath, deep: bool) -> LsFuture<'_, Vec<DavLock>>;
 

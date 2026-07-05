@@ -7,12 +7,20 @@ use actix_web::test;
 use actix_web::{App, HttpServer, web};
 use aster_drive::config::{RateLimitConfig, WebDavConfig};
 use aster_drive::db::repository::{file_repo, property_repo};
-use aster_drive::entities::{team, team_member, user, webdav_account};
+use aster_drive::entities::{
+    audit_log, folder, system_config, team, team_member, user, webdav_account,
+};
 use aster_drive::runtime::{PrimaryAppState, SharedRuntimeState};
-use aster_drive::types::{EntityType, TeamMemberRole, UserRole, UserStatus};
+use aster_drive::services::audit_service;
+use aster_drive::types::{
+    AuditAction, EntityType, SystemConfigSource, SystemConfigValueType, SystemConfigVisibility,
+    TeamMemberRole, UserRole, UserStatus,
+};
 use base64::Engine;
 use chrono::Utc;
-use sea_orm::{ActiveModelTrait, IntoActiveModel, Set};
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, EntityTrait, IntoActiveModel, PaginatorTrait, QueryFilter, Set,
+};
 use std::io::Cursor;
 use tokio::task::JoinHandle;
 use xmltree::Element;
@@ -30,6 +38,34 @@ fn webdav_test_username(label: &str) -> String {
 
 fn webdav_test_password(label: &str) -> String {
     format!("TEST_PASSWORD_{label}_{}", uuid::Uuid::new_v4().simple())
+}
+
+async fn count_file_download_audit_rows(state: &PrimaryAppState, entity_name: &str) -> u64 {
+    audit_service::flush_global_audit_log_manager().await;
+    audit_log::Entity::find()
+        .filter(audit_log::Column::Action.eq(AuditAction::FileDownload))
+        .filter(audit_log::Column::EntityName.eq(entity_name))
+        .count(state.writer_db())
+        .await
+        .expect("file download audit count should query successfully")
+}
+
+fn runtime_number_config(key: &str, value: &str) -> system_config::Model {
+    system_config::Model {
+        id: 0,
+        key: key.to_string(),
+        value: value.to_string(),
+        value_type: SystemConfigValueType::Number,
+        requires_restart: false,
+        is_sensitive: false,
+        source: SystemConfigSource::System,
+        visibility: SystemConfigVisibility::Private,
+        namespace: String::new(),
+        category: "webdav".to_string(),
+        description: "test runtime config".to_string(),
+        updated_at: Utc::now(),
+        updated_by: None,
+    }
 }
 
 struct RunningWebdavServer {
@@ -908,6 +944,190 @@ async fn test_webdav_get_supports_binary_range_requests() {
     assert_eq!(resp.status(), actix_web::http::StatusCode::OK);
     let body = test::read_body(resp).await;
     assert_eq!(body.as_ref(), data.as_slice());
+}
+
+#[actix_web::test]
+async fn test_webdav_range_download_audit_is_coalesced_by_default() {
+    let state = common::setup().await;
+    let db1 = state.writer_db().clone();
+    let db2 = state.writer_db().clone();
+    let webdav_config = WebDavConfig::default();
+    let app = test::init_service(
+        App::new()
+            .wrap(aster_drive::api::middleware::security_headers::default_headers())
+            .app_data(web::PayloadConfig::new(10 * 1024 * 1024))
+            .app_data(web::JsonConfig::default().limit(1024 * 1024))
+            .app_data(web::Data::new(state.clone()))
+            .configure(move |cfg| {
+                aster_drive::webdav::configure(cfg, &webdav_config, &db2);
+                aster_drive::api::configure_primary(cfg, &db1);
+            }),
+    )
+    .await;
+
+    let (token, _) = register_and_login!(app);
+    let auth = create_webdav_basic_auth!(app, token);
+    let file_name = "range-audit-coalesced.bin";
+    let data: Vec<u8> = (0..=255).cycle().take(4096).collect();
+
+    let req = test::TestRequest::put()
+        .uri(&format!("/webdav/{file_name}"))
+        .insert_header(("Authorization", auth.clone()))
+        .insert_header(("Content-Type", "application/octet-stream"))
+        .insert_header(("Content-Length", data.len().to_string()))
+        .set_payload(data.clone())
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), actix_web::http::StatusCode::CREATED);
+
+    let before = count_file_download_audit_rows(&state, file_name).await;
+    for range in ["bytes=0-127", "bytes=128-255", "bytes=256-383"] {
+        let req = test::TestRequest::get()
+            .uri(&format!("/webdav/{file_name}"))
+            .insert_header(("Authorization", auth.clone()))
+            .insert_header(("Range", range))
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), actix_web::http::StatusCode::PARTIAL_CONTENT);
+        let _ = test::read_body(resp).await;
+    }
+
+    let after_ranges = count_file_download_audit_rows(&state, file_name).await;
+    assert_eq!(
+        after_ranges - before,
+        1,
+        "repeated WebDAV range reads should be coalesced into one file_download audit row"
+    );
+
+    for _ in 0..2 {
+        let req = test::TestRequest::get()
+            .uri(&format!("/webdav/{file_name}"))
+            .insert_header(("Authorization", auth.clone()))
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), actix_web::http::StatusCode::OK);
+        let _ = test::read_body(resp).await;
+    }
+
+    let after_full_reads = count_file_download_audit_rows(&state, file_name).await;
+    assert_eq!(
+        after_full_reads - after_ranges,
+        1,
+        "full and ranged WebDAV reads should be coalesced independently"
+    );
+
+    state.runtime_config().apply(runtime_number_config(
+        aster_drive::config::definitions::WEBDAV_DOWNLOAD_AUDIT_COALESCE_WINDOW_SECS_KEY,
+        "0",
+    ));
+
+    for range in ["bytes=512-639", "bytes=640-767"] {
+        let req = test::TestRequest::get()
+            .uri(&format!("/webdav/{file_name}"))
+            .insert_header(("Authorization", auth.clone()))
+            .insert_header(("Range", range))
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), actix_web::http::StatusCode::PARTIAL_CONTENT);
+        let _ = test::read_body(resp).await;
+    }
+
+    let after_disabled_coalescing = count_file_download_audit_rows(&state, file_name).await;
+    assert_eq!(
+        after_disabled_coalescing - after_full_reads,
+        2,
+        "setting the WebDAV download audit coalescing window to 0 should record every read"
+    );
+}
+
+#[actix_web::test]
+async fn test_webdav_propfind_lockdiscovery_chunks_large_depth_one_directories() {
+    let state = common::setup().await;
+    let db1 = state.writer_db().clone();
+    let db2 = state.writer_db().clone();
+    let webdav_config = WebDavConfig::default();
+    let app = test::init_service(
+        App::new()
+            .wrap(aster_drive::api::middleware::security_headers::default_headers())
+            .app_data(web::PayloadConfig::new(10 * 1024 * 1024))
+            .app_data(web::JsonConfig::default().limit(1024 * 1024))
+            .app_data(web::Data::new(state.clone()))
+            .configure(move |cfg| {
+                aster_drive::webdav::configure(cfg, &webdav_config, &db2);
+                aster_drive::api::configure_primary(cfg, &db1);
+            }),
+    )
+    .await;
+
+    let (token, _) = register_and_login!(app);
+    let auth = create_webdav_basic_auth!(app, token);
+    let owner = user::Entity::find()
+        .filter(user::Column::Username.eq("testuser"))
+        .one(state.writer_db())
+        .await
+        .expect("test user query should succeed")
+        .expect("test user should exist");
+    let now = Utc::now();
+    let parent = folder::ActiveModel {
+        name: Set("large-lockdiscovery".to_string()),
+        parent_id: Set(None),
+        team_id: Set(None),
+        owner_user_id: Set(Some(owner.id)),
+        created_by_user_id: Set(Some(owner.id)),
+        created_by_username: Set(owner.username.clone()),
+        policy_id: Set(None),
+        created_at: Set(now),
+        updated_at: Set(now),
+        deleted_at: Set(None),
+        is_locked: Set(false),
+        ..Default::default()
+    }
+    .insert(state.writer_db())
+    .await
+    .expect("large lockdiscovery parent folder should insert");
+
+    let children = (0..520)
+        .map(|index| folder::ActiveModel {
+            name: Set(format!("child-{index:04}")),
+            parent_id: Set(Some(parent.id)),
+            team_id: Set(None),
+            owner_user_id: Set(Some(owner.id)),
+            created_by_user_id: Set(Some(owner.id)),
+            created_by_username: Set(owner.username.clone()),
+            policy_id: Set(None),
+            created_at: Set(now),
+            updated_at: Set(now),
+            deleted_at: Set(None),
+            is_locked: Set(false),
+            ..Default::default()
+        })
+        .collect::<Vec<_>>();
+    folder::Entity::insert_many(children)
+        .exec(state.writer_db())
+        .await
+        .expect("large lockdiscovery child folders should insert");
+
+    let body = r#"<?xml version="1.0" encoding="utf-8" ?>
+<D:propfind xmlns:D="DAV:">
+  <D:prop>
+    <D:lockdiscovery />
+  </D:prop>
+</D:propfind>"#;
+    let req = test::TestRequest::with_uri("/webdav/large-lockdiscovery/")
+        .method(actix_web::http::Method::from_bytes(b"PROPFIND").unwrap())
+        .insert_header(("Authorization", auth))
+        .insert_header(("Depth", "1"))
+        .insert_header(("Content-Type", "application/xml"))
+        .set_payload(body)
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), actix_web::http::StatusCode::MULTI_STATUS);
+    let body = test::read_body(resp).await;
+    let xml = String::from_utf8_lossy(&body);
+    assert!(
+        xml.contains("/webdav/large-lockdiscovery/child-0519/"),
+        "Depth:1 PROPFIND should include the last seeded child: {xml}"
+    );
 }
 
 #[actix_web::test]
@@ -1912,6 +2132,155 @@ async fn test_webdav_copy_move() {
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
+}
+
+#[actix_web::test]
+async fn test_webdav_immediate_read_after_write_operations() {
+    let app = setup_with_webdav!();
+    let (token, _) = register_and_login!(app);
+    let auth = create_webdav_basic_auth!(app, token);
+
+    let req = test::TestRequest::put()
+        .uri("/webdav/read-after-write.txt")
+        .insert_header(("Authorization", auth.clone()))
+        .set_payload("read after put")
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert!(resp.status() == 201 || resp.status() == 204);
+
+    let req = test::TestRequest::get()
+        .uri("/webdav/read-after-write.txt")
+        .insert_header(("Authorization", auth.clone()))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200, "GET must see a just-written file");
+    let body = test::read_body(resp).await;
+    assert_eq!(String::from_utf8_lossy(&body), "read after put");
+
+    let req = test::TestRequest::with_uri("/webdav/read-after-write.txt")
+        .method(actix_web::http::Method::from_bytes(b"COPY").unwrap())
+        .insert_header(("Authorization", auth.clone()))
+        .insert_header(("Destination", "/webdav/read-after-copy.txt"))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert!(resp.status() == 201 || resp.status() == 204);
+
+    let req = test::TestRequest::get()
+        .uri("/webdav/read-after-copy.txt")
+        .insert_header(("Authorization", auth.clone()))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200, "GET must see a just-copied file");
+    let body = test::read_body(resp).await;
+    assert_eq!(String::from_utf8_lossy(&body), "read after put");
+
+    let req = test::TestRequest::with_uri("/webdav/read-after-copy.txt")
+        .method(actix_web::http::Method::from_bytes(b"MOVE").unwrap())
+        .insert_header(("Authorization", auth.clone()))
+        .insert_header(("Destination", "/webdav/read-after-move.txt"))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert!(resp.status() == 201 || resp.status() == 204);
+
+    let req = test::TestRequest::get()
+        .uri("/webdav/read-after-copy.txt")
+        .insert_header(("Authorization", auth.clone()))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 404, "GET must not see a just-moved source");
+
+    let req = test::TestRequest::get()
+        .uri("/webdav/read-after-move.txt")
+        .insert_header(("Authorization", auth.clone()))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200, "GET must see a just-moved target");
+
+    let lock_body = r#"<?xml version="1.0" encoding="utf-8" ?>
+<D:lockinfo xmlns:D="DAV:">
+  <D:lockscope><D:exclusive/></D:lockscope>
+  <D:locktype><D:write/></D:locktype>
+  <D:owner><D:href>read-after-write-test</D:href></D:owner>
+</D:lockinfo>"#;
+    let req = test::TestRequest::with_uri("/webdav/read-after-move.txt")
+        .method(actix_web::http::Method::from_bytes(b"LOCK").unwrap())
+        .insert_header(("Authorization", auth.clone()))
+        .insert_header(("Content-Type", "application/xml"))
+        .insert_header(("Depth", "0"))
+        .set_payload(lock_body)
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let lock_token = resp
+        .headers()
+        .get("Lock-Token")
+        .and_then(|value| value.to_str().ok())
+        .expect("LOCK response should include Lock-Token")
+        .to_string();
+
+    let propfind_lock_body = r#"<?xml version="1.0" encoding="utf-8" ?>
+<D:propfind xmlns:D="DAV:">
+  <D:prop>
+    <D:lockdiscovery />
+  </D:prop>
+</D:propfind>"#;
+    let req = test::TestRequest::with_uri("/webdav/read-after-move.txt")
+        .method(actix_web::http::Method::from_bytes(b"PROPFIND").unwrap())
+        .insert_header(("Authorization", auth.clone()))
+        .insert_header(("Depth", "0"))
+        .insert_header(("Content-Type", "application/xml"))
+        .set_payload(propfind_lock_body)
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 207);
+    let body = test::read_body(resp).await;
+    let xml = String::from_utf8_lossy(&body);
+    assert!(
+        xml.contains(lock_token.trim_matches(&['<', '>'][..])),
+        "PROPFIND lockdiscovery must see a just-created lock: {xml}"
+    );
+
+    let req = test::TestRequest::with_uri("/webdav/read-after-move.txt")
+        .method(actix_web::http::Method::from_bytes(b"UNLOCK").unwrap())
+        .insert_header(("Authorization", auth.clone()))
+        .insert_header(("Lock-Token", lock_token))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert!(
+        resp.status() == 200 || resp.status() == 204,
+        "UNLOCK should succeed, got {}",
+        resp.status()
+    );
+
+    let req = test::TestRequest::with_uri("/webdav/read-after-move.txt")
+        .method(actix_web::http::Method::from_bytes(b"PROPFIND").unwrap())
+        .insert_header(("Authorization", auth.clone()))
+        .insert_header(("Depth", "0"))
+        .insert_header(("Content-Type", "application/xml"))
+        .set_payload(propfind_lock_body)
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 207);
+    let body = test::read_body(resp).await;
+    let xml = String::from_utf8_lossy(&body);
+    assert!(
+        !xml.contains("activelock"),
+        "PROPFIND lockdiscovery must not see a just-unlocked lock: {xml}"
+    );
+
+    let req = test::TestRequest::delete()
+        .uri("/webdav/read-after-move.txt")
+        .insert_header(("Authorization", auth.clone()))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert!(resp.status() == 200 || resp.status() == 204);
+
+    let req = test::TestRequest::get()
+        .uri("/webdav/read-after-move.txt")
+        .insert_header(("Authorization", auth))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 404, "GET must not see a just-deleted file");
 }
 
 #[actix_web::test]
@@ -3495,6 +3864,74 @@ async fn test_webdav_propfind_collection_does_not_report_getcontentlength() {
     assert!(
         xml.contains("getcontentlength") && xml.contains("HTTP/1.1 404 Not Found"),
         "named getcontentlength on a collection should be reported missing: {xml}"
+    );
+    Element::parse(Cursor::new(xml.as_bytes())).expect("PROPFIND response XML should parse");
+}
+
+#[actix_web::test]
+async fn test_webdav_propfind_depth_one_large_directory_live_props() {
+    let app = setup_with_webdav!();
+    let (token, _) = register_and_login!(app);
+    let auth = create_webdav_basic_auth!(app, token);
+
+    let req = test::TestRequest::with_uri("/webdav/live-large/")
+        .method(actix_web::http::Method::from_bytes(b"MKCOL").unwrap())
+        .insert_header(("Authorization", auth.clone()))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+
+    for index in 0..24 {
+        let req = test::TestRequest::put()
+            .uri(&format!("/webdav/live-large/file-{index}.txt"))
+            .insert_header(("Authorization", auth.clone()))
+            .set_payload(format!("live prop fixture {index}"))
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert!(
+            resp.status() == 201 || resp.status() == 204,
+            "PUT fixture file {index} should succeed, got {}",
+            resp.status()
+        );
+    }
+
+    let propfind_body = r#"<?xml version="1.0" encoding="utf-8" ?>
+<D:propfind xmlns:D="DAV:">
+  <D:prop>
+    <D:displayname />
+    <D:resourcetype />
+    <D:getcontentlength />
+    <D:getlastmodified />
+    <D:creationdate />
+    <D:getetag />
+  </D:prop>
+</D:propfind>"#;
+    let req = test::TestRequest::with_uri("/webdav/live-large/")
+        .method(actix_web::http::Method::from_bytes(b"PROPFIND").unwrap())
+        .insert_header(("Authorization", auth))
+        .insert_header(("Depth", "1"))
+        .insert_header(("Content-Type", "application/xml"))
+        .set_payload(propfind_body)
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 207);
+    let body = test::read_body(resp).await;
+    let xml = String::from_utf8_lossy(&body);
+
+    assert_eq!(
+        xml.matches("<D:response>").count(),
+        25,
+        "Depth: 1 should include the directory plus all children: {xml}"
+    );
+    for index in 0..24 {
+        assert!(
+            xml.contains(&format!("file-{index}.txt")),
+            "Depth: 1 live prop response should include file-{index}.txt: {xml}"
+        );
+    }
+    assert!(
+        xml.contains("getlastmodified") && xml.contains("getetag"),
+        "live prop response should include requested live metadata: {xml}"
     );
     Element::parse(Cursor::new(xml.as_bytes())).expect("PROPFIND response XML should parse");
 }
@@ -5125,6 +5562,159 @@ async fn test_webdav_get_head_if_none_match_matching_etag_returns_not_modified()
             Some(etag.as_str())
         );
     }
+}
+
+#[actix_web::test]
+async fn test_webdav_get_head_return_last_modified() {
+    let app = setup_with_webdav!();
+    let (token, _) = register_and_login!(app);
+    let auth = create_webdav_basic_auth!(app, token);
+
+    let req = test::TestRequest::put()
+        .uri("/webdav/http-last-modified.txt")
+        .insert_header(("Authorization", auth.clone()))
+        .set_payload("last modified body")
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert!(resp.status() == 201 || resp.status() == 204);
+
+    let mut observed = Vec::new();
+    for method in [actix_web::http::Method::GET, actix_web::http::Method::HEAD] {
+        let req = test::TestRequest::with_uri("/webdav/http-last-modified.txt")
+            .method(method.clone())
+            .insert_header(("Authorization", auth.clone()))
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(
+            resp.status(),
+            actix_web::http::StatusCode::OK,
+            "{method} should succeed"
+        );
+        let last_modified = resp
+            .headers()
+            .get("Last-Modified")
+            .and_then(|value| value.to_str().ok())
+            .expect("GET/HEAD should return Last-Modified")
+            .to_string();
+        assert!(
+            last_modified
+                .parse::<actix_web::http::header::HttpDate>()
+                .is_ok(),
+            "Last-Modified should be a valid HTTP date: {last_modified}"
+        );
+        observed.push(last_modified);
+    }
+
+    assert_eq!(
+        observed[0], observed[1],
+        "GET and HEAD should expose the same Last-Modified for the same resource"
+    );
+}
+
+#[actix_web::test]
+async fn test_webdav_get_head_http_date_preconditions() {
+    let app = setup_with_webdav!();
+    let (token, _) = register_and_login!(app);
+    let auth = create_webdav_basic_auth!(app, token);
+
+    let req = test::TestRequest::put()
+        .uri("/webdav/http-date-preconditions.txt")
+        .insert_header(("Authorization", auth.clone()))
+        .set_payload("date validator body")
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert!(resp.status() == 201 || resp.status() == 204);
+
+    let req = test::TestRequest::default()
+        .method(actix_web::http::Method::HEAD)
+        .uri("/webdav/http-date-preconditions.txt")
+        .insert_header(("Authorization", auth.clone()))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), actix_web::http::StatusCode::OK);
+    let last_modified = resp
+        .headers()
+        .get("Last-Modified")
+        .and_then(|value| value.to_str().ok())
+        .expect("HEAD should return Last-Modified")
+        .to_string();
+    let etag = resp
+        .headers()
+        .get("ETag")
+        .and_then(|value| value.to_str().ok())
+        .expect("HEAD should return ETag")
+        .to_string();
+    let old_http_date = "Sun, 06 Nov 1994 08:49:37 GMT";
+
+    for method in [actix_web::http::Method::GET, actix_web::http::Method::HEAD] {
+        let req = test::TestRequest::with_uri("/webdav/http-date-preconditions.txt")
+            .method(method.clone())
+            .insert_header(("Authorization", auth.clone()))
+            .insert_header(("If-Modified-Since", last_modified.clone()))
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(
+            resp.status(),
+            actix_web::http::StatusCode::NOT_MODIFIED,
+            "{method} with matching If-Modified-Since should return 304"
+        );
+        assert_eq!(
+            resp.headers()
+                .get("Last-Modified")
+                .and_then(|value| value.to_str().ok()),
+            Some(last_modified.as_str())
+        );
+    }
+
+    let req = test::TestRequest::get()
+        .uri("/webdav/http-date-preconditions.txt")
+        .insert_header(("Authorization", auth.clone()))
+        .insert_header(("If-Modified-Since", old_http_date))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        actix_web::http::StatusCode::OK,
+        "stale If-Modified-Since should not suppress the response body"
+    );
+
+    let req = test::TestRequest::get()
+        .uri("/webdav/http-date-preconditions.txt")
+        .insert_header(("Authorization", auth.clone()))
+        .insert_header(("If-Unmodified-Since", old_http_date))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        actix_web::http::StatusCode::PRECONDITION_FAILED,
+        "If-Unmodified-Since should fail when the resource changed after the supplied timestamp"
+    );
+
+    let req = test::TestRequest::get()
+        .uri("/webdav/http-date-preconditions.txt")
+        .insert_header(("Authorization", auth.clone()))
+        .insert_header(("If-None-Match", "\"definitely-wrong\""))
+        .insert_header(("If-Modified-Since", last_modified.clone()))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        actix_web::http::StatusCode::OK,
+        "If-None-Match should take precedence over If-Modified-Since when it is present"
+    );
+
+    let req = test::TestRequest::get()
+        .uri("/webdav/http-date-preconditions.txt")
+        .insert_header(("Authorization", auth))
+        .insert_header(("If-None-Match", etag))
+        .insert_header(("If-Modified-Since", old_http_date))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        actix_web::http::StatusCode::NOT_MODIFIED,
+        "matching If-None-Match should still return 304 regardless of If-Modified-Since"
+    );
 }
 
 #[actix_web::test]

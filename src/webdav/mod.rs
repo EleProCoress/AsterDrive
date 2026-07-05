@@ -5,6 +5,7 @@ pub mod dav;
 pub mod db_lock_system;
 pub mod deltav;
 pub mod dir_entry;
+mod download_audit;
 pub mod file;
 pub mod fs;
 mod locks;
@@ -110,6 +111,7 @@ pub async fn webdav_handler(
 
     let dav_fs = fs::AsterDavFs::new_with_audit(
         state.get_ref().clone(),
+        Some(auth_result.account_id),
         auth_result.scope,
         auth_result.root_folder_id,
         audit_ctx.clone(),
@@ -465,9 +467,7 @@ pub(crate) fn parent_relative_path(relative: &str) -> Option<String> {
 }
 
 pub(crate) fn format_http_date(time: std::time::SystemTime) -> String {
-    chrono::DateTime::<chrono::Utc>::from(time)
-        .format("%a, %d %b %Y %H:%M:%S GMT")
-        .to_string()
+    crate::utils::http_validators::format_http_date(time)
 }
 
 pub(crate) fn format_creation_date(time: std::time::SystemTime) -> String {
