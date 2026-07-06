@@ -53,6 +53,52 @@ describe("storage policy dialog helper modules", () => {
 			object_multipart_upload: false,
 		},
 	} as never;
+	const staticSecretConnectionDescriptor = ({
+		protocolMessage = "s3_endpoint_protocol_required_error",
+		allowedProtocols = ["http:", "https:"],
+		allowEndpointWithoutProtocol = false,
+		includeS3PathStyle = false,
+	}: {
+		protocolMessage?: string;
+		allowedProtocols?: string[];
+		allowEndpointWithoutProtocol?: boolean;
+		includeS3PathStyle?: boolean;
+	} = {}) =>
+		({
+			credential_mode: "static_secret",
+			fields: [
+				{
+					allow_endpoint_without_protocol: allowEndpointWithoutProtocol,
+					allowed_endpoint_protocols: allowedProtocols,
+					invalid_protocol_message_key: protocolMessage,
+					name: "endpoint",
+					scope: "connection",
+				},
+				{ name: "bucket", scope: "connection" },
+				{ name: "access_key", scope: "connection" },
+				{ name: "secret_key", scope: "connection" },
+				{
+					name: "object_storage_upload_strategy",
+					scope: "policy_options",
+				},
+				{
+					name: "object_storage_download_strategy",
+					scope: "policy_options",
+				},
+				...(includeS3PathStyle
+					? [{ name: "s3_path_style", scope: "policy_options" }]
+					: []),
+			],
+			upload_workflows: {
+				object_multipart_upload: true,
+			},
+		}) as never;
+	const sftpConnectionDescriptor = () =>
+		staticSecretConnectionDescriptor({
+			allowedProtocols: ["sftp:"],
+			allowEndpointWithoutProtocol: true,
+			protocolMessage: "sftp_endpoint_protocol_required_error",
+		});
 
 	it("uses connector descriptor endpoint rules for specialized driver promotion", () => {
 		const s3Descriptor = {
@@ -359,28 +405,34 @@ describe("storage policy dialog helper modules", () => {
 	});
 
 	it("builds create payloads with trimmed S3 fields", () => {
+		const s3Descriptor = staticSecretConnectionDescriptor({
+			includeS3PathStyle: true,
+		});
 		expect(
-			buildCreatePolicyPayload({
-				name: "Media",
-				driver_type: "s3",
-				endpoint: " https://s3.example.test/custom/path ",
-				bucket: " photos ",
-				access_key: "AKIA",
-				secret_key: "SECRET",
-				base_path: "videos",
-				remote_node_id: "",
-				max_file_size: "2048",
-				chunk_size: "6",
-				is_default: false,
-				content_dedup: false,
-				remote_download_strategy: "relay_stream",
-				remote_upload_strategy: "relay_stream",
-				object_storage_upload_strategy: "presigned",
-				object_storage_download_strategy: "relay_stream",
-				storage_native_processing_enabled: false,
-				thumbnail_processor: null,
-				thumbnail_extensions: [],
-			}),
+			buildCreatePolicyPayload(
+				{
+					name: "Media",
+					driver_type: "s3",
+					endpoint: " https://s3.example.test/custom/path ",
+					bucket: " photos ",
+					access_key: "AKIA",
+					secret_key: "SECRET",
+					base_path: "videos",
+					remote_node_id: "",
+					max_file_size: "2048",
+					chunk_size: "6",
+					is_default: false,
+					content_dedup: false,
+					remote_download_strategy: "relay_stream",
+					remote_upload_strategy: "relay_stream",
+					object_storage_upload_strategy: "presigned",
+					object_storage_download_strategy: "relay_stream",
+					storage_native_processing_enabled: false,
+					thumbnail_processor: null,
+					thumbnail_extensions: [],
+				},
+				s3Descriptor,
+			),
 		).toEqual({
 			name: "Media",
 			driver_type: "s3",
@@ -393,35 +445,42 @@ describe("storage policy dialog helper modules", () => {
 			chunk_size: 6 * 1024 * 1024,
 			is_default: false,
 			options: {
+				object_storage_download_strategy: "relay_stream",
 				object_storage_upload_strategy: "presigned",
 			},
 			remote_node_id: undefined,
+			remote_storage_target_key: undefined,
 		});
 
 		expect(
-			buildCreatePolicyPayload({
-				name: "Virtual Hosted S3",
-				driver_type: "s3",
-				endpoint: "https://s3.example.test",
-				bucket: "photos",
-				access_key: "AKIA",
-				secret_key: "SECRET",
-				base_path: "",
-				remote_node_id: "",
-				max_file_size: "",
-				chunk_size: "5",
-				is_default: false,
-				content_dedup: false,
-				remote_download_strategy: "relay_stream",
-				remote_upload_strategy: "relay_stream",
-				object_storage_upload_strategy: "relay_stream",
-				object_storage_download_strategy: "relay_stream",
-				s3_path_style: false,
-				storage_native_processing_enabled: false,
-				thumbnail_processor: null,
-				thumbnail_extensions: [],
-			}).options,
+			buildCreatePolicyPayload(
+				{
+					name: "Virtual Hosted S3",
+					driver_type: "s3",
+					endpoint: "https://s3.example.test",
+					bucket: "photos",
+					access_key: "AKIA",
+					secret_key: "SECRET",
+					base_path: "",
+					remote_node_id: "",
+					max_file_size: "",
+					chunk_size: "5",
+					is_default: false,
+					content_dedup: false,
+					remote_download_strategy: "relay_stream",
+					remote_upload_strategy: "relay_stream",
+					object_storage_upload_strategy: "relay_stream",
+					object_storage_download_strategy: "relay_stream",
+					s3_path_style: false,
+					storage_native_processing_enabled: false,
+					thumbnail_processor: null,
+					thumbnail_extensions: [],
+				},
+				s3Descriptor,
+			).options,
 		).toEqual({
+			object_storage_upload_strategy: "relay_stream",
+			object_storage_download_strategy: "relay_stream",
 			s3_path_style: false,
 		});
 	});
@@ -653,20 +712,23 @@ describe("storage policy dialog helper modules", () => {
 			storage_native_media_metadata_enabled: false,
 			media_metadata_extensions: [],
 		};
+		const s3Descriptor = staticSecretConnectionDescriptor();
 
-		expect(getEndpointValidationMessage(baseForm, t)).toBe(
+		expect(getEndpointValidationMessage(baseForm, t, s3Descriptor)).toBe(
 			"s3_endpoint_protocol_required_error",
 		);
 		expect(
 			getEndpointValidationMessage(
 				{ ...baseForm, endpoint: "http://s3.example.com" },
 				t,
+				s3Descriptor,
 			),
 		).toBeNull();
 		expect(
 			getEndpointValidationMessage(
 				{ ...baseForm, endpoint: "https://s3.example.com" },
 				t,
+				s3Descriptor,
 			),
 		).toBeNull();
 		expect(
@@ -677,6 +739,7 @@ describe("storage policy dialog helper modules", () => {
 					endpoint: "cos.ap-guangzhou.myqcloud.com",
 				},
 				t,
+				s3Descriptor,
 			),
 		).toBe("s3_endpoint_protocol_required_error");
 		expect(
@@ -689,9 +752,10 @@ describe("storage policy dialog helper modules", () => {
 					secret_key: "",
 				},
 				t,
-				null,
+				s3Descriptor,
 			),
 		).toBe("s3_endpoint_protocol_required_error");
+		expect(getEndpointValidationMessage(baseForm, t, null)).toBeNull();
 		expect(
 			getEndpointValidationMessage(
 				{
@@ -729,22 +793,9 @@ describe("storage policy dialog helper modules", () => {
 			storage_native_media_metadata_enabled: false,
 			media_metadata_extensions: [],
 		};
-		const azureDescriptor = {
-			fields: [
-				{
-					invalid_protocol_message_key:
-						"azure_blob_endpoint_protocol_required_error",
-					name: "endpoint",
-					scope: "connection",
-				},
-				{ name: "bucket", scope: "connection" },
-				{ name: "access_key", scope: "connection" },
-				{ name: "secret_key", scope: "connection" },
-			],
-			upload_workflows: {
-				object_multipart_upload: true,
-			},
-		} as never;
+		const azureDescriptor = staticSecretConnectionDescriptor({
+			protocolMessage: "azure_blob_endpoint_protocol_required_error",
+		});
 
 		expect(getEndpointValidationMessage(baseForm, t, azureDescriptor)).toBe(
 			"azure_blob_endpoint_protocol_required_error",
@@ -771,8 +822,52 @@ describe("storage policy dialog helper modules", () => {
 					endpoint: "ftp://s3.example.com",
 				},
 				t,
+				staticSecretConnectionDescriptor(),
 			),
 		).toBe("s3_endpoint_protocol_required_error");
+	});
+
+	it("treats bare SFTP host and host port endpoints as scheme-less", () => {
+		const baseForm = {
+			name: "SFTP",
+			driver_type: "sftp" as const,
+			endpoint: "sftp.example.com:2222",
+			bucket: "",
+			access_key: "aster",
+			secret_key: "secret",
+			base_path: "/upload",
+			remote_node_id: "",
+			max_file_size: "",
+			chunk_size: "5",
+			is_default: false,
+			content_dedup: false,
+			remote_download_strategy: "relay_stream" as const,
+			remote_upload_strategy: "relay_stream" as const,
+			object_storage_upload_strategy: "relay_stream" as const,
+			object_storage_download_strategy: "relay_stream" as const,
+			storage_native_processing_enabled: false,
+			thumbnail_processor: null,
+			thumbnail_extensions: [],
+			storage_native_media_metadata_enabled: false,
+			media_metadata_extensions: [],
+		};
+		const descriptor = sftpConnectionDescriptor();
+
+		expect(getEndpointValidationMessage(baseForm, t, descriptor)).toBeNull();
+		expect(
+			getEndpointValidationMessage(
+				{ ...baseForm, endpoint: "sftp://sftp.example.com:2222" },
+				t,
+				descriptor,
+			),
+		).toBeNull();
+		expect(
+			getEndpointValidationMessage(
+				{ ...baseForm, endpoint: "https://sftp.example.com" },
+				t,
+				descriptor,
+			),
+		).toBe("sftp_endpoint_protocol_required_error");
 	});
 
 	it("builds Tencent COS CORS draft action payloads with optional saved policy reuse", () => {
@@ -799,8 +894,9 @@ describe("storage policy dialog helper modules", () => {
 			storage_native_media_metadata_enabled: true,
 			media_metadata_extensions: [" mp4 "],
 		};
+		const tencentCosDescriptor = staticSecretConnectionDescriptor();
 
-		expect(buildTencentCosCorsPayload(form, 34)).toEqual({
+		expect(buildTencentCosCorsPayload(form, 34, tencentCosDescriptor)).toEqual({
 			action: "configure_tencent_cos_cors",
 			policy_id: 34,
 			driver_type: "tencent_cos",
@@ -810,6 +906,7 @@ describe("storage policy dialog helper modules", () => {
 			secret_key: undefined,
 			base_path: "tenant-a",
 			remote_node_id: undefined,
+			remote_storage_target_key: undefined,
 			options: {
 				object_storage_upload_strategy: "presigned",
 				object_storage_download_strategy: "presigned",
@@ -820,7 +917,9 @@ describe("storage policy dialog helper modules", () => {
 				media_metadata_extensions: ["mp4"],
 			},
 		});
-		expect(buildTencentCosCorsPayload(form, null).policy_id).toBeUndefined();
+		expect(
+			buildTencentCosCorsPayload(form, null, tencentCosDescriptor).policy_id,
+		).toBeUndefined();
 	});
 
 	it("omits empty credentials from update payloads", () => {
@@ -1029,9 +1128,15 @@ describe("storage policy dialog helper modules", () => {
 			storage_native_media_metadata_enabled: false,
 			media_metadata_extensions: [],
 		};
-		const payload = buildCreatePolicyPayload({
-			...azureForm,
+		const azureDescriptor = staticSecretConnectionDescriptor({
+			protocolMessage: "azure_blob_endpoint_protocol_required_error",
 		});
+		const payload = buildCreatePolicyPayload(
+			{
+				...azureForm,
+			},
+			azureDescriptor,
+		);
 
 		expect(payload).toEqual({
 			name: "Azure Archive",
@@ -1046,18 +1151,19 @@ describe("storage policy dialog helper modules", () => {
 			chunk_size: 8 * 1024 * 1024,
 			is_default: false,
 			options: {
+				object_storage_download_strategy: "relay_stream",
 				object_storage_upload_strategy: "presigned",
-				s3_path_style: false,
 			},
+			remote_storage_target_key: undefined,
 		});
-		expect(normalizePolicyForm(azureForm)).toEqual({
+		expect(normalizePolicyForm(azureForm, azureDescriptor)).toEqual({
 			...azureForm,
 			endpoint: "https://acct.blob.core.windows.net/",
 			bucket: "container-a",
 			access_key: "account-name",
 			secret_key: "account-key",
 		});
-		expect(getPolicyConnectionTestKey(azureForm)).toBe(
+		expect(getPolicyConnectionTestKey(azureForm, azureDescriptor)).toBe(
 			JSON.stringify({
 				driver_type: "azure_blob",
 				endpoint: "https://acct.blob.core.windows.net/",
@@ -1068,7 +1174,7 @@ describe("storage policy dialog helper modules", () => {
 				remote_node_id: undefined,
 				options: {
 					object_storage_upload_strategy: "presigned",
-					s3_path_style: false,
+					object_storage_download_strategy: "relay_stream",
 				},
 			}),
 		);
@@ -1120,6 +1226,7 @@ describe("storage policy dialog helper modules", () => {
 					created_at: "",
 					updated_at: "",
 				} as StoragePolicy,
+				azureDescriptor,
 			),
 		).toBe(false);
 	});
@@ -1549,10 +1656,17 @@ describe("storage policy dialog helper modules", () => {
 			},
 		} as StoragePolicy;
 		const s3Form = getPolicyForm(s3Policy);
+		const s3Descriptor = staticSecretConnectionDescriptor();
 
-		expect(hasConnectionFieldChanges(s3Form, s3Policy)).toBe(false);
+		expect(hasConnectionFieldChanges(s3Form, s3Policy, s3Descriptor)).toBe(
+			false,
+		);
 		expect(
-			hasConnectionFieldChanges({ ...s3Form, secret_key: "SECRET" }, s3Policy),
+			hasConnectionFieldChanges(
+				{ ...s3Form, secret_key: "SECRET" },
+				s3Policy,
+				s3Descriptor,
+			),
 		).toBe(true);
 
 		const oneDrivePolicy = {

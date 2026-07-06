@@ -101,10 +101,7 @@ export function normalizePolicyForm(
 	form: PolicyFormData,
 	descriptor?: StorageConnectorDescriptor | null,
 ): PolicyFormData {
-	const shouldNormalizeConnection = shouldUseStaticSecretConnection(
-		form,
-		descriptor,
-	);
+	const shouldNormalizeConnection = supportsStaticSecretConnection(descriptor);
 	const shouldNormalizeMicrosoftGraph = shouldUseMicrosoftGraphConfig(
 		form,
 		descriptor,
@@ -142,10 +139,8 @@ export function normalizePolicyForm(
 			: normalized;
 	}
 
-	const usesObjectStorageConnection = shouldUseObjectStorageConnection(
-		form,
-		descriptor,
-	);
+	const usesObjectStorageConnection =
+		supportsObjectStorageConnection(descriptor);
 	const normalized = usesObjectStorageConnection
 		? normalizeObjectStorageConnectionFields(form.endpoint, form.bucket)
 		: {
@@ -199,9 +194,7 @@ export function hasConnectionFieldChanges(
 		return true;
 	}
 
-	if (
-		shouldUseStaticSecretConnection(normalizedForm, descriptor, editingPolicy)
-	) {
+	if (supportsStaticSecretConnection(descriptor)) {
 		return (
 			normalizedForm.endpoint !== editingPolicy.endpoint ||
 			normalizedForm.bucket !== editingPolicy.bucket ||
@@ -211,7 +204,7 @@ export function hasConnectionFieldChanges(
 		);
 	}
 
-	if (shouldUseRemoteNodeBinding(descriptor)) {
+	if (supportsRemoteNodeBinding(descriptor)) {
 		return (
 			parseRemoteNodeId(normalizedForm.remote_node_id) !==
 				editingPolicy.remote_node_id ||
@@ -258,11 +251,7 @@ export function getEndpointValidationMessage(
 	t: (key: string) => string,
 	descriptor?: StorageConnectorDescriptor | null,
 ) {
-	if (
-		descriptor
-			? !supportsStaticSecretConnection(descriptor)
-			: !hasStaticSecretConnectionFields(form)
-	) {
+	if (!supportsStaticSecretConnection(descriptor)) {
 		return null;
 	}
 
@@ -270,14 +259,19 @@ export function getEndpointValidationMessage(
 	if (!trimmedEndpoint) {
 		return null;
 	}
+	const endpointField = descriptor?.fields.find(
+		(field) => field.scope === "connection" && field.name === "endpoint",
+	);
 	const endpointProtocolMessage =
-		descriptor?.fields.find(
-			(field) => field.scope === "connection" && field.name === "endpoint",
-		)?.invalid_protocol_message_key ?? "s3_endpoint_protocol_required_error";
+		endpointField?.invalid_protocol_message_key ??
+		"s3_endpoint_protocol_required_error";
+	const allowedProtocols =
+		endpointField?.allowed_endpoint_protocols?.length === 0
+			? ["http:", "https:"]
+			: (endpointField?.allowed_endpoint_protocols ?? ["http:", "https:"]);
 
-	const allowedProtocols = allowedEndpointProtocols(descriptor);
 	if (!hasEndpointUrlScheme(trimmedEndpoint)) {
-		return allowedProtocols.includes("sftp:")
+		return endpointField?.allow_endpoint_without_protocol
 			? null
 			: t(endpointProtocolMessage);
 	}
@@ -296,26 +290,6 @@ export function getEndpointValidationMessage(
 	return null;
 }
 
-function shouldUseObjectStorageConnection(
-	form: PolicyFormData,
-	descriptor?: StorageConnectorDescriptor | null,
-	editingPolicy?: StoragePolicy | null,
-) {
-	return descriptor
-		? supportsObjectStorageConnection(descriptor)
-		: hasObjectStorageConnectionFields(form, editingPolicy);
-}
-
-function shouldUseStaticSecretConnection(
-	form: PolicyFormData,
-	descriptor?: StorageConnectorDescriptor | null,
-	editingPolicy?: StoragePolicy | null,
-) {
-	return descriptor
-		? supportsStaticSecretConnection(descriptor)
-		: hasStaticSecretConnectionFields(form, editingPolicy);
-}
-
 function shouldUseMicrosoftGraphConfig(
 	form: PolicyFormData,
 	descriptor?: StorageConnectorDescriptor | null,
@@ -328,45 +302,8 @@ function shouldUseMicrosoftGraphConfig(
 				hasMicrosoftGraphPolicyOptions(editingPolicy);
 }
 
-function shouldUseRemoteNodeBinding(
-	descriptor: StorageConnectorDescriptor | null | undefined,
-) {
-	return descriptor ? supportsRemoteNodeBinding(descriptor) : false;
-}
-
-function hasObjectStorageConnectionFields(
-	form: PolicyFormData,
-	editingPolicy?: StoragePolicy | null,
-) {
-	return Boolean(
-		hasEndpointUrlScheme(form.endpoint) ||
-			hasText(form.bucket) ||
-			hasText(form.access_key) ||
-			hasText(form.secret_key) ||
-			hasEndpointUrlScheme(editingPolicy?.endpoint) ||
-			hasText(editingPolicy?.bucket),
-	);
-}
-
-function hasStaticSecretConnectionFields(
-	form: PolicyFormData,
-	editingPolicy?: StoragePolicy | null,
-) {
-	return Boolean(
-		hasObjectStorageConnectionFields(form, editingPolicy) ||
-			hasText(form.endpoint) ||
-			hasText(editingPolicy?.endpoint),
-	);
-}
-
 function hasEndpointUrlScheme(endpoint?: string | null) {
-	return /^[a-z][a-z0-9+.-]*:/i.test(endpoint?.trim() ?? "");
-}
-
-function allowedEndpointProtocols(
-	descriptor?: StorageConnectorDescriptor | null,
-) {
-	return descriptor?.driver_type === "sftp" ? ["sftp:"] : ["http:", "https:"];
+	return /^[a-z][a-z0-9+.-]*:\/\//i.test(endpoint?.trim() ?? "");
 }
 
 function shouldTrimConnectionField(

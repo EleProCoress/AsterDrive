@@ -474,8 +474,14 @@ fn sftp_connection_field_display_metadata_is_connector_owned() {
             .as_deref(),
         Some("sftp_endpoint_protocol_required_error")
     );
-    assert_eq!(field(&sftp, "access_key").label_key, "access_key");
-    assert_eq!(field(&sftp, "secret_key").label_key, "secret_key");
+    assert_eq!(
+        field(&sftp, "endpoint").allowed_endpoint_protocols,
+        vec!["sftp:"]
+    );
+    assert!(field(&sftp, "endpoint").allow_endpoint_without_protocol);
+    assert_eq!(field(&sftp, "access_key").label_key, "sftp_username");
+    assert!(field(&sftp, "access_key").trim_on_blur);
+    assert_eq!(field(&sftp, "secret_key").label_key, "sftp_password");
     assert!(sftp.fields.iter().all(|field| field.name != "bucket"));
     assert!(!sftp.upload_workflows.presigned_upload);
     assert!(!sftp.upload_workflows.object_multipart_upload);

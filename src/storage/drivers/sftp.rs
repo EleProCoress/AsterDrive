@@ -84,8 +84,8 @@ impl SftpDriver {
         base_path: &str,
     ) -> Result<()> {
         parse_sftp_endpoint(endpoint)?;
-        validate_connection_secret(username, "access_key")?;
-        validate_connection_secret(password, "secret_key")?;
+        validate_connection_secret(username, "username")?;
+        validate_connection_secret(password, "password")?;
         normalize_remote_base_path(base_path)?;
         Ok(())
     }

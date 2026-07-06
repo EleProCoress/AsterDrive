@@ -80,6 +80,10 @@ const mockTranslate = vi.hoisted(
 				return "Account Name";
 			case "azure_blob_account_key":
 				return "Account Key";
+			case "sftp_username":
+				return "SSH Username";
+			case "sftp_password":
+				return "SSH Password";
 			case "access_key":
 				return "Access Key";
 			case "secret_key":
@@ -995,6 +999,7 @@ function createStorageDriverDescriptors() {
 				presigned_download: true,
 				object_storage_transfer_strategy: true,
 			},
+			credential_mode: "static_secret",
 			driver_recommendations: [
 				{
 					target_driver_type: "tencent_cos",
@@ -1020,6 +1025,8 @@ function createStorageDriverDescriptors() {
 			credential_mode: "static_secret",
 			fields: [
 				fieldDescriptor("endpoint", "connection", "text", {
+					allowed_endpoint_protocols: ["sftp:"],
+					allow_endpoint_without_protocol: true,
 					help_key: "sftp_endpoint_hint",
 					invalid_protocol_message_key: "sftp_endpoint_protocol_required_error",
 					placeholder: "sftp://example.com:22",
@@ -1027,9 +1034,12 @@ function createStorageDriverDescriptors() {
 					trim_on_blur: true,
 				}),
 				fieldDescriptor("access_key", "connection", "text", {
+					label_key: "sftp_username",
 					required: true,
+					trim_on_blur: true,
 				}),
 				fieldDescriptor("secret_key", "connection", "secret", {
+					label_key: "sftp_password",
 					required: true,
 				}),
 				fieldDescriptor("base_path", "connection", "text"),
@@ -1072,6 +1082,7 @@ function createStorageDriverDescriptors() {
 				storage_native_media_metadata: true,
 				storage_native_thumbnail: true,
 			},
+			credential_mode: "static_secret",
 			fields: [
 				...objectStorageConnectionFields("tencent_cos"),
 				...objectStoragePolicyOptionFields,
@@ -1088,6 +1099,7 @@ function createStorageDriverDescriptors() {
 				presigned_download: true,
 				object_storage_transfer_strategy: true,
 			},
+			credential_mode: "static_secret",
 			fields: [
 				...objectStorageConnectionFields("azure_blob"),
 				...objectStoragePolicyOptionFields,
@@ -1184,7 +1196,7 @@ function openCreateWizard(
 	} else if (driver === "s3") {
 		fireEvent.click(screen.getByRole("button", { name: /^S3\b/ }));
 	} else if (driver === "sftp") {
-		fireEvent.click(screen.getByRole("button", { name: /^SFTP\b/ }));
+		fireEvent.click(screen.getByRole("button", { name: /\bSFTP\b/ }));
 	} else if (driver === "tencent_cos") {
 		fireEvent.click(screen.getByRole("button", { name: /Tencent COS/ }));
 	} else if (driver === "azure_blob") {
@@ -2284,7 +2296,7 @@ describe("AdminPoliciesPage", () => {
 		});
 
 		expect(screen.queryByLabelText("bucket")).not.toBeInTheDocument();
-		expect(screen.queryByLabelText("endpoint")).not.toBeInTheDocument();
+		expect(screen.getByLabelText("endpoint")).toBeInTheDocument();
 
 		fireEvent.click(
 			screen.getByRole("button", { name: "policy_wizard_review" }),
@@ -3042,6 +3054,69 @@ describe("AdminPoliciesPage", () => {
 				},
 				remote_node_id: undefined,
 				secret_key: "AZURESECRET",
+			});
+		});
+		expect(mockState.toastSuccess).toHaveBeenCalledWith("policy_created");
+	});
+
+	it("tests and creates an SFTP policy with SSH credentials", async () => {
+		render(<AdminPoliciesPage />);
+
+		openCreateWizard("sftp");
+
+		expect(screen.getByText("policy_wizard_sftp_helper")).toBeInTheDocument();
+		expect(screen.getByText("sftp_endpoint_hint")).toBeInTheDocument();
+
+		fireEvent.change(screen.getByLabelText("core:name"), {
+			target: { value: "SFTP Archive" },
+		});
+		fireEvent.change(screen.getByLabelText("base_path"), {
+			target: { value: "/upload/archive" },
+		});
+		fireEvent.change(screen.getByLabelText("endpoint"), {
+			target: { value: "sftp.example.com:2222" },
+		});
+		fireEvent.change(screen.getByLabelText("SSH Username"), {
+			target: { value: "aster" },
+		});
+		fireEvent.change(screen.getByLabelText("SSH Password"), {
+			target: { value: "SFTPSECRET" },
+		});
+
+		fireEvent.click(screen.getByRole("button", { name: /test_connection/i }));
+
+		await waitFor(() => {
+			expect(mockState.testParams).toHaveBeenCalledWith({
+				access_key: "aster",
+				base_path: "/upload/archive",
+				bucket: undefined,
+				driver_type: "sftp",
+				endpoint: "sftp.example.com:2222",
+				options: {},
+				remote_node_id: undefined,
+				secret_key: "SFTPSECRET",
+			});
+		});
+
+		fireEvent.click(
+			screen.getByRole("button", { name: "policy_wizard_review" }),
+		);
+		fireEvent.click(screen.getByRole("button", { name: /core:create/i }));
+
+		await waitFor(() => {
+			expect(mockState.create).toHaveBeenCalledWith({
+				access_key: "aster",
+				base_path: "/upload/archive",
+				bucket: "",
+				chunk_size: 5 * 1024 * 1024,
+				driver_type: "sftp",
+				endpoint: "sftp.example.com:2222",
+				is_default: false,
+				max_file_size: undefined,
+				name: "SFTP Archive",
+				options: {},
+				remote_node_id: undefined,
+				secret_key: "SFTPSECRET",
 			});
 		});
 		expect(mockState.toastSuccess).toHaveBeenCalledWith("policy_created");

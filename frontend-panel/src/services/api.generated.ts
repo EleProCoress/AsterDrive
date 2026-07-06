@@ -7351,6 +7351,10 @@ export interface components {
             equals?: string | null;
         };
         StorageConnectorFieldDescriptor: {
+            /** @description true 表示 endpoint 可以省略 URL scheme，由 connector 在后端补齐或解释。 */
+            allow_endpoint_without_protocol?: boolean;
+            /** @description endpoint 允许的 URL protocol，取值与浏览器 `URL.protocol` 一致，例如 `https:`。 */
+            allowed_endpoint_protocols?: string[];
             /** @description 可选 help 文案 key。 */
             help_key?: string | null;
             /** @description endpoint 协议不合法时的前端文案 key。 */
