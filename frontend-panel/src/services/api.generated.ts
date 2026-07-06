@@ -5244,7 +5244,7 @@ export interface components {
          * @description 存储驱动类型
          * @enum {string}
          */
-        DriverType: "local" | "s3" | "azure_blob" | "tencent_cos" | "remote" | "one_drive";
+        DriverType: "local" | "s3" | "sftp" | "azure_blob" | "tencent_cos" | "remote" | "one_drive";
         /** @description Check a storage policy migration plan without creating a task. */
         DryRunStoragePolicyMigrationReq: {
             delete_source_after_success?: boolean;

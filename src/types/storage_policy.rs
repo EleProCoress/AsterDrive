@@ -20,6 +20,8 @@ pub enum DriverType {
     Local,
     #[sea_orm(string_value = "s3")]
     S3,
+    #[sea_orm(string_value = "sftp")]
+    Sftp,
     #[sea_orm(string_value = "azure_blob")]
     AzureBlob,
     #[sea_orm(string_value = "tencent_cos")]
@@ -35,6 +37,7 @@ impl DriverType {
         match self {
             Self::Local => "local",
             Self::S3 => "s3",
+            Self::Sftp => "sftp",
             Self::AzureBlob => "azure_blob",
             Self::TencentCos => "tencent_cos",
             Self::Remote => "remote",
@@ -46,6 +49,7 @@ impl DriverType {
         match value {
             "local" => Some(Self::Local),
             "s3" => Some(Self::S3),
+            "sftp" => Some(Self::Sftp),
             "azure_blob" => Some(Self::AzureBlob),
             "tencent_cos" => Some(Self::TencentCos),
             "remote" => Some(Self::Remote),

@@ -24,6 +24,7 @@ import {
 	supportsOneDrivePolicyOptions,
 	supportsRemoteNodeBinding,
 	supportsSavedConnectionTest,
+	supportsStaticSecretConnection,
 	supportsStorageCredentialLifecycle,
 	supportsStorageNativeProcessing,
 	supportsStoragePolicyAction,
@@ -1069,10 +1070,13 @@ function useAdminPoliciesPageContent() {
 			);
 			const nextSupportsStorageNativeProcessing =
 				supportsStorageNativeProcessing(nextDriverDescriptor);
-			if (supportsObjectStorageConnection(nextDriverDescriptor)) {
+			if (supportsStaticSecretConnection(nextDriverDescriptor)) {
 				return {
 					...prevWithoutS3PathStyle,
 					driver_type: driverType,
+					bucket: supportsObjectStorageConnection(nextDriverDescriptor)
+						? prev.bucket
+						: "",
 					remote_node_id: "",
 					remote_storage_target_key: "",
 					storage_native_processing_enabled: nextSupportsStorageNativeProcessing
@@ -1237,7 +1241,7 @@ function useAdminPoliciesPageContent() {
 			}
 
 			if (
-				supportsObjectStorageConnection(descriptor) ||
+				supportsStaticSecretConnection(descriptor) ||
 				supportsRemoteNodeBinding(descriptor)
 			) {
 				setValidatedConnectionKey(
@@ -1641,7 +1645,7 @@ function useAdminPoliciesPageContent() {
 		}
 
 		if (
-			supportsObjectStorageConnection(currentStorageDriverDescriptor) &&
+			supportsStaticSecretConnection(currentStorageDriverDescriptor) &&
 			!form.endpoint.trim()
 		) {
 			return;

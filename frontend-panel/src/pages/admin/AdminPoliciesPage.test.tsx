@@ -66,6 +66,8 @@ const mockTranslate = vi.hoisted(
 				return "Local";
 			case "driver_type_s3":
 				return "S3";
+			case "driver_type_sftp":
+				return "SFTP";
 			case "driver_type_tencent_cos":
 				return "Tencent COS";
 			case "driver_type_azure_blob":
@@ -854,6 +856,19 @@ function storageConnectorUi(driverType: string) {
 				icon_src: "/static/storage/onedrive.svg",
 				label_key: "driver_type_onedrive",
 			};
+		case "sftp":
+			return {
+				base_path_empty_display: "core:root",
+				base_path_placeholder: "/srv/asterdrive",
+				config_step_description_key: "policy_wizard_step_sftp_desc",
+				config_step_title_key: "policy_wizard_step_sftp_title",
+				description_key: "policy_wizard_sftp_storage_desc",
+				edit_context_key: "policy_edit_context_sftp_desc",
+				helper_key: "policy_wizard_sftp_helper",
+				icon_name: "ServerCog",
+				icon_src: null,
+				label_key: "driver_type_sftp",
+			};
 		default:
 			return {
 				...sharedObjectStorageUi,
@@ -996,6 +1011,30 @@ function createStorageDriverDescriptors() {
 				presigned_upload: true,
 			},
 		}),
+		createStorageDriverDescriptor("sftp", {
+			capabilities: {
+				...createStorageDriverDescriptor("sftp").capabilities,
+				capacity: false,
+				list: false,
+			},
+			credential_mode: "static_secret",
+			fields: [
+				fieldDescriptor("endpoint", "connection", "text", {
+					help_key: "sftp_endpoint_hint",
+					invalid_protocol_message_key: "sftp_endpoint_protocol_required_error",
+					placeholder: "sftp://example.com:22",
+					required: true,
+					trim_on_blur: true,
+				}),
+				fieldDescriptor("access_key", "connection", "text", {
+					required: true,
+				}),
+				fieldDescriptor("secret_key", "connection", "secret", {
+					required: true,
+				}),
+				fieldDescriptor("base_path", "connection", "text"),
+			],
+		}),
 		createStorageDriverDescriptor("tencent_cos", {
 			actions: [
 				{
@@ -1132,6 +1171,7 @@ function openCreateWizard(
 		| "local"
 		| "remote"
 		| "s3"
+		| "sftp"
 		| "tencent_cos"
 		| "azure_blob"
 		| "one_drive" = "local",
@@ -1143,6 +1183,8 @@ function openCreateWizard(
 		fireEvent.click(screen.getByRole("button", { name: /^Remote\b/ }));
 	} else if (driver === "s3") {
 		fireEvent.click(screen.getByRole("button", { name: /^S3\b/ }));
+	} else if (driver === "sftp") {
+		fireEvent.click(screen.getByRole("button", { name: /^SFTP\b/ }));
 	} else if (driver === "tencent_cos") {
 		fireEvent.click(screen.getByRole("button", { name: /Tencent COS/ }));
 	} else if (driver === "azure_blob") {

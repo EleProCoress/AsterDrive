@@ -38,6 +38,7 @@ export function ObjectStorageConnectionFields({
 		pathStyleField,
 		form.driver_type,
 	);
+	const hasBucketField = bucketField != null;
 
 	return (
 		<>
@@ -65,22 +66,26 @@ export function ObjectStorageConnectionFields({
 					</p>
 				) : null}
 			</div>
-			<div className="space-y-2">
-				<Label htmlFor="bucket">
-					{t(fieldLabelKey(bucketField, "bucket"))}
-				</Label>
-				<Input
-					id="bucket"
-					value={form.bucket}
-					onChange={(e) => onFieldChange("bucket", e.target.value)}
-					aria-invalid={showCreateValidation && bucketError ? true : undefined}
-					className={ADMIN_CONTROL_HEIGHT_CLASS}
-					required
-				/>
-				{showCreateValidation && bucketError ? (
-					<p className="text-xs text-destructive">{bucketError}</p>
-				) : null}
-			</div>
+			{hasBucketField ? (
+				<div className="space-y-2">
+					<Label htmlFor="bucket">
+						{t(fieldLabelKey(bucketField, "bucket"))}
+					</Label>
+					<Input
+						id="bucket"
+						value={form.bucket}
+						onChange={(e) => onFieldChange("bucket", e.target.value)}
+						aria-invalid={
+							showCreateValidation && bucketError ? true : undefined
+						}
+						className={ADMIN_CONTROL_HEIGHT_CLASS}
+						required={bucketField.required}
+					/>
+					{showCreateValidation && bucketError ? (
+						<p className="text-xs text-destructive">{bucketError}</p>
+					) : null}
+				</div>
+			) : null}
 			{showPathStyleField ? (
 				<S3PathStyleField
 					field={pathStyleField}
