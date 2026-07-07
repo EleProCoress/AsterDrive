@@ -212,5 +212,5 @@ AsterDrive 返回 `index.html` 时会同时做两件事：
 - **版本对齐** —— 二进制升级可能带新 API 或行为变更；你的自定义前端需要跟着测一轮
 
 ::: tip 希望 AsterDrive 提供更好的自定义前端支持？
-现在这套机制是**最小可用**的——能跑，但粗糙。如果你在做自定义前端并且有具体的扩展需求（公开只读配置、自定义 CSP、多前端切换等），[开 issue 告诉我们](https://github.com/AptS-1547/AsterDrive/issues)，这种反馈会被优先看。
+现在这套机制是**最小可用**的——能跑，但粗糙。如果你在做自定义前端并且有具体的扩展需求（公开只读配置、自定义 CSP、多前端切换等），[开 issue 告诉我们](https://github.com/AsterCommunity/AsterDrive/issues)，这种反馈会被优先看。
 :::

@@ -240,7 +240,7 @@ Check in this order:
 
 ### Some Features "Disappeared" After Upgrade
 
-They usually did not disappear; their location changed. First read the corresponding version section in the [changelog](https://github.com/AptS-1547/AsterDrive/blob/master/CHANGELOG.md).
+They usually did not disappear; their location changed. First read the corresponding version section in the [changelog](https://github.com/AsterCommunity/AsterDrive/blob/master/CHANGELOG.md).
 
 If upgrading from an early prerelease build, read the early-build notes in [Upgrade and Version Migration](./upgrade) first. A full backup is still recommended before upgrade; see [Backup and Restore](./backup).
 
@@ -251,6 +251,6 @@ Submit an issue in this order:
 1. Run `aster_drive doctor` once and paste the output.
 2. Paste the full JSON from `/health/ready`.
 3. Paste logs around the symptom, at least 50 lines before and after.
-4. Open an issue in [GitHub Issues](https://github.com/AptS-1547/AsterDrive/issues).
+4. Open an issue in [GitHub Issues](https://github.com/AsterCommunity/AsterDrive/issues).
 
 Do not delete the `code` field from the `/health/ready` JSON. If logs also include a structured `error_code` field, keep that too. These fields are the fastest clues for locating the problem.

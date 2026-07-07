@@ -296,9 +296,9 @@ function buildZhNav() {
     {
       text: `v${VERSION}`,
       items: [
-        { text: '更新日志', link: 'https://github.com/AptS-1547/AsterDrive/blob/master/CHANGELOG.md' },
-        { text: '发布页面', link: 'https://github.com/AptS-1547/AsterDrive/releases' },
-        { text: 'GitHub', link: 'https://github.com/AptS-1547/AsterDrive' }
+        { text: '更新日志', link: 'https://github.com/AsterCommunity/AsterDrive/blob/master/CHANGELOG.md' },
+        { text: '发布页面', link: 'https://github.com/AsterCommunity/AsterDrive/releases' },
+        { text: 'GitHub', link: 'https://github.com/AsterCommunity/AsterDrive' }
       ]
     }
   ]
@@ -375,9 +375,9 @@ function buildEnNav() {
     {
       text: `v${VERSION}`,
       items: [
-        { text: 'Changelog', link: 'https://github.com/AptS-1547/AsterDrive/blob/master/CHANGELOG.md' },
-        { text: 'Releases', link: 'https://github.com/AptS-1547/AsterDrive/releases' },
-        { text: 'GitHub', link: 'https://github.com/AptS-1547/AsterDrive' }
+        { text: 'Changelog', link: 'https://github.com/AsterCommunity/AsterDrive/blob/master/CHANGELOG.md' },
+        { text: 'Releases', link: 'https://github.com/AsterCommunity/AsterDrive/releases' },
+        { text: 'GitHub', link: 'https://github.com/AsterCommunity/AsterDrive' }
       ]
     }
   ]
@@ -679,7 +679,7 @@ export default withMermaid(defineConfig({
           copyright: 'Copyright © 2026 AptS:1547'
         },
         editLink: {
-          pattern: 'https://github.com/AptS-1547/AsterDrive/edit/master/docs/:path',
+          pattern: 'https://github.com/AsterCommunity/AsterDrive/edit/master/docs/:path',
           text: '编辑本页'
         },
         docFooter: { prev: '上一页', next: '下一页' },
@@ -708,7 +708,7 @@ export default withMermaid(defineConfig({
           copyright: 'Copyright © 2026 AptS:1547'
         },
         editLink: {
-          pattern: 'https://github.com/AptS-1547/AsterDrive/edit/master/docs/:path',
+          pattern: 'https://github.com/AsterCommunity/AsterDrive/edit/master/docs/:path',
           text: 'Edit this page'
         },
         docFooter: { prev: 'Previous page', next: 'Next page' },
@@ -785,7 +785,7 @@ export default withMermaid(defineConfig({
     siteTitle: false,
 
     socialLinks: [
-      { icon: 'github', link: 'https://github.com/AptS-1547/AsterDrive' }
+      { icon: 'github', link: 'https://github.com/AsterCommunity/AsterDrive' }
     ],
 
     search: {

@@ -35,7 +35,7 @@ Our judgment is:
 - **Uncommon things belong in CLI**: database migration, batch configuration changes, and disaster recovery should go to [Operations CLI](/en/deployment/ops-cli), not be crammed into the web admin console
 - **Dangerous things must state consequences**: for force-delete-user or empty-trash actions, the button should say what will be deleted instead of hiding it behind an "advanced" menu
 
-If a common action in the admin console feels unnecessarily roundabout, [tell us](https://github.com/AptS-1547/AsterDrive/issues). The direction of admin-console iteration is **"shorter daily admin actions"**, not "more and more stacked features".
+If a common action in the admin console feels unnecessarily roundabout, [tell us](https://github.com/AsterCommunity/AsterDrive/issues). The direction of admin-console iteration is **"shorter daily admin actions"**, not "more and more stacked features".
 
 ## What Is in the Admin Console
 

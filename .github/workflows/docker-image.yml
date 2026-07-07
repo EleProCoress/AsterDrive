@@ -85,7 +85,7 @@ jobs:
           labels: |
             org.opencontainers.image.title=AsterDrive
             org.opencontainers.image.description=Self-hosted cloud storage system built with Rust
-            org.opencontainers.image.vendor=AptS-1547
+            org.opencontainers.image.vendor=AsterCommunity
 
       - name: Build and push Docker image
         id: build-push

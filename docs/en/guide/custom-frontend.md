@@ -212,5 +212,5 @@ Other paths fall back to SPA fallback and return `index.html` when no concrete f
 - **Version alignment**: binary upgrades may add new APIs or behavior changes; test your custom frontend after each upgrade
 
 ::: tip Want better custom frontend support in AsterDrive?
-The current mechanism is **minimally usable**: it works, but it is rough. If you are building a custom frontend and have concrete extension needs such as public read-only configuration, custom CSP, or switching between multiple frontends, [open an issue](https://github.com/AptS-1547/AsterDrive/issues). This kind of feedback gets priority.
+The current mechanism is **minimally usable**: it works, but it is rough. If you are building a custom frontend and have concrete extension needs such as public read-only configuration, custom CSP, or switching between multiple frontends, [open an issue](https://github.com/AsterCommunity/AsterDrive/issues). This kind of feedback gets priority.
 :::

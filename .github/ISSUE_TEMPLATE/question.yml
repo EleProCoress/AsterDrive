@@ -8,7 +8,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        For general discussion, consider using [Discussions](https://github.com/AptS-1547/AsterDrive/discussions) instead.
+        For general discussion, consider using [Discussions](https://github.com/AsterCommunity/AsterDrive/discussions) instead.
 
   - type: textarea
     id: question

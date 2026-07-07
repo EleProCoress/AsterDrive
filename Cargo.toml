@@ -8,7 +8,7 @@ authors = [
     "AptS-1738 <apts-1738@esaps.net>",
     "AptS-1543 <apts-1543@esaps.net>",
 ]
-repository = "https://github.com/AptS-1547/AsterDrive"
+repository = "https://github.com/AsterCommunity/AsterDrive"
 license = "MIT"
 edition = "2024"
 rust-version = "1.95.0"

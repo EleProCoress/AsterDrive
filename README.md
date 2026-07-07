@@ -106,7 +106,7 @@ See [`docs/deployment/docker.md`](docs/deployment/docker.md) for the full Docker
 ### Run from source
 
 ```bash
-git clone https://github.com/AptS-1547/AsterDrive.git
+git clone https://github.com/AsterCommunity/AsterDrive.git
 cd AsterDrive
 
 cd frontend-panel
@@ -253,4 +253,4 @@ tests/                  Integration tests
 
 ## License
 
-[MIT](LICENSE) - Copyright (c) 2026 AptS-1547
+[MIT](LICENSE) - Copyright (c) 2026 AsterCommunity & AptS-1547

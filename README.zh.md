@@ -106,7 +106,7 @@ docker compose up -d
 ### 从源码运行
 
 ```bash
-git clone https://github.com/AptS-1547/AsterDrive.git
+git clone https://github.com/AsterCommunity/AsterDrive.git
 cd AsterDrive
 
 cd frontend-panel
@@ -253,4 +253,4 @@ tests/                  集成测试
 
 ## 许可证
 
-[MIT](LICENSE) - Copyright (c) 2026 AptS-1547
+[MIT](LICENSE) - Copyright (c) 2026 AsterCommunity & AptS-1547

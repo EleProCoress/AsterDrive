@@ -55,7 +55,7 @@ bun tests/performance/seed.mjs
 
 ## Running Locally
 
-Performance script details are in [`tests/performance/README.md`](https://github.com/AptS-1547/AsterDrive/blob/master/tests/performance/README.md).
+Performance script details are in [`tests/performance/README.md`](https://github.com/AsterCommunity/AsterDrive/blob/master/tests/performance/README.md).
 
 Common commands:
 

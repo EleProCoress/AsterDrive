@@ -66,7 +66,7 @@ bun tests/performance/seed.mjs
 
 ## 本地跑法
 
-性能脚本说明见 [`tests/performance/README.md`](https://github.com/AptS-1547/AsterDrive/blob/master/tests/performance/README.md)。
+性能脚本说明见 [`tests/performance/README.md`](https://github.com/AsterCommunity/AsterDrive/blob/master/tests/performance/README.md)。
 
 常用命令：
 

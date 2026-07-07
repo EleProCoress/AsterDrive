@@ -11,7 +11,7 @@ Stable releases aim to keep upgrade paths clear, but upgrades may still include 
 
 No matter which deployment method you use, do these first:
 
-1. **Read the corresponding version section in the [changelog](https://github.com/AptS-1547/AsterDrive/blob/master/CHANGELOG.md)**, especially `Changed` / `Removed` / `Deprecated`.
+1. **Read the corresponding version section in the [changelog](https://github.com/AsterCommunity/AsterDrive/blob/master/CHANGELOG.md)**, especially `Changed` / `Removed` / `Deprecated`.
 2. **Take a full backup once**. At minimum, include `data/config.toml`, the database, and all local storage directories. Preserve both the login signing key and MFA encryption key in `config.toml`. See [Backup and Restore](./backup).
 3. **Confirm the database account has DDL permissions**. Startup automatically runs migrations. If the account lacks `CREATE` / `ALTER`, startup fails.
 4. **Estimate the downtime window**. Small deployments take tens of seconds. If the database already has a lot of data, read the MySQL section below.
@@ -82,7 +82,7 @@ For large MySQL deployments:
 
 PostgreSQL and SQLite are not affected by this limitation.
 
-If future versions include similar migrations, they will be clearly marked in the [changelog](https://github.com/AptS-1547/AsterDrive/blob/master/CHANGELOG.md).
+If future versions include similar migrations, they will be clearly marked in the [changelog](https://github.com/AsterCommunity/AsterDrive/blob/master/CHANGELOG.md).
 
 ## Post-Upgrade Validation
 
@@ -116,7 +116,7 @@ If you urgently need to restore service, you can roll back to the old version on
 
 ### Some Features "Disappeared" After Startup
 
-They usually did not disappear; their location or name changed. First read the corresponding version section in the [changelog](https://github.com/AptS-1547/AsterDrive/blob/master/CHANGELOG.md). If the changelog does not mention it, open an issue.
+They usually did not disappear; their location or name changed. First read the corresponding version section in the [changelog](https://github.com/AsterCommunity/AsterDrive/blob/master/CHANGELOG.md). If the changelog does not mention it, open an issue.
 
 ### Behavior Is Abnormal After Startup but There Is No Error
 

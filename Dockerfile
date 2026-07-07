@@ -46,7 +46,7 @@ RUN apk add --no-cache ca-certificates sqlite-libs vips-tools vips-poppler ffmpe
 LABEL maintainer="AptS:1547 <apts-1547@esaps.net>"
 LABEL org.opencontainers.image.title="AsterDrive"
 LABEL org.opencontainers.image.description="Self-hosted cloud storage system built with Rust"
-LABEL org.opencontainers.image.source="https://github.com/AptS-1547/AsterDrive"
+LABEL org.opencontainers.image.source="https://github.com/AsterCommunity/AsterDrive"
 LABEL org.opencontainers.image.license="MIT"
 
 COPY --from=builder /build/target/release/aster_drive /usr/local/bin/aster_drive

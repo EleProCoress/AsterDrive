@@ -15,7 +15,7 @@ AsterDrive is not trying to be "the cloud drive with the most features". We want
 - **Expected things should not interrupt you**: unnecessary prompts, unnecessary dialogs, and unnecessary "are you sure" moments should be minimized
 - **When something really goes wrong, give a clear signal**: error code + readable message + an actionable next step
 
-If something feels awkward after you use it, [open an issue and tell us](https://github.com/AptS-1547/AsterDrive/issues). That is the most direct feedback path.
+If something feels awkward after you use it, [open an issue and tell us](https://github.com/AsterCommunity/AsterDrive/issues). That is the most direct feedback path.
 
 ## Login and First Entry
 
