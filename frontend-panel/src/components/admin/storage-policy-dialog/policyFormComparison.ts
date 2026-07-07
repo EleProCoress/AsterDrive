@@ -6,6 +6,7 @@ import {
 	supportsOneDrivePolicyOptions,
 } from "./descriptorPredicates";
 import { getPolicyForm, type PolicyFormData } from "./formTypes";
+import { buildPolicyOptions } from "./storagePolicyOptions";
 
 function policyFormValueEquals(left: unknown, right: unknown): boolean {
 	if (Object.is(left, right)) {
@@ -66,11 +67,14 @@ function normalizePolicyComparableForm(
 	descriptor?: StorageConnectorDescriptor | null,
 ) {
 	const normalized = normalizePolicyForm(form, descriptor);
+	const comparableBase = descriptor
+		? withComparableDescriptorOptions(normalized, descriptor)
+		: normalized;
 	const usesMicrosoftGraph =
 		descriptor != null
 			? supportsOneDrivePolicyOptions(descriptor) ||
 				supportsMicrosoftGraphApplicationConfig(descriptor)
-			: hasMicrosoftGraphFormFields(normalized);
+			: hasMicrosoftGraphFormFields(comparableBase);
 
 	if (!usesMicrosoftGraph) {
 		const {
@@ -83,18 +87,29 @@ function normalizePolicyComparableForm(
 			onedrive_tenant: _tenant,
 			application_credentials: _applicationCredentials,
 			...comparable
-		} = normalized;
+		} = comparableBase;
 		return comparable;
 	}
 
-	const microsoftGraph = microsoftGraphCredentials(normalized);
+	const microsoftGraph = microsoftGraphCredentials(comparableBase);
 	if (microsoftGraph.client_id.trim() || microsoftGraph.client_secret.trim()) {
-		return normalized;
+		return comparableBase;
 	}
 
 	const { application_credentials: _applicationCredentials, ...comparable } =
-		normalized;
+		comparableBase;
 	return comparable;
+}
+
+function withComparableDescriptorOptions(
+	form: PolicyFormData,
+	descriptor: StorageConnectorDescriptor,
+) {
+	const { policy_option_values: _policyOptionValues, ...comparable } = form;
+	return {
+		...comparable,
+		policy_options: buildPolicyOptions(form, descriptor),
+	};
 }
 
 function hasMicrosoftGraphFormFields(form: PolicyFormData) {

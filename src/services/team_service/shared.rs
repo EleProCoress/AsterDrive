@@ -594,6 +594,12 @@ pub(super) async fn archive_team_record(
         state, team_id,
     )
     .await;
+    if let Err(error) = crate::webdav::auth::invalidate_webdav_auth_for_team(state, team_id).await {
+        tracing::warn!(
+            team_id,
+            "failed to invalidate team WebDAV auth cache after archive: {error}"
+        );
+    }
     tracing::info!(
         team_id,
         team_name = %team_name,
@@ -619,6 +625,12 @@ pub(super) async fn restore_team_record(
         restored.id,
     )
     .await;
+    if let Err(error) = crate::webdav::auth::invalidate_webdav_auth_for_team(state, team_id).await {
+        tracing::warn!(
+            team_id,
+            "failed to invalidate team WebDAV auth cache after restore: {error}"
+        );
+    }
     tracing::info!(
         team_id,
         team_name = %team_name,

@@ -82,7 +82,7 @@ async fn test_admin_storage_driver_descriptors_expose_capability_matrix() {
     let body: Value = test::read_body_json(resp).await;
     let descriptors = body["data"].as_array().expect("descriptor list");
 
-    assert_eq!(descriptors.len(), 6);
+    assert_eq!(descriptors.len(), 7);
 
     let descriptor = |driver_type: &str| {
         descriptors
@@ -230,6 +230,14 @@ async fn test_admin_storage_driver_descriptors_expose_capability_matrix() {
     let local = descriptor("local");
     assert_eq!(local["upload_workflows"]["object_multipart_upload"], false);
     assert_eq!(local["capabilities"]["remote_node_binding"], false);
+
+    let sftp = descriptor("sftp");
+    assert_eq!(sftp["credential_mode"], "static_secret");
+    assert_eq!(sftp["ui"]["label_key"], "driver_type_sftp");
+    assert_eq!(sftp["upload_workflows"]["stream_upload"], true);
+    assert_eq!(sftp["upload_workflows"]["object_multipart_upload"], false);
+    assert_eq!(sftp["capabilities"]["efficient_range"], true);
+    assert_eq!(sftp["capabilities"]["remote_node_binding"], false);
 
     let remote = descriptor("remote");
     assert_eq!(remote["upload_workflows"]["object_multipart_upload"], true);

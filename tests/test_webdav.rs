@@ -18,9 +18,7 @@ use aster_drive::types::{
 };
 use base64::Engine;
 use chrono::Utc;
-use sea_orm::{
-    ActiveModelTrait, ColumnTrait, EntityTrait, IntoActiveModel, PaginatorTrait, QueryFilter, Set,
-};
+use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, Set};
 use std::io::Cursor;
 use tokio::task::JoinHandle;
 use xmltree::Element;
@@ -1545,10 +1543,7 @@ async fn test_webdav_real_http_team_account_is_rejected_after_team_archive() {
     let team = aster_drive::db::repository::team_repo::find_by_id(state.writer_db(), team_id)
         .await
         .expect("team should exist");
-    let mut active_team = team.into_active_model();
-    active_team.archived_at = Set(Some(Utc::now()));
-    active_team
-        .update(state.writer_db())
+    aster_drive::services::team_service::archive_team(&state, team_id, team.created_by)
         .await
         .expect("team should archive");
     let after_archive = client
