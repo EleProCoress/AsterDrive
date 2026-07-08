@@ -22,9 +22,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         eprintln!("  cd frontend-panel && bun install && bun run build");
 
         create_fallback_files(&dist_path)?;
+    } else if is_fallback_dist(&dist_path)? {
+        eprintln!("Warning: frontend-panel/dist contains fallback assets; refreshing them");
+        create_fallback_files(&dist_path)?;
     }
 
     Ok(())
+}
+
+fn is_fallback_dist(dist_path: &Path) -> io::Result<bool> {
+    let index_path = dist_path.join("index.html");
+    if !index_path.exists() {
+        return Ok(true);
+    }
+
+    let index_html = fs::read_to_string(index_path)?;
+    Ok(index_html.contains("Frontend Not Built"))
 }
 
 fn create_fallback_files(dist_path: &Path) -> io::Result<()> {
@@ -42,7 +55,7 @@ fn create_fallback_files(dist_path: &Path) -> io::Result<()> {
     <meta name="description" content="%ASTERDRIVE_DESCRIPTION%" />
     <meta http-equiv="Content-Security-Policy" content="%ASTERDRIVE_CSP%" />
     <meta name="asterdrive-version" content="%ASTERDRIVE_VERSION%" />
-    <title>%ASTERDRIVE_TITLE% - Frontend Not Built</title>
+    <title>%ASTERDRIVE_TITLE%</title>
     <style>
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -84,5 +97,17 @@ fn create_fallback_files(dist_path: &Path) -> io::Result<()> {
     fs::write(dist_path.join("favicon.ico"), [])?;
 
     fs::create_dir_all(dist_path.join("assets"))?;
+    fs::write(
+        dist_path.join("assets").join("fallback.css"),
+        "body{background:#f8fafc;}\n",
+    )?;
+    fs::write(
+        dist_path.join("sw.js"),
+        "self.addEventListener('install',()=>self.skipWaiting());self.addEventListener('activate',event=>event.waitUntil(self.clients.claim()));\n",
+    )?;
+    fs::write(
+        dist_path.join("manifest.webmanifest"),
+        r##"{"name":"AsterDrive","short_name":"AsterDrive","start_url":"/","display":"standalone","background_color":"#ffffff","theme_color":"#0f172a","icons":[]}"##,
+    )?;
     Ok(())
 }
