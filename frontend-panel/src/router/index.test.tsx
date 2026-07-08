@@ -15,7 +15,27 @@ vi.mock("@/pages/ErrorPage", () => ({
 	default: () => null,
 }));
 
+vi.mock("@/pages/ForcePasswordChangePage", () => ({
+	default: () => null,
+}));
+
+vi.mock("@/pages/InviteRegisterPage", () => ({
+	default: () => null,
+}));
+
+vi.mock("@/pages/ResetPasswordPage", () => ({
+	default: () => null,
+}));
+
 vi.mock("@/pages/ShareViewPage", () => ({
+	default: () => null,
+}));
+
+vi.mock("@/pages/TrashPage", () => ({
+	default: () => null,
+}));
+
+vi.mock("@/pages/admin/AdminTeamDetailPage", () => ({
 	default: () => null,
 }));
 
@@ -97,6 +117,7 @@ async function loadRoutes() {
 type TestRoute = {
 	children?: TestRoute[];
 	element?: unknown;
+	errorElement?: unknown;
 	path?: string;
 };
 
@@ -243,8 +264,24 @@ describe("router", () => {
 		const allRoutes = flattenRoutes(routes);
 		const localizedRoutes = [
 			{
+				path: "/force-password-change",
+				namespaces: ["auth", "core", "settings", "validation"],
+			},
+			{
+				path: "/reset-password",
+				namespaces: ["auth", "core"],
+			},
+			{
+				path: "/invite/:token",
+				namespaces: ["auth", "core"],
+			},
+			{
 				path: "/s/:token",
-				namespaces: ["core", "share", "files", "errors"],
+				namespaces: ["core", "share", "files", "tasks", "errors"],
+			},
+			{
+				path: "/trash",
+				namespaces: ["core", "files", "admin", "tasks"],
 			},
 			{
 				path: "/settings/webdav",
@@ -258,6 +295,18 @@ describe("router", () => {
 				path: "/settings/teams/:teamId",
 				namespaces: ["core", "settings", "admin", "webdav", "errors"],
 			},
+			{
+				path: "/settings/teams/:teamId/:section",
+				namespaces: ["core", "settings", "admin", "webdav", "errors"],
+			},
+			{
+				path: "/admin/teams/:teamId",
+				namespaces: ["admin", "core", "settings"],
+			},
+			{
+				path: "/admin/teams/:teamId/:section",
+				namespaces: ["admin", "core", "settings"],
+			},
 		];
 
 		for (const routeConfig of localizedRoutes) {
@@ -269,5 +318,8 @@ describe("router", () => {
 				routeConfig.namespaces,
 			);
 		}
+
+		await resolveLazyElement(routes[0]?.errorElement);
+		expect(ensureI18nNamespacesMock).toHaveBeenLastCalledWith(["errors"]);
 	});
 });

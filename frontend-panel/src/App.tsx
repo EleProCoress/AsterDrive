@@ -50,7 +50,12 @@ const toasterStyle = {
 } satisfies CSSProperties & Record<`--${string}`, string>;
 
 function shouldSkipInitialAuthCheck(pathname: string) {
-	return pathname === "/login" || pathname.startsWith("/s/");
+	return (
+		pathname === "/login" ||
+		pathname === "/reset-password" ||
+		pathname.startsWith("/invite/") ||
+		pathname.startsWith("/s/")
+	);
 }
 
 function loadPublicConfig() {

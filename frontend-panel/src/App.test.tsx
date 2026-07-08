@@ -219,6 +219,24 @@ describe("App", () => {
 		expect(mockState.setAuthState).toHaveBeenCalledWith({ isChecking: false });
 	});
 
+	it("skips the bootstrap auth check on invitation routes", () => {
+		window.history.replaceState({}, "", "/invite/invite-token");
+
+		render(<App />);
+
+		expect(mockState.authStore.checkAuth).not.toHaveBeenCalled();
+		expect(mockState.setAuthState).toHaveBeenCalledWith({ isChecking: false });
+	});
+
+	it("skips the bootstrap auth check on password reset routes", () => {
+		window.history.replaceState({}, "", "/reset-password?token=reset-token");
+
+		render(<App />);
+
+		expect(mockState.authStore.checkAuth).not.toHaveBeenCalled();
+		expect(mockState.setAuthState).toHaveBeenCalledWith({ isChecking: false });
+	});
+
 	it("runs the bootstrap auth check on protected routes", async () => {
 		window.history.replaceState({}, "", "/");
 

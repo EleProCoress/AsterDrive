@@ -33,11 +33,18 @@ function localizedLazyPage<TProps extends object>(
 }
 
 const LoginPage = lazyPage(() => import("@/pages/LoginPage"));
-const ForcePasswordChangePage = lazyPage(
+const ForcePasswordChangePage = localizedLazyPage(
+	["auth", "core", "settings", "validation"],
 	() => import("@/pages/ForcePasswordChangePage"),
 );
-const ResetPasswordPage = lazyPage(() => import("@/pages/ResetPasswordPage"));
-const InviteRegisterPage = lazyPage(() => import("@/pages/InviteRegisterPage"));
+const ResetPasswordPage = localizedLazyPage(
+	["auth", "core"],
+	() => import("@/pages/ResetPasswordPage"),
+);
+const InviteRegisterPage = localizedLazyPage(
+	["auth", "core"],
+	() => import("@/pages/InviteRegisterPage"),
+);
 const FileBrowserPage = lazyPage(() => import("@/pages/FileBrowserPage"));
 const CategoryBrowserPage = lazyPage(
 	() => import("@/pages/CategoryBrowserPage"),
@@ -51,7 +58,8 @@ const AdminUserInvitationsPage = lazyPage(
 	() => import("@/pages/admin/AdminUserInvitationsPage"),
 );
 const AdminTeamsPage = lazyPage(() => import("@/pages/admin/AdminTeamsPage"));
-const AdminTeamDetailPage = lazyPage(
+const AdminTeamDetailPage = localizedLazyPage(
+	["admin", "core", "settings"],
 	() => import("@/pages/admin/AdminTeamDetailPage"),
 );
 const AdminPoliciesPage = lazyPage(
@@ -75,14 +83,17 @@ const AdminFilesPage = lazyPage(() => import("@/pages/admin/AdminFilesPage"));
 const AdminLocksPage = lazyPage(() => import("@/pages/admin/AdminLocksPage"));
 const AdminAboutPage = lazyPage(() => import("@/pages/admin/AdminAboutPage"));
 const ShareViewPage = localizedLazyPage(
-	["core", "share", "files", "errors"],
+	["core", "share", "files", "tasks", "errors"],
 	() => import("@/pages/ShareViewPage"),
 );
 const WebdavAccountsPage = localizedLazyPage(
 	["core", "admin", "auth", "webdav", "errors"],
 	() => import("@/pages/WebdavAccountsPage"),
 );
-const TrashPage = lazyPage(() => import("@/pages/TrashPage"));
+const TrashPage = localizedLazyPage(
+	["core", "files", "admin", "tasks"],
+	() => import("@/pages/TrashPage"),
+);
 const SettingsPage = localizedLazyPage(
 	["core", "files", "settings", "auth", "admin"],
 	() => import("@/pages/SettingsPage"),
@@ -94,7 +105,10 @@ const TeamManagePage = localizedLazyPage(
 const MySharesPage = lazyPage(() => import("@/pages/MySharesPage"));
 const TasksPage = lazyPage(() => import("@/pages/TasksPage"));
 const AdminAuditPage = lazyPage(() => import("@/pages/admin/AdminAuditPage"));
-const ErrorPage = lazyPage(() => import("@/pages/ErrorPage"));
+const ErrorPage = localizedLazyPage(
+	["errors"],
+	() => import("@/pages/ErrorPage"),
+);
 
 const errorElement = (
 	<Suspense fallback={<Loading />}>

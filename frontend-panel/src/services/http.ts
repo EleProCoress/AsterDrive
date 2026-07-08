@@ -42,21 +42,28 @@ const SKIP_REFRESH_PATHS = [
 	"/auth/logout",
 	"/auth/check",
 	"/auth/contact-verification/confirm",
+	"/auth/password/reset/request",
+	"/auth/password/reset/confirm",
 	"/auth/external-auth/providers",
 	"/auth/external-auth/email-verification/start",
+	"/auth/external-auth/email-verification/confirm",
 	"/auth/external-auth/password-link",
 	"/auth/setup",
 ];
 
 function shouldSkipRefresh(url: string) {
-	if (SKIP_REFRESH_PATHS.some((path) => url.endsWith(path))) return true;
-	if (url.includes("/auth/invitations/")) {
+	const pathOnly = url.split(/[?#]/, 1)[0] ?? url;
+	if (SKIP_REFRESH_PATHS.some((path) => pathOnly.endsWith(path))) return true;
+	if (pathOnly.includes("/auth/invitations/")) {
 		return true;
 	}
-	if (url.includes("/auth/external-auth/") && url.endsWith("/start")) {
+	if (
+		pathOnly.includes("/auth/external-auth/") &&
+		(pathOnly.endsWith("/start") || pathOnly.endsWith("/callback"))
+	) {
 		return true;
 	}
-	return url.includes("/s/") || url.includes("/public/");
+	return pathOnly.includes("/s/") || pathOnly.includes("/public/");
 }
 
 function isUnsafeMethod(method?: string) {

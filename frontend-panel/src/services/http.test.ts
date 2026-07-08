@@ -703,6 +703,30 @@ describe("http api helpers", () => {
 		expect(mockState.client).not.toHaveBeenCalled();
 	});
 
+	it("does not attempt refresh for public auth endpoints", async () => {
+		await loadHttpModule();
+		const errorHandler = mockState.getErrorHandler();
+		const publicAuthUrls = [
+			"/auth/invitations/token",
+			"/auth/invitations/token/accept",
+			"/auth/password/reset/request",
+			"/auth/password/reset/confirm",
+			"/auth/external-auth/email-verification/confirm?token=abc",
+			"/auth/external-auth/oidc/example/callback?code=abc",
+		];
+
+		for (const url of publicAuthUrls) {
+			const originalError = {
+				config: { url },
+				response: { status: 401 },
+			} satisfies MockAxiosError;
+
+			await expect(errorHandler(originalError)).rejects.toBe(originalError);
+		}
+		expect(mockState.refreshToken).not.toHaveBeenCalled();
+		expect(mockState.client).not.toHaveBeenCalled();
+	});
+
 	it("does not attempt refresh for passkey login endpoints", async () => {
 		await loadHttpModule();
 		const errorHandler = mockState.getErrorHandler();
