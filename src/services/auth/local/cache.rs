@@ -1,7 +1,7 @@
 //! 认证领域缓存。
 
-use crate::cache::CacheExt;
 use crate::runtime::SharedRuntimeState;
+use aster_forge_cache::CacheExt;
 
 use super::AuthSnapshot;
 

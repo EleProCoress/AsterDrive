@@ -12,7 +12,7 @@ use super::{
 use crate::api::api_error_code::ApiErrorCode;
 use crate::db::repository::{master_binding_repo, remote_storage_target_repo};
 use crate::entities::{master_binding, remote_storage_target};
-use crate::metrics_core::SharedMetricsRecorder;
+use crate::metrics::SharedMetricsRecorder;
 use crate::runtime::{FollowerRuntimeState, SharedRuntimeState};
 use crate::storage::remote_protocol::{
     RemoteCreateLocalStorageTargetRequest, RemoteCreateS3StorageTargetRequest,
@@ -30,7 +30,7 @@ struct TestFollowerState {
     runtime_config: Arc<crate::config::RuntimeConfig>,
     policy_snapshot: Arc<crate::storage::PolicySnapshot>,
     config: Arc<crate::config::Config>,
-    cache: Arc<dyn crate::cache::CacheBackend>,
+    cache: Arc<dyn aster_forge_cache::CacheBackend>,
     metrics: SharedMetricsRecorder,
 }
 
@@ -59,7 +59,7 @@ impl SharedRuntimeState for TestFollowerState {
         &self.config
     }
 
-    fn cache(&self) -> &Arc<dyn crate::cache::CacheBackend> {
+    fn cache(&self) -> &Arc<dyn aster_forge_cache::CacheBackend> {
         &self.cache
     }
 
@@ -77,7 +77,7 @@ async fn setup_state() -> TestFollowerState {
             pool_size: 1,
             retry_count: 0,
         },
-        crate::metrics_core::NoopMetrics::arc(),
+        crate::metrics::NoopMetrics::arc(),
     )
     .await
     .unwrap();
@@ -97,7 +97,7 @@ async fn setup_state() -> TestFollowerState {
         },
         ..Default::default()
     });
-    let cache = crate::cache::create_cache(&crate::config::CacheConfig {
+    let cache = aster_forge_cache::create_cache(&crate::config::CacheConfig {
         ..Default::default()
     })
     .await;
@@ -109,7 +109,7 @@ async fn setup_state() -> TestFollowerState {
         policy_snapshot: Arc::new(crate::storage::PolicySnapshot::new()),
         config,
         cache,
-        metrics: crate::metrics_core::NoopMetrics::arc(),
+        metrics: crate::metrics::NoopMetrics::arc(),
     }
 }
 

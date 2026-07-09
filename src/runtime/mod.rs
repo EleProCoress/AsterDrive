@@ -1,15 +1,12 @@
 //! 运行时模块导出。
 
-pub mod logging;
-pub mod panic;
 pub mod shutdown;
 pub mod startup;
 pub mod tasks;
 
-use crate::cache::CacheBackend;
 use crate::config::{Config, RuntimeConfig};
 use crate::db::DbHandles;
-use crate::metrics_core::SharedMetricsRecorder;
+use crate::metrics::SharedMetricsRecorder;
 use crate::services::{
     events::storage_change::StorageChangeEvent, mail::sender::MailSender,
     share::ShareDownloadRollbackQueue,
@@ -26,7 +23,7 @@ pub struct PrimaryAppState {
     pub runtime_config: Arc<RuntimeConfig>,
     pub policy_snapshot: Arc<PolicySnapshot>,
     pub config: Arc<Config>,
-    pub cache: Arc<dyn CacheBackend>,
+    pub cache: Arc<dyn aster_forge_cache::CacheBackend>,
     pub metrics: SharedMetricsRecorder,
     pub mail_sender: Arc<dyn MailSender>,
     /// 文件/文件夹变更广播（SSE 消费）
@@ -46,7 +43,7 @@ pub struct FollowerAppState {
     pub runtime_config: Arc<RuntimeConfig>,
     pub policy_snapshot: Arc<PolicySnapshot>,
     pub config: Arc<Config>,
-    pub cache: Arc<dyn CacheBackend>,
+    pub cache: Arc<dyn aster_forge_cache::CacheBackend>,
     pub metrics: SharedMetricsRecorder,
 }
 
@@ -57,7 +54,7 @@ pub trait SharedRuntimeState {
     fn runtime_config(&self) -> &Arc<RuntimeConfig>;
     fn policy_snapshot(&self) -> &Arc<PolicySnapshot>;
     fn config(&self) -> &Arc<Config>;
-    fn cache(&self) -> &Arc<dyn CacheBackend>;
+    fn cache(&self) -> &Arc<dyn aster_forge_cache::CacheBackend>;
     fn metrics(&self) -> &SharedMetricsRecorder;
 }
 
@@ -150,7 +147,7 @@ impl SharedRuntimeState for PrimaryAppState {
         &self.config
     }
 
-    fn cache(&self) -> &Arc<dyn CacheBackend> {
+    fn cache(&self) -> &Arc<dyn aster_forge_cache::CacheBackend> {
         &self.cache
     }
 
@@ -214,7 +211,7 @@ impl SharedRuntimeState for FollowerAppState {
         &self.config
     }
 
-    fn cache(&self) -> &Arc<dyn CacheBackend> {
+    fn cache(&self) -> &Arc<dyn aster_forge_cache::CacheBackend> {
         &self.cache
     }
 
@@ -228,21 +225,20 @@ impl FollowerRuntimeState for FollowerAppState {}
 #[cfg(test)]
 pub(crate) mod test_support {
     use super::SharedRuntimeState;
-    use crate::cache::CacheBackend;
     use crate::config::{CacheConfig, Config, RuntimeConfig};
-    use crate::metrics_core::SharedMetricsRecorder;
+    use crate::metrics::SharedMetricsRecorder;
     use crate::storage::{DriverRegistry, PolicySnapshot};
     use sea_orm::DatabaseConnection;
     use std::sync::Arc;
 
     pub(crate) struct CacheOnlyState {
-        cache: Arc<dyn CacheBackend>,
+        cache: Arc<dyn aster_forge_cache::CacheBackend>,
     }
 
     impl CacheOnlyState {
         pub(crate) async fn new() -> Self {
             Self {
-                cache: crate::cache::create_cache(&CacheConfig {
+                cache: aster_forge_cache::create_cache(&CacheConfig {
                     backend: "memory".to_string(),
                     ..Default::default()
                 })
@@ -276,7 +272,7 @@ pub(crate) mod test_support {
             panic!("cache-only test state must not access config")
         }
 
-        fn cache(&self) -> &Arc<dyn CacheBackend> {
+        fn cache(&self) -> &Arc<dyn aster_forge_cache::CacheBackend> {
             &self.cache
         }
 
@@ -302,13 +298,13 @@ mod tests {
                 pool_size: 1,
                 retry_count: 0,
             },
-            crate::metrics_core::NoopMetrics::arc(),
+            crate::metrics::NoopMetrics::arc(),
         )
         .await
         .unwrap();
         Migrator::up(&db, None).await.unwrap();
 
-        let cache = crate::cache::create_cache(&CacheConfig {
+        let cache = aster_forge_cache::create_cache(&CacheConfig {
             ..Default::default()
         })
         .await;
@@ -316,11 +312,8 @@ mod tests {
         let (storage_change_tx, _) = tokio::sync::broadcast::channel(
             crate::services::events::storage_change::STORAGE_CHANGE_CHANNEL_CAPACITY,
         );
-        let (share_download_rollback, _worker) = build_share_download_rollback_queue(
-            db.clone(),
-            1,
-            crate::metrics_core::NoopMetrics::arc(),
-        );
+        let (share_download_rollback, _worker) =
+            build_share_download_rollback_queue(db.clone(), 1, crate::metrics::NoopMetrics::arc());
 
         let state = PrimaryAppState {
             db_handles: crate::db::DbHandles::single(db),
@@ -329,7 +322,7 @@ mod tests {
             policy_snapshot: Arc::new(PolicySnapshot::new()),
             config: Arc::new(Config::default()),
             cache,
-            metrics: crate::metrics_core::NoopMetrics::arc(),
+            metrics: crate::metrics::NoopMetrics::arc(),
             mail_sender: crate::services::mail::sender::memory_sender(),
             storage_change_tx,
             share_download_rollback,

@@ -8,8 +8,6 @@ use actix_web::{HttpResponse, web};
 
 const READY_DB_UNAVAILABLE_MESSAGE: &str = "Database unavailable";
 const READY_STORAGE_UNAVAILABLE_MESSAGE: &str = "Storage unavailable";
-#[cfg(feature = "metrics")]
-const METRICS_EXPORT_FAILED_MESSAGE: &str = "Failed to export metrics";
 
 pub fn primary_routes() -> actix_web::Scope {
     let scope = web::scope("/health")
@@ -35,13 +33,10 @@ fn attach_optional_routes(scope: actix_web::Scope) -> actix_web::Scope {
     #[cfg(all(debug_assertions, feature = "openapi"))]
     let scope = scope.route("/memory", web::get().to(memory));
 
-    #[cfg(feature = "metrics")]
-    let scope = scope.route("/metrics", web::get().to(metrics_endpoint));
-
-    scope
+    crate::metrics::configure_route(scope)
 }
 
-#[api_docs_macros::path(
+#[aster_forge_api_docs_macros::path(
     get,
     path = "/health",
     tag = "health",
@@ -54,7 +49,7 @@ pub async fn health() -> HttpResponse {
     HttpResponse::Ok().json(status_response("ok"))
 }
 
-#[api_docs_macros::path(
+#[aster_forge_api_docs_macros::path(
     get,
     path = "/health/ready",
     tag = "health",
@@ -109,30 +104,11 @@ pub async fn ready(state: web::Data<PrimaryAppState>) -> HttpResponse {
 }
 
 pub async fn memory() -> HttpResponse {
-    let (allocated, peak) = crate::alloc::stats();
+    let (allocated, peak) = aster_forge_alloc::stats();
     HttpResponse::Ok().json(ApiResponse::ok(MemoryStatsResponse {
         heap_allocated_mb: format!("{allocated:.2}"),
         heap_peak_mb: format!("{peak:.2}"),
     }))
-}
-
-#[cfg(feature = "metrics")]
-pub async fn metrics_endpoint() -> HttpResponse {
-    let Some(metrics) = crate::metrics::get_metrics() else {
-        return HttpResponse::ServiceUnavailable()
-            .content_type("text/plain")
-            .body("Metrics not initialized");
-    };
-
-    match metrics.export() {
-        Ok(output) => HttpResponse::Ok()
-            .content_type("text/plain; version=0.0.4; charset=utf-8")
-            .body(output),
-        Err(e) => {
-            tracing::error!(error = %e, "metrics export failed");
-            HttpResponse::InternalServerError().body(METRICS_EXPORT_FAILED_MESSAGE)
-        }
-    }
 }
 
 pub fn system_info_response() -> SystemInfoResponse {
@@ -156,7 +132,6 @@ fn status_response(status: &str) -> HealthResponse {
 #[cfg(test)]
 mod tests {
     use super::{READY_STORAGE_UNAVAILABLE_MESSAGE, ready};
-    use crate::cache;
     use crate::config::{CacheConfig, Config, DatabaseConfig, RuntimeConfig};
     use crate::entities::storage_policy;
     use crate::runtime::PrimaryAppState;
@@ -165,6 +140,7 @@ mod tests {
     use crate::storage::{DriverRegistry, PolicySnapshot, StorageDriver};
     use crate::types::{DriverType, StoredStoragePolicyAllowedTypes, StoredStoragePolicyOptions};
     use actix_web::{body, http::StatusCode, web};
+    use aster_forge_cache as cache;
     use async_trait::async_trait;
     use chrono::Utc;
     use migration::Migrator;
@@ -248,7 +224,7 @@ mod tests {
                 url: "sqlite::memory:".to_string(),
                 ..Default::default()
             },
-            crate::metrics_core::NoopMetrics::arc(),
+            crate::metrics::NoopMetrics::arc(),
         )
         .await
         .expect("health test db should connect");
@@ -309,7 +285,7 @@ mod tests {
             policy_snapshot,
             config: Arc::new(Config::default()),
             cache,
-            metrics: crate::metrics_core::NoopMetrics::arc(),
+            metrics: crate::metrics::NoopMetrics::arc(),
             mail_sender: sender::runtime_sender(runtime_config),
             storage_change_tx,
             share_download_rollback,

@@ -3655,7 +3655,7 @@ async fn test_user_status_cached_in_auth_middleware() {
         default_ttl: 60,
         ..Default::default()
     };
-    let cache = aster_drive::cache::create_cache(&cache_config).await;
+    let cache = aster_forge_cache::create_cache(&cache_config).await;
 
     let base = common::setup().await;
     let state = aster_drive::runtime::PrimaryAppState {
@@ -3665,7 +3665,7 @@ async fn test_user_status_cached_in_auth_middleware() {
         policy_snapshot: base.policy_snapshot,
         config: base.config,
         cache,
-        metrics: aster_drive::metrics_core::NoopMetrics::arc(),
+        metrics: aster_drive::metrics::NoopMetrics::arc(),
         mail_sender: base.mail_sender,
         storage_change_tx: base.storage_change_tx,
         share_download_rollback: base.share_download_rollback,
@@ -3702,7 +3702,7 @@ async fn test_disable_user_invalidates_status_cache() {
         default_ttl: 60,
         ..Default::default()
     };
-    let cache = aster_drive::cache::create_cache(&cache_config).await;
+    let cache = aster_forge_cache::create_cache(&cache_config).await;
 
     let base = common::setup().await;
     let state = aster_drive::runtime::PrimaryAppState {
@@ -3712,7 +3712,7 @@ async fn test_disable_user_invalidates_status_cache() {
         policy_snapshot: base.policy_snapshot,
         config: base.config,
         cache,
-        metrics: aster_drive::metrics_core::NoopMetrics::arc(),
+        metrics: aster_drive::metrics::NoopMetrics::arc(),
         mail_sender: base.mail_sender,
         storage_change_tx: base.storage_change_tx,
         share_download_rollback: base.share_download_rollback,

@@ -509,7 +509,7 @@ async fn test_state_with_driver_and_options(
             pool_size: 1,
             retry_count: 0,
         },
-        crate::metrics_core::NoopMetrics::arc(),
+        crate::metrics::NoopMetrics::arc(),
     )
     .await
     .expect("test database should connect");
@@ -550,7 +550,7 @@ async fn test_state_with_driver_and_options(
     let driver_registry = Arc::new(crate::storage::DriverRegistry::noop());
     driver_registry.insert_for_test(policy.id, driver);
     let runtime_config = Arc::new(crate::config::RuntimeConfig::new());
-    let cache = crate::cache::create_cache(&crate::config::CacheConfig {
+    let cache = aster_forge_cache::create_cache(&crate::config::CacheConfig {
         ..Default::default()
     })
     .await;
@@ -570,7 +570,7 @@ async fn test_state_with_driver_and_options(
         policy_snapshot,
         config: Arc::new(crate::config::Config::default()),
         cache,
-        metrics: crate::metrics_core::NoopMetrics::arc(),
+        metrics: crate::metrics::NoopMetrics::arc(),
         mail_sender: crate::services::mail::sender::memory_sender(),
         storage_change_tx,
         share_download_rollback,
