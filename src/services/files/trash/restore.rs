@@ -1,5 +1,6 @@
 //! 回收站服务子模块：`restore`。
 
+use aster_forge_db::transaction;
 use sea_orm::{ActiveModelTrait, Set};
 
 use crate::db::repository::{file_repo, folder_repo};
@@ -34,7 +35,7 @@ async fn restore_file_in_scope(
     }
 
     if restore_to_root {
-        let txn = crate::db::transaction::begin(state.writer_db()).await?;
+        let txn = transaction::begin(state.writer_db()).await?;
         let file_name = file.name.clone();
         let mut active: file::ActiveModel = file.into();
         active.folder_id = Set(None);
@@ -43,7 +44,7 @@ async fn restore_file_in_scope(
             .update(&txn)
             .await
             .map_err(|err| file_repo::map_name_db_err(err, &file_name))?;
-        crate::db::transaction::commit(txn).await?;
+        transaction::commit(txn).await?;
     } else {
         file_repo::restore(state.writer_db(), id).await?;
     }
@@ -88,7 +89,7 @@ async fn restore_folder_in_scope(
         }
     }
 
-    let txn = crate::db::transaction::begin(state.writer_db()).await?;
+    let txn = transaction::begin(state.writer_db()).await?;
     let mut active: folder::ActiveModel = folder.into();
     let folder_name = active.name.clone().take().unwrap_or_default();
     if restore_to_root {
@@ -102,7 +103,7 @@ async fn restore_folder_in_scope(
     let file_ids: Vec<i64> = files.iter().map(|file| file.id).collect();
     file_repo::restore_many(&txn, &file_ids).await?;
     folder_repo::restore_many(&txn, &child_folder_ids).await?;
-    crate::db::transaction::commit(txn).await?;
+    transaction::commit(txn).await?;
     storage_change::publish(
         state,
         storage_change::StorageChangeEvent::new(

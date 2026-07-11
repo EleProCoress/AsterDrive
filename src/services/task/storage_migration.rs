@@ -9,7 +9,6 @@ use tokio::io::{AsyncRead, AsyncReadExt, ReadBuf};
 use crate::db::repository::{
     background_task_repo, file_repo, policy_repo, storage_migration_checkpoint_repo, version_repo,
 };
-use crate::db::transaction;
 use crate::entities::{background_task, file_blob, storage_policy};
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::{PrimaryAppState, SharedRuntimeState, TaskRuntimeState};
@@ -17,6 +16,7 @@ use crate::storage::{MultipartStorageDriver, StorageDriver, StorageErrorKind};
 use crate::types::BackgroundTaskKind;
 use crate::utils::hash::{new_sha256, sha256_digest_to_hex, sha256_hex};
 use crate::utils::numbers::{bytes_to_usize, u64_to_i64};
+use aster_forge_db::transaction;
 
 use super::spec::{self, StoragePolicyMigrationTask, decode_payload_as};
 use super::steps::{
@@ -655,7 +655,7 @@ async fn migrate_one_blob(
             None,
         )
         .await?;
-        Ok(outcome)
+        Ok::<_, AsterError>(outcome)
     })
     .await?;
     if moved.skipped > 0 {

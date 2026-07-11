@@ -1,5 +1,6 @@
 //! 服务模块：`content::tag`。
 
+use aster_forge_db::transaction;
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 #[cfg(all(debug_assertions, feature = "openapi"))]
@@ -404,7 +405,7 @@ pub(crate) async fn delete_in_scope(
     let (file_ids, folder_ids) = entity_ids_bound_to_tag(state, tag_id).await?;
     let affected_parent_ids =
         affected_parent_ids_for_entities(state, scope, &file_ids, &folder_ids).await?;
-    crate::db::transaction::with_transaction(state.writer_db(), async |txn| {
+    transaction::with_transaction(state.writer_db(), async |txn| {
         property_repo::delete_by_namespace_and_name(
             txn,
             TAG_PROPERTY_NAMESPACE,
@@ -518,7 +519,7 @@ pub(crate) async fn replace_entity_tags_in_scope(
     verify_entity_write(state, scope, entity_type, entity_id).await?;
     let unique_tag_ids = unique_ids(tag_ids)?;
     ensure_tags_belong_to_scope(state, scope, &unique_tag_ids).await?;
-    crate::db::transaction::with_transaction(state.writer_db(), async |txn| {
+    transaction::with_transaction(state.writer_db(), async |txn| {
         property_repo::delete_namespace_for_entity(
             txn,
             entity_type,
@@ -537,7 +538,7 @@ pub(crate) async fn replace_entity_tags_in_scope(
             )
             .await?;
         }
-        Ok(())
+        Ok::<_, AsterError>(())
     })
     .await?;
     let tags = list_entity_tags_in_scope(state, scope, entity_type, entity_id).await?;
@@ -557,7 +558,7 @@ pub(crate) async fn batch_attach_in_scope(
     let folder_ids = unique_entity_ids(folder_ids);
     verify_entities_for_batch_write(state, scope, &file_ids, &folder_ids).await?;
     let tag_id = tag_id.to_string();
-    crate::db::transaction::with_transaction(state.writer_db(), async |txn| {
+    transaction::with_transaction(state.writer_db(), async |txn| {
         property_repo::insert_many_for_entities(
             txn,
             EntityType::File,
@@ -576,7 +577,7 @@ pub(crate) async fn batch_attach_in_scope(
             None,
         )
         .await?;
-        Ok(())
+        Ok::<_, AsterError>(())
     })
     .await?;
     publish_tag_assignment_change(state, scope, &file_ids, &folder_ids).await
@@ -594,7 +595,7 @@ pub(crate) async fn batch_detach_in_scope(
     let folder_ids = unique_entity_ids(folder_ids);
     verify_entities_for_batch_write(state, scope, &file_ids, &folder_ids).await?;
     let tag_id = tag_id.to_string();
-    crate::db::transaction::with_transaction(state.writer_db(), async |txn| {
+    transaction::with_transaction(state.writer_db(), async |txn| {
         property_repo::delete_many_for_entities(
             txn,
             EntityType::File,
@@ -611,7 +612,7 @@ pub(crate) async fn batch_detach_in_scope(
             &tag_id,
         )
         .await?;
-        Ok(())
+        Ok::<_, AsterError>(())
     })
     .await?;
     publish_tag_assignment_change(state, scope, &file_ids, &folder_ids).await

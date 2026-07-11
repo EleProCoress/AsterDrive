@@ -1,5 +1,6 @@
 //! 认证服务子模块：`session`。
 
+use aster_forge_db::transaction;
 use chrono::Utc;
 use sea_orm::{ActiveModelTrait, ConnectionTrait, IntoActiveModel, Set};
 
@@ -68,7 +69,7 @@ pub async fn revoke_auth_session(
     session_id: &str,
     current_refresh_jti: Option<&str>,
 ) -> Result<bool> {
-    let txn = crate::db::transaction::begin(state.writer_db()).await?;
+    let txn = transaction::begin(state.writer_db()).await?;
     let result = async {
         let session = auth_session_repo::find_by_id_for_user(&txn, user_id, session_id)
             .await?
@@ -83,11 +84,11 @@ pub async fn revoke_auth_session(
 
     match result {
         Ok(revoked_current) => {
-            crate::db::transaction::commit(txn).await?;
+            transaction::commit(txn).await?;
             Ok(revoked_current)
         }
         Err(error) => {
-            crate::db::transaction::rollback(txn).await?;
+            transaction::rollback(txn).await?;
             Err(error)
         }
     }
@@ -98,7 +99,7 @@ pub async fn revoke_other_auth_sessions(
     user_id: i64,
     current_refresh_jti: &str,
 ) -> Result<u64> {
-    let txn = crate::db::transaction::begin(state.writer_db()).await?;
+    let txn = transaction::begin(state.writer_db()).await?;
     let result = async {
         let current_session = auth_session_repo::find_by_refresh_jti(&txn, current_refresh_jti)
             .await?
@@ -125,11 +126,11 @@ pub async fn revoke_other_auth_sessions(
 
     match result {
         Ok(removed) => {
-            crate::db::transaction::commit(txn).await?;
+            transaction::commit(txn).await?;
             Ok(removed)
         }
         Err(error) => {
-            crate::db::transaction::rollback(txn).await?;
+            transaction::rollback(txn).await?;
             Err(error)
         }
     }
@@ -144,7 +145,7 @@ pub async fn revoke_user_sessions(
     user_id: i64,
 ) -> Result<UserAuditInfo> {
     tracing::debug!(user_id, "revoking user sessions");
-    let txn = crate::db::transaction::begin(state.writer_db()).await?;
+    let txn = transaction::begin(state.writer_db()).await?;
     let result = async {
         let user = user_repo::find_by_id(&txn, user_id).await?;
         let next_session_version = user.session_version.saturating_add(1);
@@ -162,11 +163,11 @@ pub async fn revoke_user_sessions(
 
     let updated = match result {
         Ok(updated) => {
-            crate::db::transaction::commit(txn).await?;
+            transaction::commit(txn).await?;
             updated
         }
         Err(error) => {
-            crate::db::transaction::rollback(txn).await?;
+            transaction::rollback(txn).await?;
             return Err(error);
         }
     };

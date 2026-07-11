@@ -1,5 +1,6 @@
 //! 服务模块：`webdav::tree`。
 
+use aster_forge_db::transaction;
 use chrono::Utc;
 
 use crate::db::repository::{file_repo, folder_repo, share_repo};
@@ -83,10 +84,10 @@ pub(crate) async fn recursive_soft_delete_in_scope(
     let folder_count = folder_ids.len();
     let now = Utc::now();
 
-    let txn = crate::db::transaction::begin(state.writer_db()).await?;
+    let txn = transaction::begin(state.writer_db()).await?;
     file_repo::soft_delete_many(&txn, &file_ids, now).await?;
     folder_repo::soft_delete_many(&txn, &folder_ids, now).await?;
-    crate::db::transaction::commit(txn).await?;
+    transaction::commit(txn).await?;
     storage_change::publish(
         state,
         storage_change::StorageChangeEvent::new(

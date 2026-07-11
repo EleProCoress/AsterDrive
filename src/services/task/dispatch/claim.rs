@@ -1,13 +1,11 @@
 use chrono::{Duration, Utc};
 use sea_orm::ActiveEnum;
 
-use crate::db::{
-    repository::{background_task_repo, config_repo},
-    transaction,
-};
+use crate::db::repository::{background_task_repo, config_repo};
 use crate::entities::background_task;
 use crate::errors::{AsterError, Result};
 use crate::runtime::SharedRuntimeState;
+use aster_forge_db::transaction;
 
 use super::lane::{TaskLaneConfig, task_lane};
 use super::{TASK_PROCESSING_STALE_SECS, TaskLease, task_lease_expires_at};

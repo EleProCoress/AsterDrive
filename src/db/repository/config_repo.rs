@@ -3,13 +3,13 @@
 use crate::config::bool_like::parse_bool_like;
 use crate::config::definitions::{ALL_CONFIGS, ConfigDef, MEDIA_PROCESSING_REGISTRY_JSON_KEY};
 use crate::config::media_processing;
-use crate::db::repository::pagination_repo::fetch_offset_page;
 use crate::entities::system_config::{self, Entity as SystemConfig};
 use crate::errors::{AsterError, Result};
 use crate::services::preview::apps;
 use crate::types::{
     MediaProcessorKind, SystemConfigSource, SystemConfigValueType, SystemConfigVisibility,
 };
+use aster_forge_db::pagination::fetch_offset_page;
 use chrono::Utc;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, DatabaseConnection, DbBackend,

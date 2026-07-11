@@ -1,10 +1,10 @@
 //! 仓储模块：`managed_follower_repo`。
 
 use crate::api::pagination::{AdminRemoteNodeSortBy, SortOrder};
-use crate::db::repository::pagination_repo::fetch_offset_page;
-use crate::db::repository::sort::{order_by_column_with_id, order_by_id};
 use crate::entities::managed_follower::{self, Entity as ManagedFollower};
 use crate::errors::{AsterError, Result};
+use aster_forge_db::pagination::fetch_offset_page;
+use aster_forge_db::sort::{order_by_column_with_id, order_by_id};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection, EntityTrait, QueryFilter,
     QueryOrder, Select, Set,

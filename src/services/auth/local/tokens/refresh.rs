@@ -31,6 +31,7 @@
 //!    `users.session_version`, purges auth sessions, invalidates cached auth
 //!    snapshots, and records an audit log.
 
+use aster_forge_db::transaction;
 use chrono::Utc;
 use dashmap::{DashMap, mapref::entry::Entry};
 use sea_orm::ConnectionTrait;
@@ -598,23 +599,22 @@ async fn finish_refresh_outcome(
             ip_address,
             user_agent,
         } => {
-            let conflict_outcome =
-                crate::db::transaction::with_transaction(state.writer_db(), async |txn| {
-                    let outcome = classify_failed_refresh_rotation(
-                        txn,
-                        claims,
-                        refresh_jti,
-                        Utc::now(),
-                        ip_address.as_deref(),
-                        user_agent.as_deref(),
-                    )
-                    .await?;
-                    if let RefreshRejection::ReuseDetected { user_id, .. } = &outcome {
-                        revoke_sessions_in_connection(txn, *user_id).await?;
-                    }
-                    Ok(outcome)
-                })
+            let conflict_outcome = transaction::with_transaction(state.writer_db(), async |txn| {
+                let outcome = classify_failed_refresh_rotation(
+                    txn,
+                    claims,
+                    refresh_jti,
+                    Utc::now(),
+                    ip_address.as_deref(),
+                    user_agent.as_deref(),
+                )
                 .await?;
+                if let RefreshRejection::ReuseDetected { user_id, .. } = &outcome {
+                    revoke_sessions_in_connection(txn, *user_id).await?;
+                }
+                Ok::<_, AsterError>(outcome)
+            })
+            .await?;
             finish_refresh_rejection(
                 state,
                 conflict_outcome,
@@ -652,7 +652,7 @@ pub async fn refresh_tokens(
         } else {
             RefreshReuseEvidence::ClientFingerprint
         };
-        let outcome = crate::db::transaction::with_transaction(state.writer_db(), async |txn| {
+        let outcome = transaction::with_transaction(state.writer_db(), async |txn| {
             rotate_refresh_in_transaction(
                 txn,
                 state,

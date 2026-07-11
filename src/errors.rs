@@ -383,6 +383,23 @@ impl From<sea_orm::DbErr> for AsterError {
     }
 }
 
+impl From<aster_forge_db::DbError> for AsterError {
+    fn from(value: aster_forge_db::DbError) -> Self {
+        match value {
+            aster_forge_db::DbError::DatabaseConnection(message) => {
+                Self::database_connection(message)
+            }
+            aster_forge_db::DbError::DatabaseOperation(message) => {
+                Self::database_operation(message)
+            }
+            aster_forge_db::DbError::RetryExhausted => {
+                Self::database_operation("database retry exhausted")
+            }
+            aster_forge_db::DbError::NonRetryable(message) => Self::database_operation(message),
+        }
+    }
+}
+
 impl From<aster_forge_api::ApiError> for AsterError {
     fn from(value: aster_forge_api::ApiError) -> Self {
         Self::validation_error(value.to_string())

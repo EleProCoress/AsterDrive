@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 
+use aster_forge_db::transaction;
 use futures::{StreamExt, stream};
 
 use crate::db::repository::{file_repo, share_repo};
@@ -100,7 +101,7 @@ async fn batch_purge_in_resource_scope_internal(
     let blob_ids: Vec<i64> = files.iter().map(|file| file.blob_id).collect();
     let count = usize_to_u32(files.len(), "purged file count")?;
 
-    let txn = crate::db::transaction::begin(state.writer_db()).await?;
+    let txn = transaction::begin(state.writer_db()).await?;
 
     let version_blob_ids =
         crate::db::repository::version_repo::delete_all_by_file_ids(&txn, &file_ids).await?;
@@ -149,7 +150,7 @@ async fn batch_purge_in_resource_scope_internal(
 
     storage::update_storage_used_for_resource_scope(&txn, scope, -total_freed_bytes).await?;
 
-    crate::db::transaction::commit(txn).await?;
+    transaction::commit(txn).await?;
     if emit_storage_event {
         storage_change::publish(
             state,

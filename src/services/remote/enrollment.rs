@@ -6,6 +6,7 @@ use crate::db::repository::{follower_enrollment_session_repo, managed_follower_r
 use crate::entities::follower_enrollment_session;
 use crate::errors::{AsterError, Result, validation_error_with_code};
 use crate::runtime::SharedRuntimeState;
+use aster_forge_db::transaction;
 use chrono::{Duration, Utc};
 use sea_orm::Set;
 use serde::{Deserialize, Serialize};
@@ -81,7 +82,7 @@ pub async fn create_enrollment_command<S: SharedRuntimeState>(
     let expires_at = Utc::now() + Duration::minutes(DEFAULT_ENROLLMENT_TTL_MINUTES);
     let created_at = Utc::now();
 
-    crate::db::transaction::with_transaction(state.writer_db(), async |txn| {
+    transaction::with_transaction(state.writer_db(), async |txn| {
         follower_enrollment_session_repo::invalidate_pending_for_managed_follower(
             txn,
             remote_node_id,
@@ -102,7 +103,7 @@ pub async fn create_enrollment_command<S: SharedRuntimeState>(
             },
         )
         .await?;
-        Ok(())
+        Ok::<_, AsterError>(())
     })
     .await?;
 
@@ -126,7 +127,7 @@ pub async fn redeem_enrollment_token<S: SharedRuntimeState>(
     }
 
     let token_hash = crate::utils::hash::sha256_hex(trimmed.as_bytes());
-    crate::db::transaction::with_transaction(state.writer_db(), async |txn| {
+    transaction::with_transaction(state.writer_db(), async |txn| {
         let enrollment = follower_enrollment_session_repo::find_by_token_hash(txn, &token_hash)
             .await?
             .ok_or_else(|| AsterError::validation_error("invalid enrollment token"))?;
@@ -181,7 +182,7 @@ pub async fn ack_enrollment_token<S: SharedRuntimeState>(
     }
 
     let ack_token_hash = normalize_ack_token_hash(trimmed);
-    crate::db::transaction::with_transaction(state.writer_db(), async |txn| {
+    transaction::with_transaction(state.writer_db(), async |txn| {
         let enrollment =
             follower_enrollment_session_repo::find_by_ack_token_hash(txn, &ack_token_hash)
                 .await?

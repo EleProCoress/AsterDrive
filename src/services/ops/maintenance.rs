@@ -1,5 +1,6 @@
 //! 服务模块：`ops::maintenance`。
 
+use aster_forge_db::transaction;
 use std::collections::{HashMap, HashSet};
 
 use chrono::Utc;
@@ -172,7 +173,7 @@ async fn reconcile_single_blob_ref_count(
     state: &PrimaryAppState,
     blob_id: i64,
 ) -> Result<Option<ReconciledBlob>> {
-    let txn = crate::db::transaction::begin(state.writer_db()).await?;
+    let txn = transaction::begin(state.writer_db()).await?;
     let result = async {
         let mut blob = match file_repo::lock_blob_by_id(&txn, blob_id).await {
             Ok(blob) => blob,
@@ -204,11 +205,11 @@ async fn reconcile_single_blob_ref_count(
 
     match result {
         Ok(reconciled) => {
-            crate::db::transaction::commit(txn).await?;
+            transaction::commit(txn).await?;
             Ok(reconciled)
         }
         Err(error) => {
-            if let Err(rollback_error) = crate::db::transaction::rollback(txn).await {
+            if let Err(rollback_error) = transaction::rollback(txn).await {
                 tracing::error!(
                     blob_id,
                     original_error = %error,

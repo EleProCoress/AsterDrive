@@ -1,3 +1,4 @@
+use aster_forge_db::transaction;
 use chrono::{Duration, Utc};
 use sea_orm::ActiveValue::Set;
 
@@ -141,7 +142,7 @@ pub async fn start_email_verification(
     let provider_name = provider.display_name.clone();
     let site_name = branding::title_or_default(state.runtime_config());
     let expires_in = format_mail_duration_seconds((flow.expires_at - now).num_seconds());
-    let txn = crate::db::transaction::begin(state.writer_db()).await?;
+    let txn = transaction::begin(state.writer_db()).await?;
     let result = async {
         external_auth_email_verification_flow_repo::update_email_request(
             &txn,
@@ -176,7 +177,7 @@ pub async fn start_email_verification(
 
     match result {
         Ok(()) => {
-            crate::db::transaction::commit(txn).await?;
+            transaction::commit(txn).await?;
             Ok(ExternalAuthEmailVerificationStartResponse {
                 message: "external auth email verification email sent".to_string(),
             })
@@ -221,7 +222,7 @@ pub async fn confirm_email_verification(
     }
 
     let claims = claims_with_verified_local_email(&flow, &email);
-    let txn = crate::db::transaction::begin(state.writer_db()).await?;
+    let txn = transaction::begin(state.writer_db()).await?;
     let result = async {
         let consumed =
             external_auth_email_verification_flow_repo::mark_consumed_if_unused(&txn, flow.id, now)
@@ -237,7 +238,7 @@ pub async fn confirm_email_verification(
 
     let resolved = match result {
         Ok(resolved) => {
-            crate::db::transaction::commit(txn).await?;
+            transaction::commit(txn).await?;
             if resolved.auto_provisioned
                 && let Some(policy_group_id) = resolved.user.policy_group_id
             {

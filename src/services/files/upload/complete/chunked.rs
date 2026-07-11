@@ -1,3 +1,4 @@
+use aster_forge_db::transaction;
 use chrono::Utc;
 use std::time::Instant;
 
@@ -348,7 +349,7 @@ async fn persist_assembled_upload(
 ) -> Result<file::Model> {
     let now = Utc::now();
     let create_result = async {
-        let txn = crate::db::transaction::begin(state.writer_db()).await?;
+        let txn = transaction::begin(state.writer_db()).await?;
 
         let blob = match verified.source() {
             VerifiedUploadSource::ContentAddressed { file_hash }
@@ -377,7 +378,7 @@ async fn persist_assembled_upload(
         )
         .await?;
 
-        crate::db::transaction::commit(txn).await?;
+        transaction::commit(txn).await?;
         Ok::<file::Model, AsterError>(created)
     }
     .await;
@@ -407,7 +408,7 @@ async fn persist_verified_chunked_upload(
 ) -> Result<file::Model> {
     let now = Utc::now();
     let create_result = async {
-        let txn = crate::db::transaction::begin(state.writer_db()).await?;
+        let txn = transaction::begin(state.writer_db()).await?;
         let blob = match verified.source() {
             VerifiedUploadSource::PreuploadedNonDedup { prepared } => {
                 storage::persist_preuploaded_blob(&txn, prepared).await?
@@ -428,7 +429,7 @@ async fn persist_verified_chunked_upload(
             actor_username,
         )
         .await?;
-        crate::db::transaction::commit(txn).await?;
+        transaction::commit(txn).await?;
         Ok::<file::Model, AsterError>(created)
     }
     .await;

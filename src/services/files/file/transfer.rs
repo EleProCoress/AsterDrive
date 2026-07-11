@@ -1,5 +1,6 @@
 //! 文件服务子模块：`transfer`。
 
+use aster_forge_db::transaction;
 use std::{borrow::Cow, collections::BTreeMap};
 
 use chrono::Utc;
@@ -156,7 +157,7 @@ pub(crate) async fn batch_duplicate_file_records_with_specs_in_scope(
     })?;
     let now = chrono::Utc::now();
 
-    let txn = crate::db::transaction::begin(state.writer_db()).await?;
+    let txn = transaction::begin(state.writer_db()).await?;
     let created_by_username = load_scope_actor_username(&txn, scope).await?;
 
     // 原子性地增加配额（CAS 语义：如果 quota > 0 且 used + total_size > quota，则失败）
@@ -216,7 +217,7 @@ pub(crate) async fn batch_duplicate_file_records_with_specs_in_scope(
         ));
     }
 
-    crate::db::transaction::commit(txn).await?;
+    transaction::commit(txn).await?;
     Ok(created_files)
 }
 
@@ -231,7 +232,7 @@ pub(crate) async fn duplicate_file_record_in_scope(
     let now = Utc::now();
     let blob_size = blob.size;
 
-    let txn = crate::db::transaction::begin(state.writer_db()).await?;
+    let txn = transaction::begin(state.writer_db()).await?;
     let created_by_username = load_scope_actor_username(&txn, scope).await?;
     storage::check_quota(&txn, scope, blob_size).await?;
 
@@ -262,7 +263,7 @@ pub(crate) async fn duplicate_file_record_in_scope(
 
     storage::update_storage_used(&txn, scope, blob_size).await?;
 
-    crate::db::transaction::commit(txn).await?;
+    transaction::commit(txn).await?;
 
     Ok(new_file)
 }
@@ -342,7 +343,7 @@ pub(crate) async fn batch_duplicate_file_records_to_mixed_folders_in_scope(
 
     storage::check_quota(state.writer_db(), scope, total_size).await?;
 
-    let txn = crate::db::transaction::begin(state.writer_db()).await?;
+    let txn = transaction::begin(state.writer_db()).await?;
     let created_by_username = load_scope_actor_username(&txn, scope).await?;
     storage::check_quota(&txn, scope, total_size).await?;
 
@@ -382,7 +383,7 @@ pub(crate) async fn batch_duplicate_file_records_to_mixed_folders_in_scope(
 
     storage::update_storage_used(&txn, scope, total_size).await?;
 
-    crate::db::transaction::commit(txn).await?;
+    transaction::commit(txn).await?;
     Ok(total_size)
 }
 

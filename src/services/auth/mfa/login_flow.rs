@@ -1,5 +1,6 @@
 //! MFA 登录 flow。
 
+use aster_forge_db::transaction;
 use chrono::{Duration, Utc};
 use rand::RngExt;
 use sea_orm::{ActiveValue::Set, ConnectionTrait};
@@ -167,7 +168,7 @@ pub async fn send_email_code(
     }
 
     let now = Utc::now();
-    let txn = crate::db::transaction::begin(state.writer_db()).await?;
+    let txn = transaction::begin(state.writer_db()).await?;
     let result = async {
         let flow = mfa_login_flow_repo::find_by_flow_token_hash(
             &txn,
@@ -228,11 +229,11 @@ pub async fn send_email_code(
 
     let (flow, user, record, effective_expires_in, code) = match result {
         Ok(value) => {
-            crate::db::transaction::commit(txn).await?;
+            transaction::commit(txn).await?;
             value
         }
         Err(error) => {
-            crate::db::transaction::rollback(txn).await?;
+            transaction::rollback(txn).await?;
             return Err(error);
         }
     };
@@ -355,7 +356,7 @@ pub async fn verify_challenge(
         return Err(flow_invalid("missing MFA flow token"));
     }
     let now = Utc::now();
-    let txn = crate::db::transaction::begin(state.writer_db()).await?;
+    let txn = transaction::begin(state.writer_db()).await?;
     let attempt = async {
         let flow = mfa_login_flow_repo::find_by_flow_token_hash(
             &txn,
@@ -456,7 +457,7 @@ pub async fn verify_challenge(
 
     match attempt.result {
         Ok(result) => {
-            crate::db::transaction::commit(txn).await?;
+            transaction::commit(txn).await?;
             let audit_ctx = audit_info.to_context(result.user_id);
             let details = audit::details(audit::MfaChallengeAuditDetails {
                 method,
@@ -486,7 +487,7 @@ pub async fn verify_challenge(
                         | ApiErrorCode::AuthMfaEmailCodeExpired
                 )
             ) {
-                crate::db::transaction::commit(txn).await?;
+                transaction::commit(txn).await?;
                 let audit_ctx = audit_info.to_context(attempt.user_id);
                 let failure_reason = error
                     .api_error_code_override()
@@ -510,7 +511,7 @@ pub async fn verify_challenge(
                 )
                 .await;
             } else {
-                crate::db::transaction::rollback(txn).await?;
+                transaction::rollback(txn).await?;
             }
             Err(error)
         }

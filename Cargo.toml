@@ -89,6 +89,7 @@ aster_forge_actix_middleware = { git = "https://github.com/AsterCommunity/AsterF
 aster_forge_actix_observability = { git = "https://github.com/AsterCommunity/AsterForge", package = "aster_forge_actix_observability" }
 aster_forge_alloc = { git = "https://github.com/AsterCommunity/AsterForge", package = "aster_forge_alloc" }
 aster_forge_cache = { git = "https://github.com/AsterCommunity/AsterForge", package = "aster_forge_cache", features = ["memory", "redis", "runtime-component"] }
+aster_forge_db = { git = "https://github.com/AsterCommunity/AsterForge", package = "aster_forge_db" }
 aster_forge_logging = { git = "https://github.com/AsterCommunity/AsterForge", package = "aster_forge_logging" }
 aster_forge_metrics = { git = "https://github.com/AsterCommunity/AsterForge", package = "aster_forge_metrics" }
 aster_forge_panic = { git = "https://github.com/AsterCommunity/AsterForge", package = "aster_forge_panic" }

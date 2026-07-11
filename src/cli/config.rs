@@ -3,6 +3,7 @@
 //! 这里负责定义配置子命令、参数解析、读写/校验流程和结果渲染；
 //! 底层持久化与配置规则仍复用 `config_repo` 和 `system_config` 相关逻辑。
 
+use aster_forge_db::transaction;
 use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 
@@ -219,7 +220,7 @@ pub async fn execute_config_command(
         }
         ConfigCommand::Import(args) => {
             let entries = read_import_items(&args.input_file)?;
-            let txn = crate::db::transaction::begin(&db).await?;
+            let txn = transaction::begin(&db).await?;
             let current_lookup = build_value_lookup(&config_repo::find_all(&txn).await?);
             let normalized = normalize_entries(current_lookup, &entries)?;
             let mut saved = Vec::with_capacity(normalized.len());
@@ -228,7 +229,7 @@ pub async fn execute_config_command(
                     config_repo::upsert_with_actor(&txn, &item.key, &item.value, None).await?;
                 saved.push(system_config_to_view(model));
             }
-            crate::db::transaction::commit(txn).await?;
+            transaction::commit(txn).await?;
             Ok(ConfigCommandReport::list(ConfigCommandKind::Import, saved))
         }
     }

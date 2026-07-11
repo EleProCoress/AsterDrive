@@ -1,5 +1,6 @@
 //! 服务模块：`content::version`。
 
+use aster_forge_db::transaction;
 use std::collections::BTreeMap;
 
 use chrono::Utc;
@@ -81,7 +82,7 @@ async fn restore_version_inner(
         );
     }
 
-    let txn = crate::db::transaction::begin(state.writer_db()).await?;
+    let txn = transaction::begin(state.writer_db()).await?;
 
     let previous_blob_id = current_blob.id;
     let target_blob_id = version.blob_id;
@@ -122,7 +123,7 @@ async fn restore_version_inner(
         storage::update_storage_used(&txn, scope, -reclaimed_bytes).await?;
     }
 
-    crate::db::transaction::commit(txn).await?;
+    transaction::commit(txn).await?;
     storage_change::publish(
         state,
         storage_change::StorageChangeEvent::new(
@@ -175,13 +176,13 @@ async fn delete_version_inner(
     let version_number = version.version;
     let blob_id = version.blob_id;
     let size = version.size;
-    let txn = crate::db::transaction::begin(state.writer_db()).await?;
+    let txn = transaction::begin(state.writer_db()).await?;
     version_repo::delete_by_id(&txn, version_id).await?;
     version_repo::decrement_versions_after(&txn, file_id, version_number).await?;
     if size != 0 {
         storage::update_storage_used(&txn, scope, -size).await?;
     }
-    crate::db::transaction::commit(txn).await?;
+    transaction::commit(txn).await?;
     storage_change::publish(
         state,
         storage_change::StorageChangeEvent::new(
@@ -468,13 +469,13 @@ pub async fn cleanup_excess(state: &PrimaryAppState, file_id: i64) -> Result<()>
         }
         let oldest = version_repo::find_oldest_by_file_id(db, file_id).await?;
         if let Some(oldest) = oldest {
-            let txn = crate::db::transaction::begin(state.writer_db()).await?;
+            let txn = transaction::begin(state.writer_db()).await?;
             version_repo::delete_by_id(&txn, oldest.id).await?;
             version_repo::decrement_versions_after(&txn, file_id, oldest.version).await?;
             if oldest.size != 0 {
                 storage::update_storage_used_for_resource_scope(&txn, scope, -oldest.size).await?;
             }
-            crate::db::transaction::commit(txn).await?;
+            transaction::commit(txn).await?;
             cleanup_blob_if_unused(state, oldest.blob_id).await?;
             deleted_count += 1;
             add_reclaimed_bytes(
@@ -526,12 +527,12 @@ pub async fn purge_all_versions(state: &PrimaryAppState, file_id: i64) -> Result
         )?;
     }
 
-    let txn = crate::db::transaction::begin(state.writer_db()).await?;
+    let txn = transaction::begin(state.writer_db()).await?;
     let blob_ids = version_repo::delete_all_by_file_id(&txn, file_id).await?;
     if reclaimed_bytes != 0 {
         storage::update_storage_used_for_resource_scope(&txn, scope, -reclaimed_bytes).await?;
     }
-    crate::db::transaction::commit(txn).await?;
+    transaction::commit(txn).await?;
 
     for blob_id in blob_ids {
         cleanup_blob_if_unused(state, blob_id).await?;

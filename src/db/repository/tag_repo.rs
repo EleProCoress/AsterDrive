@@ -6,10 +6,10 @@ use sea_orm::{
     IntoActiveModel, PaginatorTrait, QueryFilter, QueryOrder, Set, sea_query::Expr,
 };
 
-use crate::db::repository::{pagination_repo, search_query::lower_like_condition};
 use crate::entities::tag::{self, Entity as Tag};
 use crate::errors::{AsterError, Result};
 use crate::types::TagScopeType;
+use aster_forge_db::{pagination::fetch_offset_page, search_query::lower_like_condition};
 
 pub async fn create(
     db: &DatabaseConnection,
@@ -88,7 +88,7 @@ pub async fn list_personal_page(
         query = query.filter(lower_like_condition(tag::Column::NormalizedName, search));
     }
 
-    pagination_repo::fetch_offset_page(db, query, limit, offset).await
+    fetch_offset_page(db, query, limit, offset).await
 }
 
 pub async fn list_team(db: &DatabaseConnection, team_id: i64) -> Result<Vec<tag::Model>> {
@@ -119,7 +119,7 @@ pub async fn list_team_page(
         query = query.filter(lower_like_condition(tag::Column::NormalizedName, search));
     }
 
-    pagination_repo::fetch_offset_page(db, query, limit, offset).await
+    fetch_offset_page(db, query, limit, offset).await
 }
 
 pub async fn find_personal_by_normalized_name(

@@ -1,3 +1,4 @@
+use aster_forge_db::transaction;
 use chrono::Utc;
 use sea_orm::Set;
 
@@ -75,7 +76,7 @@ pub(crate) async fn ensure_upload_parent_path(
         });
     }
 
-    let txn = crate::db::transaction::begin(state.writer_db()).await?;
+    let txn = transaction::begin(state.writer_db()).await?;
     let mut current_parent = parsed.base_folder_id;
     let mut current_folder = parsed.base_folder;
 
@@ -91,7 +92,7 @@ pub(crate) async fn ensure_upload_parent_path(
         });
     }
 
-    crate::db::transaction::commit(txn).await?;
+    transaction::commit(txn).await?;
     Ok(ResolvedUploadParent {
         folder_id: current_parent,
         folder: current_folder,

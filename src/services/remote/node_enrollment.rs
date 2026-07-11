@@ -1,5 +1,6 @@
 //! 服务模块：`remote::node_enrollment`。
 
+use aster_forge_db::transaction;
 use std::time::Duration;
 
 use crate::api::api_error_code::ApiErrorCode;
@@ -62,7 +63,7 @@ pub async fn enroll(
     let master_url = normalize_remote_base_url(&input.master_url)?;
     let bootstrap = redeem_enrollment(&master_url, &input.token).await?;
 
-    let (binding, action) = crate::db::transaction::with_transaction(db, async |txn| {
+    let (binding, action) = transaction::with_transaction(db, async |txn| {
         master_binding::upsert_from_enrollment(
             txn,
             master_binding::UpsertMasterBindingInput {

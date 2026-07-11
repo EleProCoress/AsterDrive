@@ -5,6 +5,7 @@ use crate::runtime::{PrimaryAppState, SharedRuntimeState};
 use crate::services::workspace::storage::{
     StorageOperationContext, check_quota, cleanup_preuploaded_blob_upload, persist_preuploaded_blob,
 };
+use aster_forge_db::transaction;
 use sea_orm::ConnectionTrait;
 
 use super::TempBlobPlan;
@@ -83,7 +84,7 @@ pub(super) async fn persist_temp_store(
     }
 
     let create_result = async {
-        let txn = crate::db::transaction::begin(state.writer_db()).await?;
+        let txn = transaction::begin(state.writer_db()).await?;
         operation_context.checkpoint()?;
         if storage_delta > 0 {
             check_quota(&txn, scope, storage_delta).await?;
@@ -110,7 +111,7 @@ pub(super) async fn persist_temp_store(
         .await?;
         operation_context.checkpoint()?;
 
-        crate::db::transaction::commit(txn).await?;
+        transaction::commit(txn).await?;
         Ok::<file::Model, AsterError>(result)
     }
     .await;

@@ -1,5 +1,6 @@
 //! 认证服务子模块：`registration`。
 
+use aster_forge_db::transaction;
 use chrono::Utc;
 
 use crate::api::api_error_code::ApiErrorCode;
@@ -112,7 +113,7 @@ pub async fn register(
 
     let policy = RuntimeContactVerificationPolicy::from_runtime_config(state.runtime_config());
     let site_name = branding::title_or_default(state.runtime_config());
-    let txn = crate::db::transaction::begin(state.writer_db()).await?;
+    let txn = transaction::begin(state.writer_db()).await?;
     let email_verified_at = (!auth_policy.register_activation_enabled).then_some(Utc::now());
     let user = create_user_with_role(
         &txn,
@@ -145,7 +146,7 @@ pub async fn register(
         )
         .await?;
     }
-    crate::db::transaction::commit(txn).await?;
+    transaction::commit(txn).await?;
     if let Some(policy_group_id) = user.policy_group_id {
         state
             .policy_snapshot()
@@ -204,7 +205,7 @@ pub async fn resend_register_activation(
     let policy = RuntimeContactVerificationPolicy::from_runtime_config(state.runtime_config());
     let site_name = branding::title_or_default(state.runtime_config());
 
-    let txn = crate::db::transaction::begin(state.writer_db()).await?;
+    let txn = transaction::begin(state.writer_db()).await?;
     let token = match issue_contact_verification_token(
         &txn,
         user.id,
@@ -227,7 +228,7 @@ pub async fn resend_register_activation(
         MailTemplatePayload::register_activation(&user.username, &token, &site_name),
     )
     .await?;
-    crate::db::transaction::commit(txn).await?;
+    transaction::commit(txn).await?;
 
     Ok(RegisterActivationResendOutcome::Sent(user_audit_info(
         &user,

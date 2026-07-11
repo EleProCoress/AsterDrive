@@ -6,11 +6,11 @@ use sea_orm::{
 
 use super::common::{AdminTaskFilters, active_processing_by_kinds_condition, apply_admin_filters};
 use crate::api::pagination::{AdminTaskSortBy, SortOrder};
-use crate::db::repository::pagination_repo::fetch_offset_page;
-use crate::db::repository::sort::{order_by_column_with_id, order_by_id};
 use crate::entities::background_task::{self, Entity as BackgroundTask};
 use crate::errors::{AsterError, Result};
 use crate::types::{BackgroundTaskKind, BackgroundTaskStatus, StoredTaskPayload};
+use aster_forge_db::pagination::fetch_offset_page;
+use aster_forge_db::sort::{order_by_column_with_id, order_by_id};
 
 pub async fn find_by_id(db: &DatabaseConnection, id: i64) -> Result<background_task::Model> {
     BackgroundTask::find_by_id(id)

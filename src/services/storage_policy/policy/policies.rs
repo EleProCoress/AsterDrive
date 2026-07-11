@@ -1,5 +1,6 @@
 //! 存储策略服务子模块：`policies`。
 
+use aster_forge_db::transaction;
 use chrono::Utc;
 use sea_orm::{ActiveModelTrait, Set};
 
@@ -166,7 +167,7 @@ pub async fn create(
     )
     .await?;
 
-    let txn = crate::db::transaction::begin(state.writer_db()).await?;
+    let txn = transaction::begin(state.writer_db()).await?;
     let now = Utc::now();
     let model = storage_policy::ActiveModel {
         name: Set(name),
@@ -203,7 +204,7 @@ pub async fn create(
         let default_group_id = ensure_singleton_group_for_policy(&txn, result.id).await?;
         policy_group_repo::set_only_default_group(&txn, default_group_id).await?;
     }
-    crate::db::transaction::commit(txn).await?;
+    transaction::commit(txn).await?;
     state.policy_snapshot().reload(state.writer_db()).await?;
     crate::services::ops::config::invalidate_public_thumbnail_support_cache();
     crate::services::ops::config::invalidate_public_media_data_support_cache();
@@ -413,7 +414,7 @@ pub async fn update(
             .await?
         };
 
-    let txn = crate::db::transaction::begin(state.writer_db()).await?;
+    let txn = transaction::begin(state.writer_db()).await?;
     if let Some(false) = is_default
         && existing.is_default
         && policy_repo::find_default(&txn).await?.is_some()
@@ -492,7 +493,7 @@ pub async fn update(
         policy_group_repo::set_only_default_group(&txn, default_group_id).await?;
     }
 
-    crate::db::transaction::commit(txn).await?;
+    transaction::commit(txn).await?;
 
     // 失效顺序很关键：必须先 invalidate driver 再 reload snapshot。
     // 如果反过来，中间窗口里读请求可能拿到"新 policy model + 旧 driver cache"，
@@ -561,7 +562,7 @@ pub async fn promote_s3_compatible_driver(
     candidate_policy.bucket = normalized_bucket;
     validate_s3_compatible_promotion_candidate(state, &candidate_policy).await?;
 
-    let txn = crate::db::transaction::begin(state.writer_db()).await?;
+    let txn = transaction::begin(state.writer_db()).await?;
     let active_upload_sessions = upload_session_repo::count_active_by_policy(&txn, id).await?;
     if active_upload_sessions > 0 {
         return Err(validation_error_with_code(
@@ -579,7 +580,7 @@ pub async fn promote_s3_compatible_driver(
         normalized_endpoint,
     )
     .await?;
-    crate::db::transaction::commit(txn).await?;
+    transaction::commit(txn).await?;
 
     // 与普通 update 一致：先 invalidate driver，再 reload snapshot。
     state.driver_registry().invalidate(id);

@@ -1,3 +1,4 @@
+use aster_forge_db::transaction;
 use chrono::Utc;
 use sea_orm::ConnectionTrait;
 use std::time::Instant;
@@ -92,7 +93,7 @@ pub(crate) async fn finalize_upload_session_file(
         actor_username,
     } = params;
     let scope = scope_from_session(session);
-    let txn = crate::db::transaction::begin(state.writer_db()).await?;
+    let txn = transaction::begin(state.writer_db()).await?;
 
     let blob =
         file_repo::find_or_create_blob(&txn, file_hash, size, policy_id, storage_path).await?;
@@ -105,7 +106,7 @@ pub(crate) async fn finalize_upload_session_file(
     )
     .await?;
 
-    crate::db::transaction::commit(txn).await?;
+    transaction::commit(txn).await?;
     storage_change::publish(
         state,
         storage_change::StorageChangeEvent::new(

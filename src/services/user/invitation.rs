@@ -1,5 +1,6 @@
 //! 用户邀请注册服务。
 
+use aster_forge_db::transaction;
 use chrono::{DateTime, Duration, Utc};
 use sea_orm::{ActiveValue::Set, ConnectionTrait};
 use serde::Serialize;
@@ -72,7 +73,7 @@ pub async fn create_invitation(
     let expires_in = format_mail_duration_seconds(invitation_ttl_secs);
     let site_name = branding::title_or_default(state.runtime_config());
 
-    let txn = crate::db::transaction::begin(state.writer_db()).await?;
+    let txn = transaction::begin(state.writer_db()).await?;
     let result = async {
         ensure_email_available(&txn, &email).await?;
         for existing in user_invitation_repo::find_pending_by_email(&txn, &email).await? {
@@ -110,11 +111,11 @@ pub async fn create_invitation(
     .await;
     let invitation = match result {
         Ok(invitation) => {
-            crate::db::transaction::commit(txn).await?;
+            transaction::commit(txn).await?;
             invitation
         }
         Err(error) => {
-            crate::db::transaction::rollback(txn).await?;
+            transaction::rollback(txn).await?;
             return Err(error);
         }
     };
@@ -172,7 +173,7 @@ pub async fn accept_invitation(
     password: &str,
 ) -> Result<user::Model> {
     let token_hash = invitation_token_hash(token)?;
-    let txn = crate::db::transaction::begin(state.writer_db()).await?;
+    let txn = transaction::begin(state.writer_db()).await?;
     let result = async {
         let Some(invitation) = user_invitation_repo::find_by_token_hash(&txn, &token_hash).await?
         else {
@@ -206,11 +207,11 @@ pub async fn accept_invitation(
     .await;
     let user = match result {
         Ok(user) => {
-            crate::db::transaction::commit(txn).await?;
+            transaction::commit(txn).await?;
             user
         }
         Err(error) => {
-            crate::db::transaction::rollback(txn).await?;
+            transaction::rollback(txn).await?;
             return Err(error);
         }
     };

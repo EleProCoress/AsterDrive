@@ -1,3 +1,4 @@
+use aster_forge_db::transaction;
 use chrono::Utc;
 use rand::RngExt;
 use sea_orm::{ActiveModelTrait, Set};
@@ -271,7 +272,7 @@ async fn update_with_audit_diff(
         active.session_version = Set(current_session_version.saturating_add(1));
     }
     active.updated_at = Set(Utc::now());
-    let txn = crate::db::transaction::begin(state.writer_db()).await?;
+    let txn = transaction::begin(state.writer_db()).await?;
     let result = async {
         let updated = active
             .update(&txn)
@@ -285,11 +286,11 @@ async fn update_with_audit_diff(
     .await;
     let updated = match result {
         Ok(updated) => {
-            crate::db::transaction::commit(txn).await?;
+            transaction::commit(txn).await?;
             updated
         }
         Err(error) => {
-            crate::db::transaction::rollback(txn).await?;
+            transaction::rollback(txn).await?;
             return Err(error);
         }
     };

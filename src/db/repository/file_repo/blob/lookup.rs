@@ -6,10 +6,10 @@ use sea_orm::{
 };
 
 use crate::api::pagination::{AdminFileBlobSortBy, SortOrder};
-use crate::db::repository::search_query::lower_like_condition;
-use crate::db::repository::sort::{order_by_column_with_id, order_by_id};
 use crate::entities::file_blob::{self, Entity as FileBlob};
 use crate::errors::{AsterError, Result};
+use aster_forge_db::search_query::lower_like_condition;
+use aster_forge_db::sort::{order_by_column_with_id, order_by_id};
 
 use super::ref_count::{find_active_blob_by_hash, increment_blob_ref_count};
 

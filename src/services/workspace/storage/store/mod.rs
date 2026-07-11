@@ -3,6 +3,7 @@
 pub(crate) mod from_temp;
 mod preuploaded_contract;
 
+use aster_forge_db::transaction;
 use chrono::Utc;
 use sea_orm::{ActiveModelTrait, Set};
 
@@ -136,7 +137,7 @@ pub(crate) async fn create_empty(
     let should_dedup = local_content_dedup_enabled(&policy);
     let now = Utc::now();
 
-    let txn = crate::db::transaction::begin(state.writer_db()).await?;
+    let txn = transaction::begin(state.writer_db()).await?;
     let blob = if should_dedup {
         let storage_path = crate::utils::storage_path_from_blob_key(EMPTY_SHA256);
         let blob = file_repo::find_or_create_blob(
@@ -159,7 +160,7 @@ pub(crate) async fn create_empty(
     };
 
     let created = create_new_file_from_blob(&txn, scope, folder_id, &filename, &blob, now).await?;
-    crate::db::transaction::commit(txn).await?;
+    transaction::commit(txn).await?;
     storage_change::publish(
         state,
         storage_change::StorageChangeEvent::new(
@@ -275,7 +276,7 @@ pub(crate) async fn store_preuploaded_nondedup(
         .to_string();
 
     let create_result = async {
-        let txn = crate::db::transaction::begin(state.writer_db()).await?;
+        let txn = transaction::begin(state.writer_db()).await?;
         if storage_delta > 0 {
             check_quota(&txn, scope, storage_delta).await?;
         }
@@ -343,7 +344,7 @@ pub(crate) async fn store_preuploaded_nondedup(
             created
         };
 
-        crate::db::transaction::commit(txn).await?;
+        transaction::commit(txn).await?;
         Ok::<file::Model, AsterError>(result)
     }
     .await;

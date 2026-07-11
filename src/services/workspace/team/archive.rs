@@ -1,5 +1,6 @@
 //! 团队服务子模块：`archive`。
 
+use aster_forge_db::transaction;
 use chrono::Utc;
 use sea_orm::ConnectionTrait;
 
@@ -243,7 +244,7 @@ async fn force_delete_archived_team(state: &PrimaryAppState, team: team::Model) 
     purge_archived_team_files(state, &team).await?;
     crate::webdav::auth::invalidate_webdav_auth_for_team(state, team_id).await?;
 
-    let txn = crate::db::transaction::begin(state.writer_db()).await?;
+    let txn = transaction::begin(state.writer_db()).await?;
     team_repo::lock_archived_by_id(&txn, team_id).await?;
     upload_session_repo::delete_all_by_team(&txn, team_id).await?;
     crate::db::repository::webdav_account_repo::delete_all_by_team(&txn, team_id).await?;
@@ -252,7 +253,7 @@ async fn force_delete_archived_team(state: &PrimaryAppState, team: team::Model) 
 
     delete_archived_team_folders(&txn, team_id).await?;
     team_repo::delete(&txn, team_id).await?;
-    crate::db::transaction::commit(txn).await?;
+    transaction::commit(txn).await?;
     if deleted_shares > 0 {
         crate::services::share::invalidate_active_share_target_cache_for_scope(
             state,

@@ -1,3 +1,4 @@
+use aster_forge_db::transaction;
 use base64::Engine as _;
 use chrono::Utc;
 
@@ -265,7 +266,7 @@ async fn create_external_auth_user_and_identity(
         let username = external_auth_username_candidate(&username_base, attempt);
         let password = random_internal_password();
 
-        let txn = crate::db::transaction::begin(state.writer_db()).await?;
+        let txn = transaction::begin(state.writer_db()).await?;
         let result = async {
             if user_repo::find_by_email(&txn, email).await?.is_some() {
                 return Err(AsterError::validation_error(
@@ -293,7 +294,7 @@ async fn create_external_auth_user_and_identity(
 
         match result {
             Ok(user) => {
-                crate::db::transaction::commit(txn).await?;
+                transaction::commit(txn).await?;
                 if let Some(policy_group_id) = user.policy_group_id {
                     state
                         .policy_snapshot()

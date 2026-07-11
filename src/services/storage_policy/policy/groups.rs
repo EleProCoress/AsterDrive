@@ -1,5 +1,6 @@
 //! 存储策略服务子模块：`groups`。
 
+use aster_forge_db::transaction;
 use chrono::Utc;
 use sea_orm::{Set, TransactionTrait};
 
@@ -27,7 +28,7 @@ where
         None => return Ok(()),
     };
 
-    let txn = crate::db::transaction::begin(db).await?;
+    let txn = transaction::begin(db).await?;
     let result: Result<()> = async {
         let default_group = match policy_group_repo::find_default_group(&txn).await? {
             Some(group) => {
@@ -94,7 +95,7 @@ where
     .await;
 
     result?;
-    crate::db::transaction::commit(txn).await
+    transaction::commit(txn).await.map_err(Into::into)
 }
 
 pub async fn list_groups_paginated(
@@ -151,7 +152,7 @@ pub async fn create_group(
 
     validate_group_items(state.writer_db(), &items).await?;
 
-    let txn = crate::db::transaction::begin(state.writer_db()).await?;
+    let txn = transaction::begin(state.writer_db()).await?;
     let now = Utc::now();
     let group = policy_group_repo::create_group(
         &txn,
@@ -171,7 +172,7 @@ pub async fn create_group(
         lock_default_group_assignment(&txn).await?;
         policy_group_repo::set_only_default_group(&txn, group.id).await?;
     }
-    crate::db::transaction::commit(txn).await?;
+    transaction::commit(txn).await?;
     state.policy_snapshot().reload(state.writer_db()).await?;
     let group = policy_group_repo::find_group_by_id(state.writer_db(), group.id).await?;
     Ok(build_group_info(state, &group))
@@ -189,7 +190,7 @@ pub async fn update_group(
         is_default,
         items,
     } = input;
-    let txn = crate::db::transaction::begin(state.writer_db()).await?;
+    let txn = transaction::begin(state.writer_db()).await?;
     let existing = policy_group_repo::find_group_by_id(&txn, id).await?;
     let next_is_enabled = is_enabled.unwrap_or(existing.is_enabled);
     let next_is_default = is_default.unwrap_or(existing.is_default);
@@ -264,7 +265,7 @@ pub async fn update_group(
         policy_group_repo::set_only_default_group(&txn, group.id).await?;
     }
 
-    crate::db::transaction::commit(txn).await?;
+    transaction::commit(txn).await?;
     state.policy_snapshot().reload(state.writer_db()).await?;
     let group = policy_group_repo::find_group_by_id(state.writer_db(), group.id).await?;
     Ok(build_group_info(state, &group))
@@ -338,7 +339,7 @@ pub async fn migrate_group_assignments(
     }
 
     let now = Utc::now();
-    let txn = crate::db::transaction::begin(state.writer_db()).await?;
+    let txn = transaction::begin(state.writer_db()).await?;
     let affected_users =
         user_repo::migrate_policy_group_assignments(&txn, source_group_id, target_group_id, now)
             .await
@@ -348,7 +349,7 @@ pub async fn migrate_group_assignments(
             .await
             .map_aster_err(AsterError::database_operation)?;
 
-    crate::db::transaction::commit(txn).await?;
+    transaction::commit(txn).await?;
     let migrated_assignments = affected_users.checked_add(affected_teams).ok_or_else(|| {
         AsterError::internal_error("policy group migration assignment count overflow")
     })?;

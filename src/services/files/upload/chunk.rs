@@ -4,6 +4,7 @@
 //! - 服务端本地暂存 chunk 文件
 //! - 服务端 relay 到 object-storage multipart，并把 ETag 记入 upload_session_parts
 
+use aster_forge_db::transaction;
 use bytes::Bytes;
 use chrono::Utc;
 use futures::StreamExt;
@@ -533,7 +534,7 @@ async fn upload_chunk_impl(
             }
         };
 
-        let txn = crate::db::transaction::begin(db).await?;
+        let txn = transaction::begin(db).await?;
         let finalize_result = async {
             // 对象存储 part 上传成功以后，必须把 part 元数据和 received_count 放在同一事务里提交；
             // 否则 complete 阶段会看到“不完整的 part 清单”。
@@ -546,7 +547,7 @@ async fn upload_chunk_impl(
             )
             .await?;
             increment_session_received_count(&txn, upload_id).await?;
-            crate::db::transaction::commit(txn).await?;
+            transaction::commit(txn).await?;
             Ok::<(), AsterError>(())
         }
         .await;
@@ -748,7 +749,7 @@ async fn upload_chunk_payload_impl(
             }
         };
 
-        let txn = crate::db::transaction::begin(db).await?;
+        let txn = transaction::begin(db).await?;
         let finalize_result = async {
             upload_session_part_repo::upsert_part(
                 &txn,
@@ -759,7 +760,7 @@ async fn upload_chunk_payload_impl(
             )
             .await?;
             increment_session_received_count(&txn, upload_id).await?;
-            crate::db::transaction::commit(txn).await?;
+            transaction::commit(txn).await?;
             Ok::<(), AsterError>(())
         }
         .await;

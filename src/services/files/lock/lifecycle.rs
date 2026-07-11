@@ -1,3 +1,4 @@
+use aster_forge_db::transaction;
 use chrono::{Duration, Utc};
 use sea_orm::Set;
 
@@ -28,7 +29,7 @@ pub async fn lock(
     let token = format!("urn:uuid:{}", uuid::Uuid::new_v4());
     let timeout_at = timeout.map(|d| now + d);
     let serialized_owner_info = serialize_resource_lock_owner_info(owner_info.as_ref())?;
-    let txn = crate::db::transaction::begin(state.writer_db()).await?;
+    let txn = transaction::begin(state.writer_db()).await?;
 
     let result = async {
         lock_target_entity(&txn, entity_type, entity_id).await?;
@@ -74,7 +75,7 @@ pub async fn lock(
 
     match result {
         Ok(lock) => {
-            crate::db::transaction::commit(txn).await?;
+            transaction::commit(txn).await?;
             tracing::debug!(
                 lock_id = lock.id,
                 entity_type = ?lock.entity_type,
@@ -86,7 +87,7 @@ pub async fn lock(
             Ok(lock)
         }
         Err(error) => {
-            if let Err(rollback_error) = crate::db::transaction::rollback(txn).await {
+            if let Err(rollback_error) = transaction::rollback(txn).await {
                 tracing::error!(
                     entity_type = ?entity_type,
                     entity_id,
@@ -109,7 +110,7 @@ pub async fn unlock(
 ) -> Result<()> {
     let now = Utc::now();
 
-    crate::db::transaction::with_transaction(state.writer_db(), async |txn| {
+    transaction::with_transaction(state.writer_db(), async |txn| {
         lock_target_entity(txn, entity_type, entity_id).await?;
         lock_repo::delete_expired_by_entity_before(txn, entity_type, entity_id, now).await?;
 

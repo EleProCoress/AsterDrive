@@ -1,3 +1,4 @@
+use aster_forge_db::transaction;
 use chrono::Utc;
 use sea_orm::Set;
 
@@ -32,7 +33,7 @@ pub async fn create<S: FollowerRuntimeState>(
     input: RemoteCreateStorageTargetRequest,
 ) -> Result<RemoteStorageTargetInfo> {
     let normalized = normalize_create_input(input)?;
-    let target_id = crate::db::transaction::with_transaction(state.writer_db(), async |txn| {
+    let target_id = transaction::with_transaction(state.writer_db(), async |txn| {
         let should_set_default = normalized.is_default == Some(true)
             || remote_storage_target_repo::count_by_binding(txn, binding.id).await? == 0;
         let now = Utc::now();
@@ -62,7 +63,7 @@ pub async fn create<S: FollowerRuntimeState>(
             remote_storage_target_repo::set_only_default_for_binding(txn, binding.id, created.id)
                 .await?;
         }
-        Ok(created.id)
+        Ok::<_, AsterError>(created.id)
     })
     .await?;
     let target = remote_storage_target_repo::find_by_id(state.writer_db(), target_id).await?;
@@ -85,7 +86,7 @@ pub async fn update<S: FollowerRuntimeState>(
         ));
     }
 
-    let target_id = crate::db::transaction::with_transaction(state.writer_db(), async |txn| {
+    let target_id = transaction::with_transaction(state.writer_db(), async |txn| {
         let mut active: remote_storage_target::ActiveModel = existing.clone().into();
         active.name = Set(normalized.name);
         active.driver_type = Set(normalized.driver_type);
@@ -104,7 +105,7 @@ pub async fn update<S: FollowerRuntimeState>(
             remote_storage_target_repo::set_only_default_for_binding(txn, binding.id, updated.id)
                 .await?;
         }
-        Ok(updated.id)
+        Ok::<_, AsterError>(updated.id)
     })
     .await?;
     let target = remote_storage_target_repo::find_by_id(state.writer_db(), target_id).await?;

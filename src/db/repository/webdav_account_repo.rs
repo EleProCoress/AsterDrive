@@ -5,9 +5,9 @@ use sea_orm::{
     QueryOrder,
 };
 
-use crate::db::repository::pagination_repo::fetch_offset_page;
 use crate::entities::webdav_account::{self, Entity as WebdavAccount};
 use crate::errors::{AsterError, Result};
+use aster_forge_db::pagination::fetch_offset_page;
 
 pub async fn find_by_id(db: &DatabaseConnection, id: i64) -> Result<webdav_account::Model> {
     WebdavAccount::find_by_id(id)

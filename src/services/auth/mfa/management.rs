@@ -1,5 +1,6 @@
 //! MFA 自助管理与管理员重置。
 
+use aster_forge_db::transaction;
 use chrono::{Duration, Utc};
 use sea_orm::{ActiveModelTrait, ActiveValue::Set, IntoActiveModel};
 use serde::{Deserialize, Serialize};
@@ -150,7 +151,7 @@ pub async fn verify_totp_setup(
 ) -> Result<TotpSetupFinishResponse> {
     let now = now_utc();
     let flow_token_hash = crypto::token_hash(input.flow_token.trim());
-    let txn = crate::db::transaction::begin(state.writer_db()).await?;
+    let txn = transaction::begin(state.writer_db()).await?;
     let result = async {
         let user = user_repo::find_by_id(&txn, user_id).await?;
         ensure_user_can_manage_mfa(&user)?;
@@ -226,7 +227,7 @@ pub async fn verify_totp_setup(
 
     match result {
         Ok((factor, recovery_codes)) => {
-            crate::db::transaction::commit(txn).await?;
+            transaction::commit(txn).await?;
             audit::log(
                 state,
                 audit_ctx,
@@ -249,7 +250,7 @@ pub async fn verify_totp_setup(
             })
         }
         Err(error) => {
-            crate::db::transaction::rollback(txn).await?;
+            transaction::rollback(txn).await?;
             Err(error)
         }
     }
@@ -262,7 +263,7 @@ pub async fn delete_factor(
     input: MfaSensitiveActionRequest,
     audit_ctx: &audit::AuditContext,
 ) -> Result<bool> {
-    let txn = crate::db::transaction::begin(state.writer_db()).await?;
+    let txn = transaction::begin(state.writer_db()).await?;
     let result = async {
         let user = user_repo::find_by_id(&txn, user_id).await?;
         ensure_user_can_manage_mfa(&user)?;
@@ -280,7 +281,7 @@ pub async fn delete_factor(
     .await;
     match result {
         Ok((deleted, factor)) => {
-            crate::db::transaction::commit(txn).await?;
+            transaction::commit(txn).await?;
             if deleted {
                 audit::log_with_details(
                     state,
@@ -304,7 +305,7 @@ pub async fn delete_factor(
             Ok(deleted)
         }
         Err(error) => {
-            crate::db::transaction::rollback(txn).await?;
+            transaction::rollback(txn).await?;
             Err(error)
         }
     }
@@ -316,7 +317,7 @@ pub async fn regenerate_recovery_codes(
     input: MfaSensitiveActionRequest,
     audit_ctx: &audit::AuditContext,
 ) -> Result<Vec<String>> {
-    let txn = crate::db::transaction::begin(state.writer_db()).await?;
+    let txn = transaction::begin(state.writer_db()).await?;
     let result = async {
         let user = user_repo::find_by_id(&txn, user_id).await?;
         ensure_user_can_manage_mfa(&user)?;
@@ -326,7 +327,7 @@ pub async fn regenerate_recovery_codes(
     .await;
     match result {
         Ok(codes) => {
-            crate::db::transaction::commit(txn).await?;
+            transaction::commit(txn).await?;
             audit::log(
                 state,
                 audit_ctx,
@@ -346,7 +347,7 @@ pub async fn regenerate_recovery_codes(
             Ok(codes)
         }
         Err(error) => {
-            crate::db::transaction::rollback(txn).await?;
+            transaction::rollback(txn).await?;
             Err(error)
         }
     }
@@ -357,7 +358,7 @@ pub async fn reset_user_mfa(
     user_id: i64,
     audit_ctx: &audit::AuditContext,
 ) -> Result<()> {
-    let txn = crate::db::transaction::begin(state.writer_db()).await?;
+    let txn = transaction::begin(state.writer_db()).await?;
     let result = async {
         let user = user_repo::find_by_id(&txn, user_id).await?;
         let next_session_version = user.session_version.saturating_add(1);
@@ -381,7 +382,7 @@ pub async fn reset_user_mfa(
     .await;
     match result {
         Ok((updated_user_id, username, factor_count, recovery_code_count)) => {
-            crate::db::transaction::commit(txn).await?;
+            transaction::commit(txn).await?;
             local::invalidate_auth_snapshot_cache(state, updated_user_id).await;
             audit::log(
                 state,
@@ -402,7 +403,7 @@ pub async fn reset_user_mfa(
             Ok(())
         }
         Err(error) => {
-            crate::db::transaction::rollback(txn).await?;
+            transaction::rollback(txn).await?;
             Err(error)
         }
     }

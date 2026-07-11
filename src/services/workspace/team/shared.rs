@@ -5,6 +5,7 @@
 //! - 常见权限断言
 //! - “至少保留一个 owner/manager”这类跨入口共用约束
 
+use aster_forge_db::transaction;
 use std::collections::{HashMap, HashSet};
 
 use chrono::Utc;
@@ -482,7 +483,7 @@ pub(super) async fn create_team_record(
     };
     let now = Utc::now();
 
-    let txn = crate::db::transaction::begin(state.writer_db()).await?;
+    let txn = transaction::begin(state.writer_db()).await?;
     let created_team = team_repo::create(
         &txn,
         team::ActiveModel {
@@ -511,7 +512,7 @@ pub(super) async fn create_team_record(
         },
     )
     .await?;
-    crate::db::transaction::commit(txn).await?;
+    transaction::commit(txn).await?;
     crate::services::workspace::storage::invalidate_team_access_cache_for_member(
         state,
         created_team.id,

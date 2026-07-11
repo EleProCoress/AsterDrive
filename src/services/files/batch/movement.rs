@@ -1,5 +1,6 @@
 //! 批量操作服务子模块：`movement`。
 
+use aster_forge_db::transaction;
 use std::collections::{BTreeSet, HashMap, HashSet};
 
 use chrono::Utc;
@@ -258,11 +259,11 @@ pub(crate) async fn batch_move_in_scope(
             .flat_map(|folder| [folder.parent_id, target_folder_id])
             .collect();
 
-        let txn = crate::db::transaction::begin(state.writer_db()).await?;
+        let txn = transaction::begin(state.writer_db()).await?;
         revalidate_batch_folder_move(&txn, scope, &folder_ids_to_move, target_folder_id).await?;
         file_repo::move_many_to_folder(&txn, &file_ids_to_move, target_folder_id, now).await?;
         folder_repo::move_many_to_parent(&txn, &folder_ids_to_move, target_folder_id, now).await?;
-        crate::db::transaction::commit(txn).await?;
+        transaction::commit(txn).await?;
 
         if !file_ids_to_move.is_empty() {
             storage_change::publish(

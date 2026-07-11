@@ -5,6 +5,7 @@
 //! - 为个人空间和团队空间共用同一套 scope-aware 实现。
 //! - 详情接口额外计算 `storage_used`，但列表接口不走这段递归统计。
 
+use aster_forge_db::transaction;
 use std::collections::BTreeSet;
 
 use chrono::Utc;
@@ -180,7 +181,7 @@ pub(crate) async fn create_in_scope(
     let created_by_username = load_scope_actor_username(state.writer_db(), scope).await?;
 
     let now = Utc::now();
-    let created = crate::db::transaction::with_transaction(state.writer_db(), async |txn| {
+    let created = transaction::with_transaction(state.writer_db(), async |txn| {
         if let Some(pid) = parent_id {
             let parent = folder_repo::lock_by_id(txn, pid).await?;
             ensure_folder_model_in_scope(&parent, scope)?;
@@ -258,7 +259,7 @@ pub(crate) async fn delete_in_scope(
     // 删除整棵树时先锁目录树，再确认树结构没有变化；否则并发移动/创建子目录
     // 可能导致只删除到遍历时看到的一部分节点。
     let (folder, file_count, folder_count) =
-        crate::db::transaction::with_transaction(state.writer_db(), async |txn| {
+        transaction::with_transaction(state.writer_db(), async |txn| {
             let folder = folder_repo::lock_by_id(txn, folder_id).await?;
             ensure_folder_model_in_scope(&folder, scope)?;
             if folder.is_locked {
@@ -362,7 +363,7 @@ pub(crate) async fn update_in_scope(
         None => None,
     };
 
-    let (updated, previous_parent_id) = crate::db::transaction::with_transaction(db, async |txn| {
+    let (updated, previous_parent_id) = transaction::with_transaction(db, async |txn| {
         let preview = folder_repo::find_by_id(txn, id).await?;
         ensure_folder_model_in_scope(&preview, scope)?;
         let preview_target_parent = match parent_id {
@@ -463,7 +464,7 @@ pub(crate) async fn admin_set_policy(
         "admin updating folder storage policy binding"
     );
 
-    let (updated, previous_policy_id) = crate::db::transaction::with_transaction(db, async |txn| {
+    let (updated, previous_policy_id) = transaction::with_transaction(db, async |txn| {
         let current = folder_repo::lock_by_id(txn, folder_id).await?;
         if current.is_locked {
             return Err(AsterError::resource_locked("folder is locked"));

@@ -7,9 +7,9 @@ use sea_orm::{
 };
 
 use crate::api::pagination::{AdminAuditLogSortBy, SortOrder};
-use crate::db::repository::sort::{order_by_column_with_id, order_by_id};
 use crate::entities::audit_log::{self, Entity as AuditLog};
 use crate::errors::{AsterError, Result};
+use aster_forge_db::sort::{order_by_column_with_id, order_by_id};
 
 pub struct AuditLogQuery<'a> {
     pub user_id: Option<i64>,

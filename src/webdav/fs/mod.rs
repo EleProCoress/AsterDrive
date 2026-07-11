@@ -1,5 +1,6 @@
 //! WebDAV 子模块：`fs`。
 
+use aster_forge_db::transaction;
 use std::{collections::HashMap, pin::Pin, time::Instant};
 
 use futures::stream;
@@ -841,7 +842,7 @@ impl DavFileSystem for AsterDavFs {
                     .collect());
             }
 
-            let txn = crate::db::transaction::begin(self.state.writer_db())
+            let txn = transaction::begin(self.state.writer_db())
                 .await
                 .map_err(|_| FsError::GeneralFailure)?;
 
@@ -866,7 +867,7 @@ impl DavFileSystem for AsterDavFs {
                 }
             }
 
-            crate::db::transaction::commit(txn)
+            transaction::commit(txn)
                 .await
                 .map_err(|_| FsError::GeneralFailure)?;
 

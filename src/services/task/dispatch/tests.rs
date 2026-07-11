@@ -3,13 +3,14 @@ use std::sync::{
     atomic::{AtomicUsize, Ordering},
 };
 
+use aster_forge_db::transaction;
 use chrono::Utc;
 use sea_orm::{ActiveModelTrait, EntityTrait, Set};
 use tokio::time::{Duration, sleep};
 
 use crate::config::DatabaseConfig;
 use crate::db::repository::background_task_repo;
-use crate::db::{self, repository::config_repo, transaction};
+use crate::db::{self, repository::config_repo};
 use crate::entities::background_task;
 use crate::errors::AsterError;
 use crate::runtime::SharedRuntimeState;

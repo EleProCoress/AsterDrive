@@ -1,5 +1,6 @@
 //! 认证服务子模块：`contact_verification`。
 
+use aster_forge_db::transaction;
 use chrono::Utc;
 use sea_orm::{ActiveModelTrait, IntoActiveModel, Set};
 
@@ -63,7 +64,7 @@ pub async fn request_email_change(
         state.runtime_config(),
     );
     let site_name = branding::title_or_default(state.runtime_config());
-    let txn = crate::db::transaction::begin(state.writer_db()).await?;
+    let txn = transaction::begin(state.writer_db()).await?;
     let mut active = existing.into_active_model();
     active.pending_email = Set(Some(normalized_email.clone()));
     active.updated_at = Set(Utc::now());
@@ -83,7 +84,7 @@ pub async fn request_email_change(
         MailTemplatePayload::contact_change_confirmation(&updated.username, &token, &site_name),
     )
     .await?;
-    crate::db::transaction::commit(txn).await?;
+    transaction::commit(txn).await?;
 
     tracing::debug!(
         user_id = updated.id,
@@ -134,7 +135,7 @@ pub async fn resend_email_change(
     );
     let site_name = branding::title_or_default(state.runtime_config());
 
-    let txn = crate::db::transaction::begin(state.writer_db()).await?;
+    let txn = transaction::begin(state.writer_db()).await?;
     let token = match issue_contact_verification_token(
         &txn,
         user.id,
@@ -155,7 +156,7 @@ pub async fn resend_email_change(
         MailTemplatePayload::contact_change_confirmation(&user.username, &token, &site_name),
     )
     .await?;
-    crate::db::transaction::commit(txn).await?;
+    transaction::commit(txn).await?;
 
     Ok(Some(user_audit_info(&user)))
 }
@@ -188,7 +189,7 @@ pub async fn request_password_reset(
         state.runtime_config(),
     );
     let site_name = branding::title_or_default(state.runtime_config());
-    let txn = crate::db::transaction::begin(state.writer_db()).await?;
+    let txn = transaction::begin(state.writer_db()).await?;
     let token = match issue_contact_verification_token(
         &txn,
         user.id,
@@ -213,7 +214,7 @@ pub async fn request_password_reset(
         MailTemplatePayload::password_reset(&user.username, &token, &site_name),
     )
     .await?;
-    crate::db::transaction::commit(txn).await?;
+    transaction::commit(txn).await?;
 
     tracing::debug!(user_id = user.id, "enqueued password reset");
     Ok(PasswordResetRequestResult {
@@ -253,7 +254,7 @@ pub async fn confirm_password_reset(
         ));
     }
 
-    let txn = crate::db::transaction::begin(state.writer_db()).await?;
+    let txn = transaction::begin(state.writer_db()).await?;
     let existing_user = user_repo::find_by_id(&txn, record.user_id).await?;
     if !existing_user.status.is_active() {
         return Err(AsterError::auth_forbidden("account is disabled"));
@@ -281,7 +282,7 @@ pub async fn confirm_password_reset(
         MailTemplatePayload::password_reset_notice(&updated.username, &site_name),
     )
     .await?;
-    crate::db::transaction::commit(txn).await?;
+    transaction::commit(txn).await?;
     invalidate_auth_snapshot_cache(state, updated.id).await;
     tracing::debug!(
         user_id = updated.id,
@@ -320,7 +321,7 @@ pub async fn confirm_contact_verification(
     let user_id = record.user_id;
     tracing::debug!(user_id, purpose = ?purpose, "loaded contact verification record");
 
-    let txn = crate::db::transaction::begin(state.writer_db()).await?;
+    let txn = transaction::begin(state.writer_db()).await?;
     let existing_user = user_repo::find_by_id(&txn, user_id).await?;
     if !existing_user.status.is_active() {
         return Err(AsterError::auth_forbidden("account is disabled"));
@@ -403,7 +404,7 @@ pub async fn confirm_contact_verification(
             ));
         }
     }
-    crate::db::transaction::commit(txn).await?;
+    transaction::commit(txn).await?;
 
     tracing::debug!(user_id, purpose = ?purpose, "confirmed contact verification");
     Ok(ContactVerificationConfirmResult {

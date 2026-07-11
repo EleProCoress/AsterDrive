@@ -276,7 +276,7 @@ async fn run_primary_http_server(
     );
 
     let configure_db = state.writer_db().clone();
-    let shutdown_db = state.writer_db().clone();
+    let shutdown_db_handles = state.db_handles.clone();
     let app_shutdown_token = CancellationToken::new();
     let state = web::Data::new(state);
     let task_state = state.clone();
@@ -329,7 +329,7 @@ async fn run_primary_http_server(
     let server_result = server.await;
     tracing::info!("server stopped");
     aster_drive::runtime::shutdown::record_server_shutdown(state.as_ref()).await;
-    aster_drive::runtime::shutdown::perform_shutdown(background_tasks, shutdown_db).await;
+    aster_drive::runtime::shutdown::perform_shutdown(background_tasks, shutdown_db_handles).await;
     server_result
 }
 
@@ -350,7 +350,7 @@ async fn run_follower_http_server(
         "starting HTTP service"
     );
 
-    let shutdown_db = state.writer_db().clone();
+    let shutdown_db_handles = state.db_handles.clone();
     let state = web::Data::new(state);
     let app_shutdown_token = CancellationToken::new();
     let metrics =
@@ -398,6 +398,6 @@ async fn run_follower_http_server(
     let server_result = server.await;
     tracing::info!("server stopped");
     aster_drive::runtime::shutdown::record_server_shutdown(state.as_ref()).await;
-    aster_drive::runtime::shutdown::perform_shutdown(background_tasks, shutdown_db).await;
+    aster_drive::runtime::shutdown::perform_shutdown(background_tasks, shutdown_db_handles).await;
     server_result
 }

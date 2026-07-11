@@ -5,6 +5,7 @@ use crate::db::repository::user_repo;
 use crate::errors::{AsterError, Result, auth_forbidden_with_code};
 use crate::runtime::SharedRuntimeState;
 use crate::utils::hash;
+use aster_forge_db::transaction;
 
 use super::session::{invalidate_auth_snapshot_cache, purge_all_auth_sessions_in_connection};
 use super::shared::{find_user_by_identifier, update_password_in_connection};
@@ -143,7 +144,7 @@ pub async fn set_password(
     new_password: &str,
 ) -> Result<AuthUserInfo> {
     tracing::debug!(user_id, "setting password");
-    let txn = crate::db::transaction::begin(state.writer_db()).await?;
+    let txn = transaction::begin(state.writer_db()).await?;
     let result = async {
         let user = user_repo::find_by_id(&txn, user_id).await?;
         let was_forced = user.must_change_password;
@@ -154,11 +155,11 @@ pub async fn set_password(
     .await;
     let (updated, was_forced) = match result {
         Ok(updated) => {
-            crate::db::transaction::commit(txn).await?;
+            transaction::commit(txn).await?;
             updated
         }
         Err(error) => {
-            crate::db::transaction::rollback(txn).await?;
+            transaction::rollback(txn).await?;
             return Err(error);
         }
     };

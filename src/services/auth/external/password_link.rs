@@ -7,6 +7,7 @@ use crate::errors::{AsterError, Result};
 use crate::runtime::SharedRuntimeState;
 use crate::services::auth::local;
 use crate::utils::hash;
+use aster_forge_db::transaction;
 
 use super::normalize::{normalize_flow_token, token_hash};
 use super::resolution::{
@@ -72,7 +73,7 @@ pub async fn link_with_password(
     }
 
     let claims = claims_without_provider_email(&flow);
-    let txn = crate::db::transaction::begin(state.writer_db()).await?;
+    let txn = transaction::begin(state.writer_db()).await?;
     let result = async {
         let consumed =
             external_auth_email_verification_flow_repo::mark_consumed_if_unused(&txn, flow.id, now)
@@ -88,7 +89,7 @@ pub async fn link_with_password(
 
     let resolved = match result {
         Ok(resolved) => {
-            crate::db::transaction::commit(txn).await?;
+            transaction::commit(txn).await?;
             resolved
         }
         Err(error) => return Err(error),

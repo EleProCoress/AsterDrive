@@ -6,12 +6,12 @@ use std::sync::Arc;
 use sea_orm::{ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect};
 
 use crate::db::repository::{file_repo, version_repo};
-use crate::db::transaction;
 use crate::entities::{background_task, file_blob};
 use crate::errors::{AsterError, Result};
 use crate::runtime::{PrimaryAppState, SharedRuntimeState};
 use crate::services::workspace::storage::WorkspaceStorageScope;
 use crate::storage::StorageDriver;
+use aster_forge_db::transaction;
 
 const BLOB_MAINTENANCE_BATCH_SIZE: u64 = 1_000;
 const BLOB_MAINTENANCE_PROGRESS_INTERVAL: i64 = 1_000;

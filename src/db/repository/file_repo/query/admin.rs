@@ -5,13 +5,13 @@ use sea_orm::{
 use std::collections::{BTreeMap, HashMap};
 
 use crate::api::pagination::{AdminFileSortBy, SortOrder};
-use crate::db::repository::search_query::lower_like_condition;
-use crate::db::repository::sort::{order_by_column_with_id, order_by_id};
 use crate::entities::{
     file::{self, Entity as File},
     file_blob,
 };
 use crate::errors::{AsterError, Result};
+use aster_forge_db::search_query::lower_like_condition;
+use aster_forge_db::sort::{order_by_column_with_id, order_by_id};
 
 #[derive(Debug, Clone, Copy)]
 pub struct AdminFileFilters<'a> {

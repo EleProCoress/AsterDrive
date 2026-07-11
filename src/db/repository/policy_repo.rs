@@ -1,11 +1,11 @@
 //! 仓储模块：`policy_repo`。
 
 use crate::api::pagination::{AdminPolicySortBy, SortOrder};
-use crate::db::repository::pagination_repo::fetch_offset_page;
-use crate::db::repository::sort::{order_by_column_with_id, order_by_id};
 use crate::entities::storage_policy::{self, Entity as StoragePolicy};
 use crate::errors::{AsterError, Result};
 use crate::types::DriverType;
+use aster_forge_db::pagination::fetch_offset_page;
+use aster_forge_db::sort::{order_by_column_with_id, order_by_id};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection, DbBackend, EntityTrait,
     ExprTrait, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, Select, Set, sea_query::Expr,

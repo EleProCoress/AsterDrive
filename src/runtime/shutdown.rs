@@ -1,9 +1,9 @@
 //! 运行时子模块：`shutdown`。
 
 use super::tasks::BackgroundTasks;
+use crate::db::DbHandles;
 use crate::runtime::SharedRuntimeState;
 use crate::services::ops::audit;
-use sea_orm::DatabaseConnection;
 
 /// 等待 SIGINT 或 SIGTERM 信号，然后进行优雅关闭
 pub async fn wait_for_signal() {
@@ -52,7 +52,7 @@ async fn wait_forever_after_signal_install_failure() {
 }
 
 /// 执行关闭收尾：确认后台任务停止，再关闭审计和数据库连接。
-pub async fn perform_shutdown(background_tasks: BackgroundTasks, db: DatabaseConnection) {
+pub async fn perform_shutdown(background_tasks: BackgroundTasks, db_handles: DbHandles) {
     tracing::info!("stopping background tasks...");
     background_tasks.shutdown().await;
     tracing::info!("background tasks stopped");
@@ -60,11 +60,11 @@ pub async fn perform_shutdown(background_tasks: BackgroundTasks, db: DatabaseCon
     tracing::info!("flushing audit logs...");
     crate::services::ops::audit::shutdown_global_audit_log_manager().await;
 
-    tracing::info!("closing database connection...");
-    if let Err(e) = db.close().await {
-        tracing::error!("error closing database connection: {}", e);
+    tracing::info!("closing database connections...");
+    if let Err(error) = db_handles.close().await {
+        tracing::error!(%error, "error closing database connections");
     } else {
-        tracing::info!("database connection closed");
+        tracing::info!("database connections closed");
     }
     tracing::info!("shutdown complete");
 }
@@ -159,9 +159,11 @@ mod tests {
         let state = web::Data::new(state);
 
         perform_shutdown(
-            spawn_follower_background_tasks(state, CancellationToken::new()),
-            db,
+            spawn_follower_background_tasks(state.clone(), CancellationToken::new()),
+            state.db_handles.clone(),
         )
         .await;
+
+        assert!(db.ping().await.is_err(), "writer pool should be closed");
     }
 }

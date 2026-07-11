@@ -3,14 +3,12 @@
 use std::collections::HashMap;
 
 use crate::api::pagination::{AdminTeamMemberSortBy, SortOrder};
-use crate::db::repository::sort::{order_by_column_with_id, order_by_id};
-use crate::db::repository::{
-    search_query::{
-        escape_like_query, lower_like_condition, mysql_boolean_mode_query,
-        sqlite_fts_match_condition, sqlite_match_query,
-    },
-    team_repo::team_keyword_condition,
+use crate::db::repository::team_repo::team_keyword_condition;
+use aster_forge_db::search_query::{
+    escape_like_query, lower_like_condition, mysql_boolean_mode_query, sqlite_fts_match_condition,
+    sqlite_match_query,
 };
+use aster_forge_db::sort::{order_by_column_with_id, order_by_id};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, DatabaseConnection, DbBackend,
     EntityTrait, ExprTrait, FromQueryResult, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect,
@@ -391,8 +389,12 @@ fn apply_admin_team_member_sort(
         ),
         AdminTeamMemberSortBy::Role => {
             let ordered = match sort_order {
-                SortOrder::Asc => query.order_by(team_member_role_rank_expr(), Order::Asc),
-                SortOrder::Desc => query.order_by(team_member_role_rank_expr(), Order::Desc),
+                aster_forge_db::sort::SortOrder::Asc => {
+                    query.order_by(team_member_role_rank_expr(), Order::Asc)
+                }
+                aster_forge_db::sort::SortOrder::Desc => {
+                    query.order_by(team_member_role_rank_expr(), Order::Desc)
+                }
             };
             order_by_id(ordered, user::Column::Id, sort_order)
         }

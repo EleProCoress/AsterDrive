@@ -10,6 +10,7 @@ use crate::errors::{AsterError, Result};
 use crate::runtime::SharedRuntimeState;
 use crate::services::ops::audit::{self, AuditContext};
 use crate::types::{SystemConfigSource, SystemConfigValueType, SystemConfigVisibility};
+use aster_forge_db::transaction;
 use serde::{Deserialize, Serialize};
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::ToSchema;
@@ -385,7 +386,7 @@ async fn upsert_config_and_apply_dependents(
     visibility: Option<SystemConfigVisibility>,
     updated_by: i64,
 ) -> Result<Vec<system_config::Model>> {
-    let txn = crate::db::transaction::begin(state.writer_db()).await?;
+    let txn = transaction::begin(state.writer_db()).await?;
     let result = async {
         let saved =
             config_repo::upsert_with_options(&txn, key, value, visibility, Some(updated_by))
@@ -409,14 +410,14 @@ async fn upsert_config_and_apply_dependents(
 
     match result {
         Ok(changed) => {
-            crate::db::transaction::commit(txn).await?;
+            transaction::commit(txn).await?;
             for item in &changed {
                 state.runtime_config().apply(item.clone());
             }
             Ok(changed)
         }
         Err(error) => {
-            crate::db::transaction::rollback(txn).await?;
+            transaction::rollback(txn).await?;
             Err(error)
         }
     }

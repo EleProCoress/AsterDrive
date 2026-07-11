@@ -1,5 +1,6 @@
 //! WebDAV 子模块：`db_lock_system`。
 
+use aster_forge_db::transaction;
 use std::collections::HashMap;
 use std::io::Cursor;
 use std::time::{Duration, SystemTime};
@@ -213,7 +214,7 @@ impl DavLockSystem for DbLockSystem {
         let timeout_dur = timeout;
 
         Box::pin(async move {
-            let txn = crate::db::transaction::begin(&self.db)
+            let txn = transaction::begin(&self.db)
                 .await
                 .map_err(|error| {
                     tracing::warn!(error = %error, path = %path_str, "failed to begin WebDAV lock transaction");
@@ -347,7 +348,7 @@ impl DavLockSystem for DbLockSystem {
 
             match result {
                 Ok((lock, entity_type, entity_id)) => {
-                    crate::db::transaction::commit(txn)
+                    transaction::commit(txn)
                         .await
                         .map_err(|error| {
                             tracing::warn!(error = %error, path = %path_str, "failed to commit WebDAV lock transaction");
@@ -357,7 +358,7 @@ impl DavLockSystem for DbLockSystem {
                     Ok(lock)
                 }
                 Err(error) => {
-                    if let Err(error) = crate::db::transaction::rollback(txn).await {
+                    if let Err(error) = transaction::rollback(txn).await {
                         tracing::warn!(error = %error, "failed to rollback WebDAV lock transaction");
                     }
                     Err(error)

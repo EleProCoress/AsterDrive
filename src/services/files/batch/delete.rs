@@ -1,5 +1,6 @@
 //! 批量操作服务子模块：`delete`。
 
+use aster_forge_db::transaction;
 use std::collections::HashSet;
 
 use chrono::Utc;
@@ -126,10 +127,10 @@ pub(crate) async fn batch_delete_in_scope(
         let total_file_count = file_ids_to_delete.len();
         let total_folder_count = folder_ids_to_delete.len();
 
-        let txn = crate::db::transaction::begin(state.writer_db()).await?;
+        let txn = transaction::begin(state.writer_db()).await?;
         file_repo::soft_delete_many(&txn, &file_ids_to_delete, now).await?;
         folder_repo::soft_delete_many(&txn, &folder_ids_to_delete, now).await?;
-        crate::db::transaction::commit(txn).await?;
+        transaction::commit(txn).await?;
 
         if !direct_file_ids_deleted.is_empty() {
             storage_change::publish(

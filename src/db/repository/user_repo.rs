@@ -1,15 +1,15 @@
 //! 仓储模块：`user_repo`。
 
 use crate::api::pagination::{AdminUserSortBy, SortOrder};
-use crate::db::repository::pagination_repo::fetch_offset_page;
-use crate::db::repository::search_query::{
-    escape_like_query, lower_like_condition, mysql_boolean_mode_query, sqlite_fts_match_condition,
-    sqlite_match_query,
-};
-use crate::db::repository::sort::{order_by_column_with_id, order_by_id};
 use crate::entities::user::{self, Entity as User};
 use crate::errors::{AsterError, Result};
 use crate::types::{UserRole, UserStatus};
+use aster_forge_db::pagination::fetch_offset_page;
+use aster_forge_db::search_query::{
+    escape_like_query, lower_like_condition, mysql_boolean_mode_query, sqlite_fts_match_condition,
+    sqlite_match_query,
+};
+use aster_forge_db::sort::{order_by_column_with_id, order_by_id};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, DatabaseConnection, DbBackend,
     EntityTrait, ExprTrait, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, Select,

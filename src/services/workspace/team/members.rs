@@ -5,6 +5,7 @@
 //! - owner 相关操作只能由 owner 执行
 //! - 不能把团队降成“没有 owner”或“没有任何 manager”
 
+use aster_forge_db::transaction;
 use chrono::Utc;
 use sea_orm::{ActiveModelTrait, IntoActiveModel, Set};
 
@@ -97,7 +98,7 @@ pub async fn add_admin_member(
     }
 
     let now = Utc::now();
-    let txn = crate::db::transaction::begin(state.writer_db()).await?;
+    let txn = transaction::begin(state.writer_db()).await?;
     team_repo::lock_active_by_id(&txn, team_id).await?;
 
     // 先锁团队再查 membership，避免并发添加把同一用户重复插入 team_members。
@@ -119,7 +120,7 @@ pub async fn add_admin_member(
     .insert(&txn)
     .await
     .map_err(map_member_create_error)?;
-    crate::db::transaction::commit(txn).await?;
+    transaction::commit(txn).await?;
     storage::invalidate_team_access_cache_for_member(state, team_id, target_user.id).await;
 
     build_team_member_info(state, membership, target_user).await
@@ -131,7 +132,7 @@ pub async fn update_admin_member_role(
     member_user_id: i64,
     role: TeamMemberRole,
 ) -> Result<TeamMemberInfo> {
-    let txn = crate::db::transaction::begin(state.writer_db()).await?;
+    let txn = transaction::begin(state.writer_db()).await?;
     team_repo::lock_active_by_id(&txn, team_id).await?;
 
     let target_membership = team_member_repo::find_by_team_and_user(&txn, team_id, member_user_id)
@@ -152,7 +153,7 @@ pub async fn update_admin_member_role(
     active.updated_at = Set(Utc::now());
     let updated = team_member_repo::update(&txn, active).await?;
     let target_user = user_repo::find_by_id(&txn, member_user_id).await?;
-    crate::db::transaction::commit(txn).await?;
+    transaction::commit(txn).await?;
     storage::invalidate_team_access_cache_for_member(state, team_id, member_user_id).await;
     invalidate_webdav_auth_for_team_member_change(
         state,
@@ -169,7 +170,7 @@ pub async fn remove_admin_member(
     team_id: i64,
     member_user_id: i64,
 ) -> Result<()> {
-    let txn = crate::db::transaction::begin(state.writer_db()).await?;
+    let txn = transaction::begin(state.writer_db()).await?;
     team_repo::lock_active_by_id(&txn, team_id).await?;
 
     let target_membership = team_member_repo::find_by_team_and_user(&txn, team_id, member_user_id)
@@ -186,7 +187,7 @@ pub async fn remove_admin_member(
     }
 
     team_member_repo::delete(&txn, target_membership.id).await?;
-    crate::db::transaction::commit(txn).await?;
+    transaction::commit(txn).await?;
     storage::invalidate_team_access_cache_for_member(state, team_id, member_user_id).await;
     invalidate_webdav_auth_for_team_member_change(
         state,
@@ -249,7 +250,7 @@ pub async fn add_member(
     }
 
     let now = Utc::now();
-    let txn = crate::db::transaction::begin(state.writer_db()).await?;
+    let txn = transaction::begin(state.writer_db()).await?;
     team_repo::lock_active_by_id(&txn, team_id).await?;
 
     let actor_membership = team_member_repo::find_by_team_and_user(&txn, team_id, actor_user_id)
@@ -284,7 +285,7 @@ pub async fn add_member(
     .insert(&txn)
     .await
     .map_err(map_member_create_error)?;
-    crate::db::transaction::commit(txn).await?;
+    transaction::commit(txn).await?;
     storage::invalidate_team_access_cache_for_member(state, team_id, target_user.id).await;
 
     build_team_member_info(state, membership, target_user).await
@@ -297,7 +298,7 @@ pub async fn update_member_role(
     member_user_id: i64,
     role: TeamMemberRole,
 ) -> Result<TeamMemberInfo> {
-    let txn = crate::db::transaction::begin(state.writer_db()).await?;
+    let txn = transaction::begin(state.writer_db()).await?;
     team_repo::lock_active_by_id(&txn, team_id).await?;
 
     let actor_membership = team_member_repo::find_by_team_and_user(&txn, team_id, actor_user_id)
@@ -334,7 +335,7 @@ pub async fn update_member_role(
     active.updated_at = Set(Utc::now());
     let updated = team_member_repo::update(&txn, active).await?;
     let target_user = user_repo::find_by_id(&txn, member_user_id).await?;
-    crate::db::transaction::commit(txn).await?;
+    transaction::commit(txn).await?;
     storage::invalidate_team_access_cache_for_member(state, team_id, member_user_id).await;
     invalidate_webdav_auth_for_team_member_change(
         state,
@@ -352,7 +353,7 @@ pub async fn remove_member(
     actor_user_id: i64,
     member_user_id: i64,
 ) -> Result<()> {
-    let txn = crate::db::transaction::begin(state.writer_db()).await?;
+    let txn = transaction::begin(state.writer_db()).await?;
     team_repo::lock_active_by_id(&txn, team_id).await?;
 
     let actor_membership = team_member_repo::find_by_team_and_user(&txn, team_id, actor_user_id)
@@ -385,7 +386,7 @@ pub async fn remove_member(
     }
 
     team_member_repo::delete(&txn, target_membership.id).await?;
-    crate::db::transaction::commit(txn).await?;
+    transaction::commit(txn).await?;
     storage::invalidate_team_access_cache_for_member(state, team_id, member_user_id).await;
     invalidate_webdav_auth_for_team_member_change(
         state,

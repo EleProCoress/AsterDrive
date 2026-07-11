@@ -3,6 +3,7 @@
 //! 这里处理的是“谁可以创建、查看、删除 share”，而不是公开 token 访问。
 //! 因此所有入口都先建立在 `WorkspaceStorageScope` 之上，再进入 share 记录本身。
 
+use aster_forge_db::transaction;
 use std::collections::HashMap;
 
 use chrono::Utc;
@@ -61,7 +62,7 @@ pub(crate) async fn create_share_in_scope(
         _ => None,
     };
 
-    let txn = crate::db::transaction::begin(db).await?;
+    let txn = transaction::begin(db).await?;
     lock_share_resource_in_scope(&txn, scope, file_id, folder_id).await?;
 
     // share 对同一资源只允许保留一条活跃记录。
@@ -102,7 +103,7 @@ pub(crate) async fn create_share_in_scope(
         ..Default::default()
     };
     let created = share_repo::create(&txn, model).await?;
-    crate::db::transaction::commit(txn).await?;
+    transaction::commit(txn).await?;
     invalidate_active_share_target_cache_for_scope(state, scope).await;
     tracing::debug!(
         scope = ?scope,
@@ -290,9 +291,9 @@ pub(crate) async fn batch_delete_shares_in_scope(
     }
 
     if !ids_to_delete.is_empty() {
-        let txn = crate::db::transaction::begin(state.writer_db()).await?;
+        let txn = transaction::begin(state.writer_db()).await?;
         share_repo::delete_many(&txn, &ids_to_delete).await?;
-        crate::db::transaction::commit(txn).await?;
+        transaction::commit(txn).await?;
         invalidate_active_share_target_cache_for_scope(state, scope).await;
         for share_id in &ids_to_delete {
             if let Some(share) = share_map.get(share_id) {
