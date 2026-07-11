@@ -2,7 +2,7 @@
 
 use aes_gcm::{
     Aes256Gcm, Nonce,
-    aead::{Aead, AeadCore, KeyInit, OsRng},
+    aead::{Aead, Generate, KeyInit},
 };
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use hkdf::Hkdf;
@@ -41,7 +41,7 @@ fn cipher(master_key: &str) -> Result<Aes256Gcm> {
 
 pub fn encrypt_token(master_key: &str, aad: &[u8], plaintext: &str) -> Result<String> {
     let cipher = cipher(master_key)?;
-    let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
+    let nonce = Nonce::generate();
     let ciphertext = cipher
         .encrypt(
             &nonce,
@@ -95,10 +95,12 @@ pub fn decrypt_token(master_key: &str, aad: &[u8], ciphertext: &str) -> Result<S
         "invalid storage credential token ciphertext",
         AsterError::database_operation,
     )?;
-    let nonce = Nonce::from_slice(&nonce);
+    let nonce = Nonce::try_from(nonce.as_slice()).map_err(|_| {
+        AsterError::database_operation("invalid storage credential token nonce length")
+    })?;
     let plaintext = cipher(master_key)?
         .decrypt(
-            nonce,
+            &nonce,
             aes_gcm::aead::Payload {
                 msg: encrypted.as_slice(),
                 aad,

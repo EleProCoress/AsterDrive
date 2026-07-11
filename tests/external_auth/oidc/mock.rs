@@ -8,7 +8,6 @@ use jsonwebtoken::{
         RSAKeyParameters,
     },
 };
-use rand_08::rngs::OsRng;
 use ring::signature::{KeyPair, RsaKeyPair, RsaPublicKeyComponents};
 use rsa::{RsaPrivateKey, pkcs1::EncodeRsaPrivateKey};
 use serde::Deserialize;
@@ -254,7 +253,7 @@ impl StaticRsaKey {
 }
 
 fn generate_test_rsa_private_der() -> Vec<u8> {
-    let mut rng = OsRng;
+    let mut rng = rand::rng();
     let key = RsaPrivateKey::new(&mut rng, 2048).expect("RSA test key should generate");
     key.to_pkcs1_der()
         .expect("RSA test key should encode")

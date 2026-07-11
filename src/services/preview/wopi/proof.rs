@@ -238,7 +238,6 @@ mod tests {
 
     use base64::{Engine as _, engine::general_purpose::STANDARD};
     use chrono::{Duration, Utc};
-    use rand_08::rngs::OsRng;
     use ring::{
         rand::SystemRandom,
         signature::{RSA_PKCS1_SHA256, RsaKeyPair, RsaPublicKeyComponents},
@@ -282,7 +281,7 @@ mod tests {
     }
 
     fn generate_test_rsa_private_der() -> Vec<u8> {
-        let mut rng = OsRng;
+        let mut rng = rand::rng();
         let key = RsaPrivateKey::new(&mut rng, 2048).unwrap();
         key.to_pkcs1_der().unwrap().as_bytes().to_vec()
     }
