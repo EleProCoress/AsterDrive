@@ -123,16 +123,34 @@ pub async fn set_with_visibility(
         .find(|item| item.key == key)
         .cloned()
         .ok_or_else(|| AsterError::internal_error(format!("saved config key '{key}' missing")))?;
-    for changed_config in changed {
+    let changed_keys = changed
+        .iter()
+        .map(|changed_config| changed_config.key.clone())
+        .collect::<Vec<_>>();
+    for changed_config in &changed {
         invalidate_dependent_public_config_caches(&changed_config.key);
     }
+    publish_config_reload(state, changed_keys.iter(), "upsert").await?;
     Ok(config.into())
 }
 
 pub async fn delete(state: &impl SharedRuntimeState, key: &str) -> Result<()> {
-    config_repo::delete_by_key(state.writer_db(), key).await?;
-    state.runtime_config().remove(key);
-    invalidate_dependent_public_config_caches(key);
+    let result: Result<()> = async {
+        config_repo::delete_by_key(state.writer_db(), key).await?;
+        state.runtime_config().remove(key);
+        invalidate_dependent_public_config_caches(key);
+        state
+            .config_sync()
+            .publish_reload(
+                [key.to_string()],
+                aster_forge_config::ConfigNotificationSource::Api,
+            )
+            .await
+            .map_err(super::runtime::map_config_core_error)
+    }
+    .await;
+    record_config_mutation_result(state, "delete", result.is_ok(), 1);
+    result?;
     tracing::debug!(key, "deleted runtime config");
     Ok(())
 }
@@ -204,6 +222,15 @@ pub async fn set_with_audit_and_visibility(
 
     for changed_config in &changed {
         invalidate_dependent_public_config_caches(&changed_config.key);
+    }
+    publish_config_reload(
+        state,
+        changed.iter().map(|changed_config| &changed_config.key),
+        "upsert",
+    )
+    .await?;
+
+    for changed_config in &changed {
         let audit_prior_visibility = if changed_config.key == key {
             prior_visibility
         } else {
@@ -213,6 +240,36 @@ pub async fn set_with_audit_and_visibility(
     }
 
     Ok(config.into())
+}
+
+async fn publish_config_reload<'a>(
+    state: &impl SharedRuntimeState,
+    keys: impl IntoIterator<Item = &'a String>,
+    operation: &'static str,
+) -> Result<()> {
+    let keys = keys.into_iter().cloned().collect::<Vec<_>>();
+    let changed_keys = u64::try_from(keys.len()).unwrap_or(u64::MAX);
+    let result = state
+        .config_sync()
+        .publish_reload(keys, aster_forge_config::ConfigNotificationSource::Api)
+        .await
+        .map_err(super::runtime::map_config_core_error);
+    record_config_mutation_result(state, operation, result.is_ok(), changed_keys);
+    result
+}
+
+fn record_config_mutation_result(
+    state: &impl SharedRuntimeState,
+    operation: &'static str,
+    ok: bool,
+    changed_keys: u64,
+) {
+    state.metrics().record_config_mutation(
+        "api",
+        operation,
+        if ok { "ok" } else { "error" },
+        changed_keys,
+    );
 }
 
 async fn audit_config_update(
@@ -387,7 +444,7 @@ fn apply_system_config_definition(config: system_config::Model) -> system_config
     shared_system_config::apply_definition(config)
 }
 
-fn invalidate_dependent_public_config_caches(key: &str) {
+pub(super) fn invalidate_dependent_public_config_caches(key: &str) {
     match key {
         MEDIA_PROCESSING_REGISTRY_JSON_KEY => {
             super::public::invalidate_public_thumbnail_support_cache();
@@ -397,5 +454,168 @@ fn invalidate_dependent_public_config_caches(key: &str) {
             super::public::invalidate_public_media_data_support_cache();
         }
         _ => {}
+    }
+}
+
+pub(super) fn invalidate_all_dependent_public_config_caches() {
+    super::public::invalidate_public_thumbnail_support_cache();
+    super::public::invalidate_public_media_data_support_cache();
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use aster_forge_config::{ConfigChangeNotifier, ConfigNotificationSource};
+    use migration::Migrator;
+
+    use super::{delete, set};
+    use crate::runtime::{PrimaryAppState, SharedRuntimeState};
+
+    async fn test_state() -> (PrimaryAppState, aster_forge_config::ConfigNotification) {
+        let db = crate::db::connect_with_metrics(
+            &crate::config::DatabaseConfig {
+                url: "sqlite::memory:".to_string(),
+                pool_size: 1,
+                retry_count: 0,
+            },
+            crate::metrics::NoopMetrics::arc(),
+        )
+        .await
+        .expect("config sync service test database should connect");
+        Migrator::up(&db, None)
+            .await
+            .expect("config sync service test migrations should apply");
+        crate::db::repository::config_repo::ensure_defaults_with_env(&db, &|_| None)
+            .await
+            .expect("config sync service test defaults should load");
+        let runtime_config = Arc::new(crate::config::RuntimeConfig::new());
+        runtime_config
+            .reload(&db)
+            .await
+            .expect("config sync service runtime config should load");
+        let cache = aster_forge_cache::create_cache(&crate::config::CacheConfig::default()).await;
+        let notifier = Arc::new(aster_forge_config::InMemoryConfigNotifier::default());
+        let subscription = notifier
+            .subscribe()
+            .await
+            .expect("config sync service test should subscribe");
+        let config_sync = aster_forge_config::ConfigSyncRuntime::with_notifier_for_test(
+            super::super::runtime::CONFIG_RELOAD_NAMESPACE,
+            "service-test-runtime",
+            notifier as aster_forge_config::SharedConfigChangeNotifier,
+        );
+        let (storage_change_tx, _) = tokio::sync::broadcast::channel(
+            crate::services::events::storage_change::STORAGE_CHANGE_CHANNEL_CAPACITY,
+        );
+        let (share_download_rollback, _worker) =
+            crate::services::share::build_share_download_rollback_queue(
+                db.clone(),
+                1,
+                crate::metrics::NoopMetrics::arc(),
+            );
+
+        (
+            PrimaryAppState {
+                db_handles: crate::db::DbHandles::single(db),
+                driver_registry: Arc::new(crate::storage::DriverRegistry::noop()),
+                runtime_config,
+                policy_snapshot: Arc::new(crate::storage::PolicySnapshot::new()),
+                config: Arc::new(crate::config::Config::default()),
+                cache,
+                config_sync,
+                metrics: crate::metrics::NoopMetrics::arc(),
+                mail_sender: crate::services::mail::sender::memory_sender(),
+                storage_change_tx,
+                share_download_rollback,
+                background_task_dispatch_wakeup:
+                    PrimaryAppState::new_background_task_dispatch_wakeup(),
+                remote_protocol: PrimaryAppState::new_remote_protocol(),
+            },
+            subscription,
+        )
+    }
+
+    async fn next_reload(
+        subscription: &mut aster_forge_config::ConfigNotification,
+    ) -> aster_forge_config::ConfigReloadMessage {
+        tokio::time::timeout(std::time::Duration::from_secs(1), subscription.recv())
+            .await
+            .expect("config mutation should publish reload notification")
+            .expect("config reload notification should be readable")
+            .reload_message()
+            .clone()
+    }
+
+    #[tokio::test]
+    async fn set_publishes_api_reload_for_saved_key() {
+        let (state, mut subscription) = test_state().await;
+
+        set(&state, "custom.feature", "enabled", 1)
+            .await
+            .expect("custom config should save");
+
+        let message = next_reload(&mut subscription).await;
+        assert_eq!(message.keys, vec!["custom.feature"]);
+        assert_eq!(message.source, ConfigNotificationSource::Api);
+    }
+
+    #[tokio::test]
+    async fn delete_publishes_api_reload_for_deleted_key() {
+        let (state, mut subscription) = test_state().await;
+        crate::db::repository::config_repo::upsert(
+            state.writer_db(),
+            "custom.delete_me",
+            "value",
+            1,
+        )
+        .await
+        .expect("custom config should seed");
+
+        delete(&state, "custom.delete_me")
+            .await
+            .expect("custom config should delete");
+
+        let message = next_reload(&mut subscription).await;
+        assert_eq!(message.keys, vec!["custom.delete_me"]);
+        assert_eq!(message.source, ConfigNotificationSource::Api);
+    }
+
+    #[tokio::test]
+    async fn dependent_update_publishes_all_changed_keys_once() {
+        let (state, mut subscription) = test_state().await;
+        for (key, value) in [
+            (crate::config::mail::MAIL_SMTP_HOST_KEY, "smtp.example.com"),
+            (
+                crate::config::mail::MAIL_FROM_ADDRESS_KEY,
+                "drive@example.com",
+            ),
+            (crate::config::mail::MAIL_SMTP_USERNAME_KEY, "drive"),
+            (crate::config::mail::MAIL_SMTP_PASSWORD_KEY, "secret"),
+            (
+                crate::config::auth_runtime::AUTH_EMAIL_CODE_LOGIN_ENABLED_KEY,
+                "true",
+            ),
+        ] {
+            let model =
+                crate::db::repository::config_repo::upsert(state.writer_db(), key, value, 1)
+                    .await
+                    .expect("dependent config should seed");
+            state.runtime_config().apply(model);
+        }
+
+        set(&state, crate::config::mail::MAIL_SMTP_HOST_KEY, "", 1)
+            .await
+            .expect("mail config should update and disable email-code MFA");
+
+        let message = next_reload(&mut subscription).await;
+        assert_eq!(
+            message.keys,
+            vec![
+                crate::config::auth_runtime::AUTH_EMAIL_CODE_LOGIN_ENABLED_KEY.to_string(),
+                crate::config::mail::MAIL_SMTP_HOST_KEY.to_string(),
+            ]
+        );
+        assert_eq!(message.source, ConfigNotificationSource::Api);
     }
 }

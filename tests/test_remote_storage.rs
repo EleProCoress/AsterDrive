@@ -124,6 +124,7 @@ fn follower_view_with_server_port(
         policy_snapshot: state.policy_snapshot.clone(),
         config: Arc::new(config),
         cache: state.cache.clone(),
+        config_sync: state.config_sync.clone(),
         metrics: state.metrics.clone(),
     }
 }

@@ -7,15 +7,14 @@ use actix_web::test;
 use actix_web::{App, HttpServer, web};
 use aster_drive::config::{RateLimitConfig, WebDavConfig};
 use aster_drive::db::repository::{file_repo, property_repo};
-use aster_drive::entities::{
-    audit_log, folder, system_config, team, team_member, user, webdav_account,
-};
+use aster_drive::entities::{audit_log, folder, team, team_member, user, webdav_account};
 use aster_drive::runtime::{PrimaryAppState, SharedRuntimeState};
 use aster_drive::services::ops::audit;
 use aster_drive::types::{
     AuditAction, ConfigSource, ConfigValueType, ConfigVisibility, EntityType, TeamMemberRole,
     UserRole, UserStatus,
 };
+use aster_forge_db::system_config;
 use base64::Engine;
 use chrono::Utc;
 use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, Set};

@@ -156,6 +156,20 @@ pub async fn execute_config_command(
     database_url: &str,
     command: &ConfigCommand,
 ) -> Result<ConfigCommandReport> {
+    let config_sync = match command {
+        ConfigCommand::Set(_) | ConfigCommand::Delete(_) | ConfigCommand::Import(_) => {
+            Some(build_cli_config_sync_runtime()?)
+        }
+        _ => None,
+    };
+    execute_config_command_with_runtime(database_url, command, config_sync.as_ref()).await
+}
+
+async fn execute_config_command_with_runtime(
+    database_url: &str,
+    command: &ConfigCommand,
+    config_sync: Option<&aster_forge_config::ConfigSyncRuntime>,
+) -> Result<ConfigCommandReport> {
     let db = connect_database(database_url).await?;
 
     match command {
@@ -180,6 +194,7 @@ pub async fn execute_config_command(
             Ok(ConfigCommandReport::config(ConfigCommandKind::Get, config))
         }
         ConfigCommand::Set(args) => {
+            let config_sync = required_cli_config_sync(config_sync)?;
             let normalized = normalize_entries(
                 build_value_lookup(&config_repo::find_all(&db).await?),
                 &[ImportItem {
@@ -197,13 +212,16 @@ pub async fn execute_config_command(
                 None,
             )
             .await?;
+            publish_cli_config_reload(&config_sync, [saved.key.clone()]).await?;
             Ok(ConfigCommandReport::config(
                 ConfigCommandKind::Set,
                 system_config_to_view(saved),
             ))
         }
         ConfigCommand::Delete(args) => {
+            let config_sync = required_cli_config_sync(config_sync)?;
             config_repo::delete_by_key(&db, &args.key).await?;
+            publish_cli_config_reload(&config_sync, [args.key.clone()]).await?;
             Ok(ConfigCommandReport::delete(args.key.clone()))
         }
         ConfigCommand::Validate(args) => {
@@ -220,6 +238,7 @@ pub async fn execute_config_command(
             ))
         }
         ConfigCommand::Import(args) => {
+            let config_sync = required_cli_config_sync(config_sync)?;
             let entries = read_import_items(&args.input_file)?;
             let txn = transaction::begin(&db).await?;
             let current_lookup = build_value_lookup(&config_repo::find_all(&txn).await?);
@@ -231,9 +250,43 @@ pub async fn execute_config_command(
                 saved.push(system_config_to_view(model));
             }
             transaction::commit(txn).await?;
+            publish_cli_config_reload(&config_sync, saved.iter().map(|config| config.key.clone()))
+                .await?;
             Ok(ConfigCommandReport::list(ConfigCommandKind::Import, saved))
         }
     }
+}
+
+fn required_cli_config_sync(
+    runtime: Option<&aster_forge_config::ConfigSyncRuntime>,
+) -> Result<&aster_forge_config::ConfigSyncRuntime> {
+    runtime.ok_or_else(|| AsterError::internal_error("config sync runtime is missing"))
+}
+
+fn build_cli_config_sync_runtime() -> Result<aster_forge_config::ConfigSyncRuntime> {
+    if crate::config::try_get_config().is_none() {
+        crate::config::init_config()?;
+    }
+    let config = crate::config::get_config();
+    aster_forge_config::build_config_sync_runtime(
+        &config.config_sync,
+        crate::services::ops::config::runtime::CONFIG_RELOAD_NAMESPACE,
+    )
+    .map_err(crate::services::ops::config::runtime::map_config_core_error)
+}
+
+async fn publish_cli_config_reload(
+    runtime: &aster_forge_config::ConfigSyncRuntime,
+    keys: impl IntoIterator<Item = impl Into<String>>,
+) -> Result<()> {
+    let keys = keys.into_iter().map(Into::into).collect::<Vec<_>>();
+    if keys.is_empty() {
+        return Ok(());
+    }
+    runtime
+        .publish_reload(keys, aster_forge_config::ConfigNotificationSource::Cli)
+        .await
+        .map_err(crate::services::ops::config::runtime::map_config_core_error)
 }
 
 /// Renders a successful config command result in the requested output format.
@@ -646,4 +699,154 @@ fn preview_system_config(key: &str, value: &str) -> SystemConfig {
     };
 
     system_config_to_view(model)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use aster_forge_config::{ConfigChangeNotifier, ConfigNotificationSource};
+    use migration::Migrator;
+
+    use super::{
+        ConfigCommand, FileArgs, KeyArgs, KeyValueArgs, execute_config_command_with_runtime,
+    };
+
+    async fn test_database(label: &str) -> (String, std::path::PathBuf) {
+        let path = std::env::temp_dir().join(format!(
+            "aster-drive-config-cli-{label}-{}.db",
+            uuid::Uuid::new_v4()
+        ));
+        let url = format!("sqlite://{}?mode=rwc", path.display());
+        let db = crate::db::connect_with_metrics(
+            &crate::config::DatabaseConfig {
+                url: url.clone(),
+                pool_size: 1,
+                retry_count: 0,
+            },
+            crate::metrics::NoopMetrics::arc(),
+        )
+        .await
+        .expect("config CLI test database should connect");
+        Migrator::up(&db, None)
+            .await
+            .expect("config CLI test migrations should apply");
+        db.close()
+            .await
+            .expect("config CLI test database should close");
+        (url, path)
+    }
+
+    async fn test_runtime() -> (
+        aster_forge_config::ConfigSyncRuntime,
+        aster_forge_config::ConfigNotification,
+    ) {
+        let notifier = Arc::new(aster_forge_config::InMemoryConfigNotifier::default());
+        let subscription = notifier
+            .subscribe()
+            .await
+            .expect("config CLI test should subscribe");
+        let runtime = aster_forge_config::ConfigSyncRuntime::with_notifier_for_test(
+            crate::services::ops::config::runtime::CONFIG_RELOAD_NAMESPACE,
+            "cli-test-runtime",
+            notifier as aster_forge_config::SharedConfigChangeNotifier,
+        );
+        (runtime, subscription)
+    }
+
+    async fn next_reload(
+        subscription: &mut aster_forge_config::ConfigNotification,
+    ) -> aster_forge_config::ConfigReloadMessage {
+        tokio::time::timeout(std::time::Duration::from_secs(1), subscription.recv())
+            .await
+            .expect("config CLI mutation should publish reload notification")
+            .expect("config CLI reload notification should be readable")
+            .reload_message()
+            .clone()
+    }
+
+    #[tokio::test]
+    async fn set_publishes_cli_reload_after_database_write() {
+        let (database_url, database_path) = test_database("set").await;
+        let (runtime, mut subscription) = test_runtime().await;
+
+        execute_config_command_with_runtime(
+            &database_url,
+            &ConfigCommand::Set(KeyValueArgs {
+                key: "custom.cli_set".to_string(),
+                value: "enabled".to_string(),
+            }),
+            Some(&runtime),
+        )
+        .await
+        .expect("config CLI set should succeed");
+
+        let message = next_reload(&mut subscription).await;
+        assert_eq!(message.keys, vec!["custom.cli_set"]);
+        assert_eq!(message.source, ConfigNotificationSource::Cli);
+        std::fs::remove_file(database_path).expect("config CLI test database should clean up");
+    }
+
+    #[tokio::test]
+    async fn delete_publishes_cli_reload_after_database_delete() {
+        let (database_url, database_path) = test_database("delete").await;
+        let (runtime, mut subscription) = test_runtime().await;
+        execute_config_command_with_runtime(
+            &database_url,
+            &ConfigCommand::Set(KeyValueArgs {
+                key: "custom.cli_delete".to_string(),
+                value: "enabled".to_string(),
+            }),
+            Some(&runtime),
+        )
+        .await
+        .expect("config CLI seed should succeed");
+        let _ = next_reload(&mut subscription).await;
+
+        execute_config_command_with_runtime(
+            &database_url,
+            &ConfigCommand::Delete(KeyArgs {
+                key: "custom.cli_delete".to_string(),
+            }),
+            Some(&runtime),
+        )
+        .await
+        .expect("config CLI delete should succeed");
+
+        let message = next_reload(&mut subscription).await;
+        assert_eq!(message.keys, vec!["custom.cli_delete"]);
+        assert_eq!(message.source, ConfigNotificationSource::Cli);
+        std::fs::remove_file(database_path).expect("config CLI test database should clean up");
+    }
+
+    #[tokio::test]
+    async fn import_publishes_one_deduplicated_cli_reload_for_all_keys() {
+        let (database_url, database_path) = test_database("import").await;
+        let input_file = std::env::temp_dir().join(format!(
+            "aster-drive-config-cli-import-{}.json",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::write(
+            &input_file,
+            r#"[{"key":"custom.cli_b","value":"b"},{"key":"custom.cli_a","value":"a"}]"#,
+        )
+        .expect("config CLI import fixture should write");
+        let (runtime, mut subscription) = test_runtime().await;
+
+        execute_config_command_with_runtime(
+            &database_url,
+            &ConfigCommand::Import(FileArgs {
+                input_file: input_file.clone(),
+            }),
+            Some(&runtime),
+        )
+        .await
+        .expect("config CLI import should succeed");
+
+        let message = next_reload(&mut subscription).await;
+        assert_eq!(message.keys, vec!["custom.cli_a", "custom.cli_b"]);
+        assert_eq!(message.source, ConfigNotificationSource::Cli);
+        std::fs::remove_file(input_file).expect("config CLI import fixture should clean up");
+        std::fs::remove_file(database_path).expect("config CLI test database should clean up");
+    }
 }

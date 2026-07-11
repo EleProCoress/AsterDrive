@@ -55,6 +55,7 @@ mod tests {
             policy_snapshot: Arc::new(crate::storage::PolicySnapshot::new()),
             config: Arc::new(crate::config::Config::default()),
             cache,
+            config_sync: aster_forge_config::ConfigSyncRuntime::disabled_for_test("aster_drive"),
             metrics: crate::metrics::NoopMetrics::arc(),
         };
 

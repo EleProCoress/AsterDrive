@@ -18,6 +18,16 @@ If you are a regular user, start with the [User Manual](/en/guide/user-guide) an
 | [Preview and Processing](./preview-processing) | Thumbnails, media metadata, archive preview, WOPI, editing, share streaming | [Online Preview and WOPI](/en/guide/preview-and-wopi), [File Editing](/en/guide/editing), [System Settings](/en/config/runtime) |
 | [System and Operations](./runtime-operations) | Startup config, runtime config, background tasks, mail, monitoring, audit, CLI, backup and upgrades | [Configuration Overview](/en/config/), [Deployment Overview](/en/deployment/), [Operations CLI](/en/deployment/ops-cli) |
 
+## Operations Quick Links
+
+| What you need to handle | Go directly to |
+| --- | --- |
+| Synchronize system-setting and config CLI changes across instances | [Configuration Synchronization](/en/config/config-sync) |
+| Check service, database, storage-policy, or consistency state | [Operations CLI](/en/deployment/ops-cli) |
+| Connect Prometheus / Grafana or inspect readiness | [Monitoring and Grafana](/en/deployment/monitoring) |
+| Run the pre-launch acceptance checklist | [Production Launch Checklist](/en/deployment/production-checklist) |
+| Back up, restore, upgrade, or roll back | [Backup and Restore](/en/deployment/backup), [Upgrade and Version Migration](/en/deployment/upgrade) |
+
 ## Backend Module Quick Reference
 
 | Module | Area | Notes |
@@ -26,7 +36,7 @@ If you are a regular user, start with the [User Manual](/en/guide/user-guide) an
 | `files::file`, `files::folder`, `workspace::team`, `share`, `files::trash`, `content::version` | Files and Workspaces | File chain, team spaces, shares, trash, versions |
 | `files::upload`, `workspace::storage`, `storage_policy::policy`, `storage::*` | Uploads and Storage | Upload sessions, storage policy selection, blob writes, driver abstraction |
 | `files::thumbnail`, `media::processing`, `media::metadata`, `files::archive::preview`, `preview::wopi` | Preview and Processing | Derived file results, online opening, preview capabilities |
-| `ops::config`, `task`, `mail::sender`, `ops::audit`, `ops::health`, `api::routes::health` | System and Operations | Hot config, background tasks, mail, audit, health checks |
+| `ops::config`, `runtime::tasks`, `task`, `mail::sender`, `ops::audit`, `ops::health`, `api::routes::health` | System and Operations | Hot config, cross-instance config reload, background tasks, mail, audit, health checks |
 
 ## How to Use This Section
 

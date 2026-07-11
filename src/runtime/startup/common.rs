@@ -15,6 +15,7 @@ pub(super) struct CommonRuntimeParts {
     pub driver_registry: Arc<DriverRegistry>,
     pub policy_snapshot: Arc<crate::storage::PolicySnapshot>,
     pub cache: Arc<dyn aster_forge_cache::CacheBackend>,
+    pub config_sync: aster_forge_config::ConfigSyncRuntime,
     pub metrics: SharedMetricsRecorder,
 }
 
@@ -45,6 +46,11 @@ pub(super) async fn prepare_common(mode: NodeRuntimeMode) -> Result<CommonRuntim
     }
 
     let cache = aster_forge_cache::create_cache(&cfg.cache).await;
+    let config_sync = aster_forge_config::build_config_sync_runtime(
+        &cfg.config_sync,
+        crate::services::ops::config::runtime::CONFIG_RELOAD_NAMESPACE,
+    )
+    .map_err(crate::services::ops::config::runtime::map_config_core_error)?;
 
     Ok(CommonRuntimeParts {
         cfg,
@@ -53,6 +59,7 @@ pub(super) async fn prepare_common(mode: NodeRuntimeMode) -> Result<CommonRuntim
         driver_registry,
         policy_snapshot,
         cache,
+        config_sync,
         metrics,
     })
 }

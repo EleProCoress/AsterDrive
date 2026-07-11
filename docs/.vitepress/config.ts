@@ -430,6 +430,7 @@ function buildZhSidebar() {
             { text: 'WebDAV 静态配置', link: '/config/webdav' },
             { text: '访问限流', link: '/config/rate-limit' },
             { text: '缓存', link: '/config/cache' },
+            { text: '配置同步', link: '/config/config-sync' },
             { text: '日志', link: '/config/logging' }
           ]
         },
@@ -546,6 +547,7 @@ function buildEnSidebar() {
             { text: 'WebDAV Static Config', link: '/en/config/webdav' },
             { text: 'Rate Limiting', link: '/en/config/rate-limit' },
             { text: 'Cache', link: '/en/config/cache' },
+            { text: 'Configuration Sync', link: '/en/config/config-sync' },
             { text: 'Logging', link: '/en/config/logging' }
           ]
         },

@@ -950,6 +950,7 @@ dependencies = [
  "aster_forge_utils",
  "async-trait",
  "futures",
+ "redis",
  "sea-orm",
  "serde",
  "serde_json",

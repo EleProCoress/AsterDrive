@@ -1,5 +1,5 @@
 ---
-description: AsterDrive 配置总览，帮助区分 config.toml、后台系统设置、存储策略、策略组、远程节点、WebDAV、限流、缓存和日志。
+description: AsterDrive 配置总览，帮助区分 config.toml、后台系统设置、存储策略、策略组、远程节点、WebDAV、限流、缓存、配置同步和日志。
 ---
 
 # 配置总览
@@ -53,6 +53,7 @@ flowchart TD
 | 改 WebDAV 路径或 WebDAV 上传硬上限 | [WebDAV](/config/webdav) |
 | 给公网入口加访问限流 | [访问限流](/config/rate-limit) |
 | 改缓存或日志输出方式 | [缓存](/config/cache) / [日志](/config/logging) |
+| 多实例间同步后台系统设置和 config CLI 修改 | [配置同步](/config/config-sync) |
 
 ## `config.toml` 在哪、怎么写
 
@@ -102,6 +103,7 @@ ASTER__WEBDAV__PREFIX=/dav
 | [database](/config/database) | 数据库连接、连接池、启动重试 |
 | [auth](/config/auth) | 登录签名密钥、MFA 加密密钥、首次纯 HTTP 引导 |
 | [cache](/config/cache) | 内存缓存 / Redis |
+| [config_sync](/config/config-sync) | 多实例运行时配置 reload 通知，默认关闭 |
 | [logging](/config/logging) | 日志级别、格式、输出文件、轮转 |
 | [webdav](/config/webdav) | WebDAV 路径前缀、上传体积硬上限 |
 | `[network_trust]` | 受信任的反向代理地址，影响真实客户端 IP 判定 |

@@ -12,7 +12,7 @@ use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 use tracing::Instrument;
 
-use super::{FollowerAppState, PrimaryAppState};
+use super::{FollowerAppState, PrimaryAppState, SharedRuntimeState};
 use crate::services::share::ShareDownloadRollbackWorker;
 use crate::services::task::SystemRuntimeTaskKind;
 use crate::utils::numbers::u128_to_u64;
@@ -465,6 +465,13 @@ pub fn spawn_primary_background_tasks(
     let mut tasks = build_background_tasks_base(&state.metrics, shutdown_token);
     let shutdown_token = tasks.shutdown_token();
 
+    if state.config_sync().enabled() {
+        tasks.push(spawn_config_reload_subscription(
+            shutdown_token.clone(),
+            state.clone(),
+        ));
+    }
+
     tasks.push(
         crate::services::share::share_download_rollback_worker_task(
             shutdown_token.clone(),
@@ -877,6 +884,12 @@ pub fn spawn_follower_background_tasks(
     tracing::info!("follower mode enabled; skipping primary-only background tasks");
     let mut tasks = build_background_tasks_base(&state.metrics, shutdown_token);
     let shutdown_token = tasks.shutdown_token();
+    if state.config_sync().enabled() {
+        tasks.push(spawn_config_reload_subscription(
+            shutdown_token.clone(),
+            state.clone(),
+        ));
+    }
     tasks.push(
         crate::storage::remote_protocol::tunnel::client::run_follower_tunnel_worker(
             state,
@@ -884,6 +897,31 @@ pub fn spawn_follower_background_tasks(
         ),
     );
     tasks
+}
+
+fn spawn_config_reload_subscription<S>(
+    shutdown_token: CancellationToken,
+    state: web::Data<S>,
+) -> impl Future<Output = ()> + Send + 'static
+where
+    S: super::SharedRuntimeState + Send + Sync + 'static,
+{
+    let runtime = state.config_sync().clone();
+    let state = state.into_inner();
+    async move {
+        if let Err(error) = crate::services::ops::config::runtime::run_config_reload_subscription(
+            state,
+            runtime,
+            shutdown_token,
+        )
+        .await
+        {
+            tracing::warn!(
+                error = %error,
+                "runtime config reload subscription stopped"
+            );
+        }
+    }
 }
 
 fn mail_outbox_dispatch_interval(state: &PrimaryAppState) -> Duration {
@@ -982,6 +1020,7 @@ mod tests {
             policy_snapshot: Arc::new(crate::storage::PolicySnapshot::new()),
             config: Arc::new(crate::config::Config::default()),
             cache,
+            config_sync: aster_forge_config::ConfigSyncRuntime::disabled_for_test("aster_drive"),
             metrics: crate::metrics::NoopMetrics::arc(),
             mail_sender: crate::services::mail::sender::memory_sender(),
             storage_change_tx,

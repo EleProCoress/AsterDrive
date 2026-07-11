@@ -27,6 +27,11 @@ backend = "memory"   # "memory" | "redis"
 endpoint = ""
 default_ttl = 3600
 
+[config_sync]
+backend = "disabled" # "disabled" | "redis"
+endpoint = ""
+topic = "aster_drive.config_reload"
+
 [logging]
 level = "info"            # trace | debug | info | warn | error
 format = "text"           # "text" | "json"

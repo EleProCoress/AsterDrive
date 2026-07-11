@@ -314,6 +314,7 @@ mod tests {
             policy_snapshot: Arc::new(PolicySnapshot::new()),
             config: Arc::new(Config::default()),
             cache,
+            config_sync: aster_forge_config::ConfigSyncRuntime::disabled_for_test("aster_drive"),
             metrics: crate::metrics::NoopMetrics::arc(),
             mail_sender: crate::services::mail::sender::memory_sender(),
             storage_change_tx,

@@ -264,6 +264,7 @@ async fn build_s3_direct_test_state() -> (PrimaryAppState, user::Model, MockDire
         policy_snapshot,
         config: Arc::new(config),
         cache,
+        config_sync: aster_forge_config::ConfigSyncRuntime::disabled_for_test("aster_drive"),
         metrics: crate::metrics::NoopMetrics::arc(),
         mail_sender: sender::runtime_sender(runtime_config),
         storage_change_tx,

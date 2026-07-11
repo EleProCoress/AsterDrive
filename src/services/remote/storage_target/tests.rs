@@ -31,6 +31,7 @@ struct TestFollowerState {
     policy_snapshot: Arc<crate::storage::PolicySnapshot>,
     config: Arc<crate::config::Config>,
     cache: Arc<dyn aster_forge_cache::CacheBackend>,
+    config_sync: aster_forge_config::ConfigSyncRuntime,
     metrics: SharedMetricsRecorder,
 }
 
@@ -61,6 +62,10 @@ impl SharedRuntimeState for TestFollowerState {
 
     fn cache(&self) -> &Arc<dyn aster_forge_cache::CacheBackend> {
         &self.cache
+    }
+
+    fn config_sync(&self) -> &aster_forge_config::ConfigSyncRuntime {
+        &self.config_sync
     }
 
     fn metrics(&self) -> &SharedMetricsRecorder {
@@ -109,6 +114,7 @@ async fn setup_state() -> TestFollowerState {
         policy_snapshot: Arc::new(crate::storage::PolicySnapshot::new()),
         config,
         cache,
+        config_sync: aster_forge_config::ConfigSyncRuntime::disabled_for_test("aster_drive"),
         metrics: crate::metrics::NoopMetrics::arc(),
     }
 }

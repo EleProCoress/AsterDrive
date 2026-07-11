@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::num::{NonZeroU32, NonZeroU64};
 
 use aster_forge_cache::CacheConfig;
+use aster_forge_config::ConfigSyncConfig;
 use aster_forge_logging::LoggingConfig;
 
 #[derive(Debug, Deserialize, Serialize, Clone, Default)]
@@ -16,6 +17,8 @@ pub struct Config {
     pub auth: AuthConfig,
     #[serde(default)]
     pub cache: CacheConfig,
+    #[serde(default = "default_config_sync")]
+    pub config_sync: ConfigSyncConfig,
     #[serde(default)]
     pub logging: LoggingConfig,
     #[serde(default)]
@@ -24,6 +27,14 @@ pub struct Config {
     pub network_trust: NetworkTrustConfig,
     #[serde(default)]
     pub rate_limit: RateLimitConfig,
+}
+
+fn default_config_sync() -> ConfigSyncConfig {
+    ConfigSyncConfig {
+        backend: aster_forge_config::CONFIG_SYNC_BACKEND_DISABLED.to_string(),
+        topic: "aster_drive.config_reload".to_string(),
+        ..ConfigSyncConfig::default()
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]

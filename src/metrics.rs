@@ -49,6 +49,25 @@ pub trait MetricsRecorder: Send + Sync {
 
     fn record_background_task_transition(&self, kind: &'static str, status: &'static str) {}
 
+    fn record_config_reload(
+        &self,
+        source: &'static str,
+        decision: &'static str,
+        status: &'static str,
+        changed_keys: u64,
+        duration_seconds: f64,
+    ) {
+    }
+
+    fn record_config_mutation(
+        &self,
+        source: &'static str,
+        operation: &'static str,
+        status: &'static str,
+        changed_keys: u64,
+    ) {
+    }
+
     fn set_background_tasks_pending(&self, pending: u64) {}
 
     fn record_storage_driver_operation(
@@ -324,6 +343,29 @@ impl MetricsRecorder for DriveMetricsRecorder {
 
     fn record_auth_event(&self, action: &'static str, status: &'static str, reason: &'static str) {
         self.forge.record_auth_event(action, status, reason);
+    }
+
+    fn record_config_reload(
+        &self,
+        source: &'static str,
+        decision: &'static str,
+        status: &'static str,
+        changed_keys: u64,
+        duration_seconds: f64,
+    ) {
+        self.forge
+            .record_config_reload(source, decision, status, changed_keys, duration_seconds);
+    }
+
+    fn record_config_mutation(
+        &self,
+        source: &'static str,
+        operation: &'static str,
+        status: &'static str,
+        changed_keys: u64,
+    ) {
+        self.forge
+            .record_config_mutation(source, operation, status, changed_keys);
     }
 
     fn record_file_upload(&self, mode: &'static str, status: &'static str) {

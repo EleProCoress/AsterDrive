@@ -243,6 +243,7 @@ async fn build_oauth_test_state(
         policy_snapshot: Arc::new(crate::storage::PolicySnapshot::new()),
         config: Arc::new(config),
         cache,
+        config_sync: aster_forge_config::ConfigSyncRuntime::disabled_for_test("aster_drive"),
         metrics: crate::metrics::NoopMetrics::arc(),
         mail_sender: crate::services::mail::sender::runtime_sender(runtime_config),
         storage_change_tx,

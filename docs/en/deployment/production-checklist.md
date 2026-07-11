@@ -14,6 +14,7 @@ Before making AsterDrive available to real users, use this page for the final ch
 | Login security | `jwt_secret` is fixed, and HTTPS-only Cookies are enabled | [Login and Sessions](/en/config/auth) |
 | Storage route | Default storage policy, default policy group, and user/team bindings match expectations | [Storage Policies](/en/config/storage) |
 | Mail | Registration activation, password reset, and email rebinding messages can be delivered | [Mail](/en/config/mail) |
+| Multi-instance configuration sync | Instances share one database, Redis endpoint, and topic, and cross-instance updates have been verified | [Configuration Synchronization](/en/config/config-sync) |
 | Monitoring | If Prometheus is needed, the `metrics` feature is compiled as needed, and `/health/metrics` access sources are restricted | [Monitoring and Grafana](/en/deployment/monitoring) |
 | Backup | At least one backup has been completed, and the restore sequence is known | [Backup and Restore](/en/deployment/backup) |
 | Upgrade | The current version source is known, and release notes have been reviewed before upgrade | [Upgrade and Version Migration](/en/deployment/upgrade) |
@@ -186,7 +187,21 @@ AsterDrive currently does not apply application-layer authentication to `/health
 
 Grafana dashboard and local Prometheus + Grafana examples are in [Monitoring and Grafana](/en/deployment/monitoring).
 
-## 10. Final Acceptance Pass
+## 10. Multi-Instance Configuration Synchronization
+
+If only one AsterDrive process runs, keep `[config_sync].backend = "disabled"`.
+
+For multiple instances, confirm:
+
+- every instance connects to the same authoritative database
+- every instance can reach the configured Redis endpoint
+- every instance uses exactly the same `aster_drive.config_reload` topic
+- changing a system setting through instance A becomes visible through instance B promptly
+- the Redis outage and recovery procedure has been rehearsed
+
+See [Configuration Synchronization](/en/config/config-sync) for the complete setup, failure behavior, and verification flow.
+
+## 11. Final Acceptance Pass
 
 Before launch, use the real domain, real accounts, and real clients to run through:
 

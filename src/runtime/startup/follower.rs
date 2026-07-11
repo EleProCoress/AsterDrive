@@ -30,6 +30,7 @@ pub async fn prepare_follower() -> Result<PreparedFollowerRuntime> {
             policy_snapshot: common.policy_snapshot,
             config: common.cfg,
             cache: common.cache,
+            config_sync: common.config_sync,
             metrics: common.metrics,
         },
     })

@@ -25,6 +25,7 @@ pub struct PrimaryAppState {
     pub policy_snapshot: Arc<PolicySnapshot>,
     pub config: Arc<Config>,
     pub cache: Arc<dyn aster_forge_cache::CacheBackend>,
+    pub config_sync: aster_forge_config::ConfigSyncRuntime,
     pub metrics: SharedMetricsRecorder,
     pub mail_sender: Arc<dyn MailSender>,
     /// 文件/文件夹变更广播（SSE 消费）
@@ -45,6 +46,7 @@ pub struct FollowerAppState {
     pub policy_snapshot: Arc<PolicySnapshot>,
     pub config: Arc<Config>,
     pub cache: Arc<dyn aster_forge_cache::CacheBackend>,
+    pub config_sync: aster_forge_config::ConfigSyncRuntime,
     pub metrics: SharedMetricsRecorder,
 }
 
@@ -56,6 +58,7 @@ pub trait SharedRuntimeState {
     fn policy_snapshot(&self) -> &Arc<PolicySnapshot>;
     fn config(&self) -> &Arc<Config>;
     fn cache(&self) -> &Arc<dyn aster_forge_cache::CacheBackend>;
+    fn config_sync(&self) -> &aster_forge_config::ConfigSyncRuntime;
     fn metrics(&self) -> &SharedMetricsRecorder;
 }
 
@@ -112,6 +115,7 @@ impl From<&PrimaryAppState> for FollowerAppState {
             policy_snapshot: state.policy_snapshot.clone(),
             config: state.config.clone(),
             cache: state.cache.clone(),
+            config_sync: state.config_sync.clone(),
             metrics: state.metrics.clone(),
         }
     }
@@ -150,6 +154,10 @@ impl SharedRuntimeState for PrimaryAppState {
 
     fn cache(&self) -> &Arc<dyn aster_forge_cache::CacheBackend> {
         &self.cache
+    }
+
+    fn config_sync(&self) -> &aster_forge_config::ConfigSyncRuntime {
+        &self.config_sync
     }
 
     fn metrics(&self) -> &SharedMetricsRecorder {
@@ -216,6 +224,10 @@ impl SharedRuntimeState for FollowerAppState {
         &self.cache
     }
 
+    fn config_sync(&self) -> &aster_forge_config::ConfigSyncRuntime {
+        &self.config_sync
+    }
+
     fn metrics(&self) -> &SharedMetricsRecorder {
         &self.metrics
     }
@@ -234,6 +246,7 @@ pub(crate) mod test_support {
 
     pub(crate) struct CacheOnlyState {
         cache: Arc<dyn aster_forge_cache::CacheBackend>,
+        config_sync: aster_forge_config::ConfigSyncRuntime,
     }
 
     impl CacheOnlyState {
@@ -244,6 +257,9 @@ pub(crate) mod test_support {
                     ..Default::default()
                 })
                 .await,
+                config_sync: aster_forge_config::ConfigSyncRuntime::disabled_for_test(
+                    "aster_drive",
+                ),
             }
         }
     }
@@ -275,6 +291,10 @@ pub(crate) mod test_support {
 
         fn cache(&self) -> &Arc<dyn aster_forge_cache::CacheBackend> {
             &self.cache
+        }
+
+        fn config_sync(&self) -> &aster_forge_config::ConfigSyncRuntime {
+            &self.config_sync
         }
 
         fn metrics(&self) -> &SharedMetricsRecorder {
@@ -323,6 +343,7 @@ mod tests {
             policy_snapshot: Arc::new(PolicySnapshot::new()),
             config: Arc::new(Config::default()),
             cache,
+            config_sync: aster_forge_config::ConfigSyncRuntime::disabled_for_test("aster_drive"),
             metrics: crate::metrics::NoopMetrics::arc(),
             mail_sender: crate::services::mail::sender::memory_sender(),
             storage_change_tx,

@@ -1,5 +1,5 @@
 ---
-description: AsterDrive configuration overview, explaining config.toml, admin system settings, storage policies, policy groups, follower nodes, WebDAV, rate limiting, cache, and logging.
+description: AsterDrive configuration overview, explaining config.toml, admin system settings, storage policies, policy groups, follower nodes, WebDAV, rate limiting, cache, configuration synchronization, and logging.
 ---
 
 # Configuration Overview
@@ -53,6 +53,7 @@ Anything the service must know before startup usually belongs in `config.toml`. 
 | Change the WebDAV path or hard WebDAV upload limit | [WebDAV](/en/config/webdav) |
 | Add rate limiting to the public entry point | [Rate Limiting](/en/config/rate-limit) |
 | Change cache or log output behavior | [Cache](/en/config/cache) / [Logging](/en/config/logging) |
+| Synchronize system-setting and config CLI changes across instances | [Configuration Synchronization](/en/config/config-sync) |
 
 ## Where Is `config.toml`, and How Should I Write It?
 
@@ -102,6 +103,7 @@ One-time bootstrap inputs such as enrollment tokens can be removed after success
 | [database](/en/config/database) | Database connection, connection pool, startup retries |
 | [auth](/en/config/auth) | Login signing secret, MFA encryption key, first plain-HTTP bootstrap |
 | [cache](/en/config/cache) | Memory cache / Redis |
+| [config_sync](/en/config/config-sync) | Multi-instance runtime configuration reload notifications, disabled by default |
 | [logging](/en/config/logging) | Log level, format, output file, rotation |
 | [webdav](/en/config/webdav) | WebDAV path prefix and hard upload size limit |
 | `[network_trust]` | Trusted reverse proxy addresses, affecting real client IP detection |
