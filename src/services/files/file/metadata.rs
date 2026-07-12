@@ -96,7 +96,7 @@ pub(crate) async fn update_in_scope(
     let mime_type = f.mime_type.clone();
     let mut active: file::ActiveModel = f.into();
     if let Some(n) = name {
-        let classification = crate::utils::file_classification::classify_file(&n, &mime_type);
+        let classification = aster_forge_file_classification::classify_file(&n, &mime_type);
         active.name = Set(n);
         active.extension = Set(classification.extension);
         active.compound_extension = Set(classification.compound_extension);

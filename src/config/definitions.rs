@@ -7,7 +7,13 @@
 //! 子模块通过 `pub use crate::config::definitions::*_KEY` 重导出，
 //! 不再各自定义本地 `const`，确保单一数据源。
 
+use crate::config::{
+    audit, auth_runtime, avatar, branding, cors, local_email_policy, media_processing,
+    offline_download, operations, site_url, webdav, wopi,
+};
+use crate::services::preview::apps;
 use crate::types::ConfigValueType;
+use aster_forge_config::{ConfigCoreError, ConfigValueLookup, Result as ConfigCoreResult};
 
 // ── Category keys ───────────────────────────────────────────────────────────
 pub const CONFIG_CATEGORY_SITE: &str = "site";
@@ -259,6 +265,306 @@ fn default_webdav_system_file_patterns() -> String {
     }
 }
 
+fn map_normalizer_result(result: crate::errors::Result<String>) -> ConfigCoreResult<String> {
+    result.map_err(|error| ConfigCoreError::invalid_value(error.message().to_string()))
+}
+
+fn map_mail_normalizer_result(
+    result: Result<String, aster_forge_mail::MailConfigError>,
+) -> ConfigCoreResult<String> {
+    result.map_err(|error| ConfigCoreError::invalid_value(error.to_string()))
+}
+
+macro_rules! value_normalizer {
+    ($name:ident, $normalize:path) => {
+        fn $name(
+            _lookup: &dyn ConfigValueLookup,
+            _key: &str,
+            value: &str,
+        ) -> ConfigCoreResult<String> {
+            map_normalizer_result($normalize(value))
+        }
+    };
+}
+
+macro_rules! keyed_normalizer {
+    ($name:ident, $normalize:path) => {
+        fn $name(
+            _lookup: &dyn ConfigValueLookup,
+            key: &str,
+            value: &str,
+        ) -> ConfigCoreResult<String> {
+            map_normalizer_result($normalize(key, value))
+        }
+    };
+}
+
+value_normalizer!(
+    normalize_avatar_dir,
+    avatar::normalize_avatar_dir_config_value
+);
+value_normalizer!(
+    normalize_recorded_actions,
+    audit::normalize_recorded_actions_config_value
+);
+value_normalizer!(
+    normalize_cookie_secure,
+    auth_runtime::normalize_cookie_secure_config_value
+);
+value_normalizer!(
+    normalize_allow_user_registration,
+    auth_runtime::normalize_allow_user_registration_config_value
+);
+value_normalizer!(
+    normalize_register_activation_enabled,
+    auth_runtime::normalize_register_activation_enabled_config_value
+);
+keyed_normalizer!(
+    normalize_email_code_login_bool,
+    auth_runtime::normalize_email_code_login_bool_config_value
+);
+keyed_normalizer!(
+    normalize_token_ttl,
+    auth_runtime::normalize_token_ttl_config_value
+);
+keyed_normalizer!(
+    normalize_local_email_policy,
+    local_email_policy::normalize_local_email_policy_config_value
+);
+value_normalizer!(normalize_cors_enabled, cors::normalize_enabled_config_value);
+value_normalizer!(normalize_cors_max_age, cors::normalize_max_age_config_value);
+value_normalizer!(
+    normalize_webdav_lock_limit,
+    webdav::normalize_max_active_locks_per_user_config_value
+);
+keyed_normalizer!(
+    normalize_operation_interval,
+    operations::normalize_interval_config_value
+);
+value_normalizer!(
+    normalize_offline_download_engine,
+    operations::normalize_offline_download_engine_config_value
+);
+value_normalizer!(
+    normalize_offline_download_rpc_url,
+    operations::normalize_offline_download_aria2_rpc_url_config_value
+);
+value_normalizer!(
+    normalize_offline_download_temp_dir,
+    operations::normalize_offline_download_temp_dir_config_value
+);
+value_normalizer!(
+    normalize_image_preview_preference,
+    operations::normalize_frontend_image_preview_preference_config_value
+);
+keyed_normalizer!(
+    normalize_share_stream_ttl,
+    operations::normalize_share_stream_session_ttl_config_value
+);
+keyed_normalizer!(
+    normalize_concurrency,
+    operations::normalize_concurrency_config_value
+);
+keyed_normalizer!(
+    normalize_queue_capacity,
+    operations::normalize_queue_capacity_config_value
+);
+keyed_normalizer!(
+    normalize_attempts,
+    operations::normalize_attempts_config_value
+);
+keyed_normalizer!(
+    normalize_list_limit,
+    operations::normalize_list_max_limit_config_value
+);
+keyed_normalizer!(
+    normalize_operation_bool,
+    operations::normalize_bool_config_value
+);
+keyed_normalizer!(
+    normalize_derivative_dimension,
+    operations::normalize_derivative_dimension_config_value
+);
+keyed_normalizer!(normalize_bytes, operations::normalize_bytes_config_value);
+keyed_normalizer!(
+    normalize_non_negative_u64,
+    operations::normalize_non_negative_u64_config_value
+);
+value_normalizer!(
+    normalize_media_processing_registry,
+    media_processing::normalize_media_processing_registry_config_value
+);
+value_normalizer!(
+    normalize_offline_download_registry,
+    offline_download::normalize_offline_download_engine_registry_config_value
+);
+value_normalizer!(
+    normalize_public_site_url,
+    site_url::normalize_public_site_url_config_value
+);
+value_normalizer!(
+    normalize_branding_title,
+    branding::normalize_title_config_value
+);
+value_normalizer!(
+    normalize_branding_description,
+    branding::normalize_description_config_value
+);
+value_normalizer!(
+    normalize_branding_favicon_url,
+    branding::normalize_favicon_url_config_value
+);
+value_normalizer!(
+    normalize_branding_wordmark_dark_url,
+    branding::normalize_wordmark_dark_url_config_value
+);
+value_normalizer!(
+    normalize_branding_wordmark_light_url,
+    branding::normalize_wordmark_light_url_config_value
+);
+value_normalizer!(
+    normalize_preview_apps,
+    apps::normalize_public_preview_apps_config_value
+);
+keyed_normalizer!(normalize_wopi_ttl, wopi::normalize_ttl_config_value);
+
+fn normalize_trimmed(
+    _lookup: &dyn ConfigValueLookup,
+    _key: &str,
+    value: &str,
+) -> ConfigCoreResult<String> {
+    Ok(value.trim().to_string())
+}
+
+fn normalize_cors_allowed_origins(
+    lookup: &dyn ConfigValueLookup,
+    _key: &str,
+    value: &str,
+) -> ConfigCoreResult<String> {
+    let normalized = map_normalizer_result(cors::normalize_allowed_origins_config_value(value))?;
+    let parsed = cors::parse_allowed_origins_value(&normalized)
+        .map_err(|error| ConfigCoreError::invalid_value(error.message().to_string()))?;
+    let allow_credentials = lookup
+        .get_config_value(CORS_ALLOW_CREDENTIALS_KEY)
+        .and_then(|raw| crate::config::bool_like::parse_bool_like(&raw))
+        .unwrap_or(cors::DEFAULT_CORS_ALLOW_CREDENTIALS);
+    cors::validate_runtime_cors_combination(&parsed, allow_credentials)
+        .map_err(|error| ConfigCoreError::invalid_value(error.message().to_string()))?;
+    Ok(normalized)
+}
+
+fn normalize_cors_allow_credentials(
+    lookup: &dyn ConfigValueLookup,
+    _key: &str,
+    value: &str,
+) -> ConfigCoreResult<String> {
+    let normalized = map_normalizer_result(cors::normalize_allow_credentials_config_value(value))?;
+    let current_origins = lookup
+        .get_config_value(CORS_ALLOWED_ORIGINS_KEY)
+        .unwrap_or_default();
+    let parsed = cors::parse_allowed_origins_value(&current_origins)
+        .map_err(|error| ConfigCoreError::invalid_value(error.message().to_string()))?;
+    cors::validate_runtime_cors_combination(&parsed, normalized == "true")
+        .map_err(|error| ConfigCoreError::invalid_value(error.message().to_string()))?;
+    Ok(normalized)
+}
+
+macro_rules! mail_value_normalizer {
+    ($name:ident, $normalize:path) => {
+        fn $name(
+            _lookup: &dyn ConfigValueLookup,
+            _key: &str,
+            value: &str,
+        ) -> ConfigCoreResult<String> {
+            map_mail_normalizer_result($normalize(value))
+        }
+    };
+}
+
+mail_value_normalizer!(
+    normalize_smtp_host,
+    aster_forge_mail::normalize_smtp_host_config_value
+);
+mail_value_normalizer!(
+    normalize_smtp_port,
+    aster_forge_mail::normalize_smtp_port_config_value
+);
+mail_value_normalizer!(
+    normalize_mail_address,
+    aster_forge_mail::normalize_mail_address_config_value
+);
+mail_value_normalizer!(
+    normalize_mail_name,
+    aster_forge_mail::normalize_mail_name_config_value
+);
+mail_value_normalizer!(
+    normalize_mail_security,
+    aster_forge_mail::normalize_mail_security_config_value
+);
+
+fn normalize_mail_template_subject(
+    _lookup: &dyn ConfigValueLookup,
+    key: &str,
+    value: &str,
+) -> ConfigCoreResult<String> {
+    map_mail_normalizer_result(
+        aster_forge_mail::normalize_mail_template_subject_config_value(key, value),
+    )
+}
+
+fn normalize_mail_template_body(
+    _lookup: &dyn ConfigValueLookup,
+    key: &str,
+    value: &str,
+) -> ConfigCoreResult<String> {
+    map_mail_normalizer_result(aster_forge_mail::normalize_mail_template_body_config_value(
+        key, value,
+    ))
+}
+
+fn validate_email_code_mail_settings(
+    lookup: &dyn ConfigValueLookup,
+    _key: &str,
+    normalized_value: &str,
+) -> ConfigCoreResult<()> {
+    if normalized_value != "true" {
+        return Ok(());
+    }
+
+    let settings = aster_forge_mail::MailRuntimeSettings {
+        smtp_host: lookup
+            .get_config_value(MAIL_SMTP_HOST_KEY)
+            .unwrap_or_default(),
+        smtp_port: lookup
+            .get_config_value(MAIL_SMTP_PORT_KEY)
+            .and_then(|raw| aster_forge_mail::parse_smtp_port(&raw))
+            .unwrap_or(aster_forge_mail::DEFAULT_MAIL_SMTP_PORT),
+        smtp_username: lookup
+            .get_config_value(MAIL_SMTP_USERNAME_KEY)
+            .unwrap_or_default(),
+        smtp_password: lookup
+            .get_config_value(MAIL_SMTP_PASSWORD_KEY)
+            .unwrap_or_default(),
+        from_address: lookup
+            .get_config_value(MAIL_FROM_ADDRESS_KEY)
+            .unwrap_or_default(),
+        from_name: lookup
+            .get_config_value(MAIL_FROM_NAME_KEY)
+            .unwrap_or_default(),
+        encryption_enabled: lookup
+            .get_config_value(MAIL_SECURITY_KEY)
+            .and_then(|raw| crate::config::bool_like::parse_bool_like(&raw))
+            .unwrap_or(aster_forge_mail::DEFAULT_MAIL_SECURITY),
+    };
+    if settings.is_ready_for_delivery() {
+        Ok(())
+    } else {
+        Err(ConfigCoreError::invalid_value(
+            "email code MFA requires complete SMTP mail configuration",
+        ))
+    }
+}
+
 /// 单条配置定义由 Forge 提供结构，具体 key 与产品语义仍由 Drive 持有。
 pub type ConfigDef = aster_forge_config::ConfigDefinition;
 
@@ -275,6 +581,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_AUTH,
         description: "Whether auth and share verification cookies require HTTPS",
+        normalize_fn: Some(normalize_cookie_secure),
         ..aster_forge_config::ConfigDefinition::private_system()
     },
     ConfigDef {
@@ -287,6 +594,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_AUTH,
         description: "Access token lifetime in seconds",
+        normalize_fn: Some(normalize_token_ttl),
         ..aster_forge_config::ConfigDefinition::private_system()
     },
     ConfigDef {
@@ -299,6 +607,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_AUTH,
         description: "Refresh token lifetime in seconds",
+        normalize_fn: Some(normalize_token_ttl),
         ..aster_forge_config::ConfigDefinition::private_system()
     },
     ConfigDef {
@@ -311,6 +620,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_AUTH,
         description: "Registration activation link lifetime in seconds",
+        normalize_fn: Some(normalize_token_ttl),
         ..aster_forge_config::ConfigDefinition::private_system()
     },
     ConfigDef {
@@ -323,6 +633,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_AUTH,
         description: "Contact change confirmation link lifetime in seconds",
+        normalize_fn: Some(normalize_token_ttl),
         ..aster_forge_config::ConfigDefinition::private_system()
     },
     ConfigDef {
@@ -335,6 +646,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_AUTH,
         description: "Password reset link lifetime in seconds",
+        normalize_fn: Some(normalize_token_ttl),
         ..aster_forge_config::ConfigDefinition::private_system()
     },
     ConfigDef {
@@ -347,6 +659,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_AUTH,
         description: "Admin-created user invitation link lifetime in seconds",
+        normalize_fn: Some(normalize_token_ttl),
         ..aster_forge_config::ConfigDefinition::private_system()
     },
     ConfigDef {
@@ -359,6 +672,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_AUTH,
         description: "Minimum cooldown between verification email resends in seconds",
+        normalize_fn: Some(normalize_token_ttl),
         ..aster_forge_config::ConfigDefinition::private_system()
     },
     ConfigDef {
@@ -371,6 +685,8 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_AUTH,
         description: "Allow verified-email users to complete MFA with a one-time email code when mail is configured",
+        normalize_fn: Some(normalize_email_code_login_bool),
+        dependency_validator_fn: Some(validate_email_code_mail_settings),
         ..aster_forge_config::ConfigDefinition::private_system()
     },
     ConfigDef {
@@ -383,6 +699,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_AUTH,
         description: "Allow users with TOTP MFA to use email code MFA as a fallback method",
+        normalize_fn: Some(normalize_email_code_login_bool),
         ..aster_forge_config::ConfigDefinition::private_system()
     },
     ConfigDef {
@@ -395,6 +712,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_AUTH,
         description: "Maximum email MFA login code lifetime in seconds; actual lifetime is capped by the remaining MFA challenge time",
+        normalize_fn: Some(normalize_token_ttl),
         ..aster_forge_config::ConfigDefinition::private_system()
     },
     ConfigDef {
@@ -407,6 +725,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_AUTH,
         description: "Minimum cooldown between email MFA login code sends in seconds",
+        normalize_fn: Some(normalize_token_ttl),
         ..aster_forge_config::ConfigDefinition::private_system()
     },
     ConfigDef {
@@ -419,6 +738,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_AUTH,
         description: "Minimum cooldown between password reset email requests for the same user in seconds",
+        normalize_fn: Some(normalize_token_ttl),
         ..aster_forge_config::ConfigDefinition::private_system()
     },
     // ── WebDAV ──────────────────────────────────────────────
@@ -444,6 +764,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_WEBDAV,
         description: "Maximum active WebDAV locks a single user can hold before new LOCK requests are rejected",
+        normalize_fn: Some(normalize_webdav_lock_limit),
         ..aster_forge_config::ConfigDefinition::private_system()
     },
     ConfigDef {
@@ -493,6 +814,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_NETWORK,
         description: "Enable CORS handling for cross-origin browser requests. When disabled, the server skips all CORS headers and enforcement",
+        normalize_fn: Some(normalize_cors_enabled),
         ..aster_forge_config::ConfigDefinition::private_system()
     },
     ConfigDef {
@@ -505,6 +827,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_NETWORK,
         description: "Comma-separated CORS origin whitelist. Empty = skip CORS headers and let the browser block cross-origin access, '*' = allow any origin",
+        normalize_fn: Some(normalize_cors_allowed_origins),
         ..aster_forge_config::ConfigDefinition::private_system()
     },
     ConfigDef {
@@ -517,6 +840,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_NETWORK,
         description: "Whether CORS responses include Access-Control-Allow-Credentials",
+        normalize_fn: Some(normalize_cors_allow_credentials),
         ..aster_forge_config::ConfigDefinition::private_system()
     },
     ConfigDef {
@@ -529,6 +853,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_NETWORK,
         description: "CORS preflight cache duration in seconds",
+        normalize_fn: Some(normalize_cors_max_age),
         ..aster_forge_config::ConfigDefinition::private_system()
     },
     // ── Operations ──────────────────────────────────────────
@@ -544,6 +869,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_RUNTIME_MAIL,
         description: "Seconds between mail outbox dispatch polls",
+        normalize_fn: Some(normalize_operation_interval),
         ..aster_forge_config::ConfigDefinition::private_system()
     },
     ConfigDef {
@@ -558,6 +884,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_RUNTIME_BACKGROUND_TASK,
         description: "Seconds between background task dispatch polls",
+        normalize_fn: Some(normalize_operation_interval),
         ..aster_forge_config::ConfigDefinition::private_system()
     },
     ConfigDef {
@@ -573,6 +900,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_RUNTIME_BACKGROUND_TASK,
         description: "Maximum seconds between background task dispatch polls after idle backoff",
+        normalize_fn: Some(normalize_operation_interval),
         ..aster_forge_config::ConfigDefinition::private_system()
     },
     ConfigDef {
@@ -587,6 +915,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_RUNTIME_BACKGROUND_TASK,
         description: "Reserved fallback concurrency cap; currently unused until future task kinds are assigned to the fallback lane",
+        normalize_fn: Some(normalize_concurrency),
         ..aster_forge_config::ConfigDefinition::private_system()
     },
     ConfigDef {
@@ -601,6 +930,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_RUNTIME_BACKGROUND_TASK,
         description: "Maximum number of archive background tasks the server may execute at the same time",
+        normalize_fn: Some(normalize_concurrency),
         ..aster_forge_config::ConfigDefinition::private_system()
     },
     ConfigDef {
@@ -615,6 +945,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_RUNTIME_BACKGROUND_TASK,
         description: "Maximum number of thumbnail background tasks the server may execute at the same time",
+        normalize_fn: Some(normalize_concurrency),
         ..aster_forge_config::ConfigDefinition::private_system()
     },
     ConfigDef {
@@ -630,6 +961,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_RUNTIME_BACKGROUND_TASK,
         description: "Maximum number of storage policy migration tasks the server may execute at the same time",
+        normalize_fn: Some(normalize_concurrency),
         ..aster_forge_config::ConfigDefinition::private_system()
     },
     ConfigDef {
@@ -642,6 +974,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_RUNTIME_BACKGROUND_TASK,
         description: "Maximum number of attempts for workspace background tasks before they permanently fail",
+        normalize_fn: Some(normalize_attempts),
         ..aster_forge_config::ConfigDefinition::private_system()
     },
     ConfigDef {
@@ -656,6 +989,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_RUNTIME_LIMITS,
         description: "Maximum buffered shared download rollback jobs before overflow aggregation is used",
+        normalize_fn: Some(normalize_queue_capacity),
         ..aster_forge_config::ConfigDefinition::private_system()
     },
     ConfigDef {
@@ -668,6 +1002,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_RUNTIME_SHARE_STREAM,
         description: "Lifetime in seconds for shared file stream sessions",
+        normalize_fn: Some(normalize_share_stream_ttl),
         ..aster_forge_config::ConfigDefinition::private_system()
     },
     ConfigDef {
@@ -682,6 +1017,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_RUNTIME_MAINTENANCE,
         description: "Seconds between periodic maintenance cleanup runs",
+        normalize_fn: Some(normalize_operation_interval),
         ..aster_forge_config::ConfigDefinition::private_system()
     },
     ConfigDef {
@@ -694,6 +1030,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_RUNTIME_MAINTENANCE,
         description: "Seconds between full blob reconciliation runs",
+        normalize_fn: Some(normalize_operation_interval),
         ..aster_forge_config::ConfigDefinition::private_system()
     },
     ConfigDef {
@@ -708,6 +1045,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_RUNTIME_MAINTENANCE,
         description: "Seconds between periodic system health checks for database, cache, and remote nodes",
+        normalize_fn: Some(normalize_operation_interval),
         ..aster_forge_config::ConfigDefinition::private_system()
     },
     ConfigDef {
@@ -720,6 +1058,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_RUNTIME_LIMITS,
         description: "Maximum page size accepted by team member listing endpoints",
+        normalize_fn: Some(normalize_list_limit),
         ..aster_forge_config::ConfigDefinition::private_system()
     },
     ConfigDef {
@@ -732,6 +1071,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_RUNTIME_LIMITS,
         description: "Maximum page size accepted by background task listing endpoints",
+        normalize_fn: Some(normalize_list_limit),
         ..aster_forge_config::ConfigDefinition::private_system()
     },
     // ── Storage ─────────────────────────────────────────────
@@ -805,6 +1145,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_FILE_PROCESSING_OFFLINE_DOWNLOAD,
         description: "Offline download engine: builtin or aria2. builtin remains the default self-contained engine.",
+        normalize_fn: Some(normalize_offline_download_engine),
         ..aster_forge_config::ConfigDefinition::private_system()
     },
     ConfigDef {
@@ -817,6 +1158,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_FILE_PROCESSING_OFFLINE_DOWNLOAD,
         description: "Ordered offline download engine registry. Enabled engines are tried in order; an empty enabled set disables link import.",
+        normalize_fn: Some(normalize_offline_download_registry),
         ..aster_forge_config::ConfigDefinition::private_system()
     },
     ConfigDef {
@@ -831,6 +1173,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_FILE_PROCESSING_OFFLINE_DOWNLOAD,
         description: "Maximum file size allowed for offline HTTP/HTTPS downloads in bytes. Tune this together with offline_download_request_timeout_secs; the 1 GiB / 600s defaults require roughly 1.7 MiB/s sustained throughput.",
+        normalize_fn: Some(normalize_bytes),
         ..aster_forge_config::ConfigDefinition::private_system()
     },
     ConfigDef {
@@ -845,6 +1188,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_FILE_PROCESSING_OFFLINE_DOWNLOAD,
         description: "Maximum offline HTTP/HTTPS download speed in MB/s (0 = unlimited). If set below the throughput needed by offline_download_max_file_size_bytes and offline_download_request_timeout_secs, large downloads will time out.",
+        normalize_fn: Some(normalize_non_negative_u64),
         ..aster_forge_config::ConfigDefinition::private_system()
     },
     ConfigDef {
@@ -859,6 +1203,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_FILE_PROCESSING_OFFLINE_DOWNLOAD,
         description: "Maximum number of offline download tasks executed concurrently",
+        normalize_fn: Some(normalize_concurrency),
         ..aster_forge_config::ConfigDefinition::private_system()
     },
     ConfigDef {
@@ -873,6 +1218,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_FILE_PROCESSING_OFFLINE_DOWNLOAD,
         description: "Timeout in seconds for offline download HTTP requests. Tune this with offline_download_max_file_size_bytes and offline_download_max_mb_per_sec; the 1 GiB / 600s defaults require roughly 1.7 MiB/s sustained throughput.",
+        normalize_fn: Some(normalize_operation_interval),
         ..aster_forge_config::ConfigDefinition::private_system()
     },
     ConfigDef {
@@ -885,6 +1231,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_FILE_PROCESSING_OFFLINE_DOWNLOAD,
         description: "Optional absolute staging directory for offline download files. AsterDrive and external downloaders such as aria2 must both be able to access the same path. Empty uses the normal server temp dir.",
+        normalize_fn: Some(normalize_offline_download_temp_dir),
         ..aster_forge_config::ConfigDefinition::private_system()
     },
     ConfigDef {
@@ -897,6 +1244,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_FILE_PROCESSING_OFFLINE_DOWNLOAD,
         description: "aria2 JSON-RPC endpoint used when offline_download_engine is aria2, for example http://127.0.0.1:6800/jsonrpc",
+        normalize_fn: Some(normalize_offline_download_rpc_url),
         ..aster_forge_config::ConfigDefinition::private_system()
     },
     ConfigDef {
@@ -909,6 +1257,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: true,
         category: CONFIG_CATEGORY_FILE_PROCESSING_OFFLINE_DOWNLOAD,
         description: "aria2 JSON-RPC secret. Stored separately from task payloads and sent as token:<secret>.",
+        normalize_fn: Some(normalize_trimmed),
         ..aster_forge_config::ConfigDefinition::private_system()
     },
     ConfigDef {
@@ -924,6 +1273,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_FILE_PROCESSING_OFFLINE_DOWNLOAD,
         description: "Timeout in seconds for individual aria2 JSON-RPC requests. The full download duration is still controlled by offline_download_request_timeout_secs.",
+        normalize_fn: Some(normalize_operation_interval),
         ..aster_forge_config::ConfigDefinition::private_system()
     },
     ConfigDef {
@@ -936,6 +1286,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_FILE_PROCESSING_OFFLINE_DOWNLOAD,
         description: "aria2 split option for offline downloads. This is an administrator-controlled safe subset, not arbitrary aria2 option passthrough.",
+        normalize_fn: Some(normalize_bytes),
         ..aster_forge_config::ConfigDefinition::private_system()
     },
     ConfigDef {
@@ -951,6 +1302,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_FILE_PROCESSING_OFFLINE_DOWNLOAD,
         description: "aria2 max-connection-per-server option for offline downloads.",
+        normalize_fn: Some(normalize_bytes),
         ..aster_forge_config::ConfigDefinition::private_system()
     },
     ConfigDef {
@@ -966,6 +1318,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_FILE_PROCESSING_OFFLINE_DOWNLOAD,
         description: "aria2 lowest-speed-limit option in bytes per second. Use 0 to disable this aria2-side abort threshold.",
+        normalize_fn: Some(normalize_non_negative_u64),
         ..aster_forge_config::ConfigDefinition::private_system()
     },
     ConfigDef {
@@ -980,6 +1333,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_FILE_PROCESSING_ARCHIVE_EXTRACT,
         description: "Maximum source archive file bytes accepted for online archive extraction",
+        normalize_fn: Some(normalize_bytes),
         ..aster_forge_config::ConfigDefinition::private_system()
     },
     ConfigDef {
@@ -994,6 +1348,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_FILE_PROCESSING_ARCHIVE_EXTRACT,
         description: "Maximum total temporary bytes allowed for archive extract staging, including the downloaded source archive and extracted files",
+        normalize_fn: Some(normalize_bytes),
         ..aster_forge_config::ConfigDefinition::private_system()
     },
     ConfigDef {
@@ -1008,6 +1363,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_FILE_PROCESSING_ARCHIVE_EXTRACT,
         description: "Maximum total uncompressed file bytes accepted inside a ZIP archive before import",
+        normalize_fn: Some(normalize_bytes),
         ..aster_forge_config::ConfigDefinition::private_system()
     },
     ConfigDef {
@@ -1020,6 +1376,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_FILE_PROCESSING_ARCHIVE_EXTRACT,
         description: "Maximum number of central-directory entries accepted in a ZIP archive",
+        normalize_fn: Some(normalize_bytes),
         ..aster_forge_config::ConfigDefinition::private_system()
     },
     ConfigDef {
@@ -1032,6 +1389,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_FILE_PROCESSING_ARCHIVE_EXTRACT,
         description: "Maximum number of file entries accepted in a ZIP archive",
+        normalize_fn: Some(normalize_bytes),
         ..aster_forge_config::ConfigDefinition::private_system()
     },
     ConfigDef {
@@ -1046,6 +1404,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_FILE_PROCESSING_ARCHIVE_EXTRACT,
         description: "Maximum number of directory paths accepted in a ZIP archive",
+        normalize_fn: Some(normalize_bytes),
         ..aster_forge_config::ConfigDefinition::private_system()
     },
     ConfigDef {
@@ -1058,6 +1417,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_FILE_PROCESSING_ARCHIVE_EXTRACT,
         description: "Maximum normalized path depth accepted for ZIP archive entries",
+        normalize_fn: Some(normalize_bytes),
         ..aster_forge_config::ConfigDefinition::private_system()
     },
     ConfigDef {
@@ -1072,6 +1432,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_FILE_PROCESSING_ARCHIVE_EXTRACT,
         description: "Maximum UTF-8 byte length accepted for a normalized ZIP archive entry path",
+        normalize_fn: Some(normalize_bytes),
         ..aster_forge_config::ConfigDefinition::private_system()
     },
     ConfigDef {
@@ -1086,6 +1447,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_FILE_PROCESSING_ARCHIVE_EXTRACT,
         description: "Maximum total uncompressed-to-compressed byte ratio accepted for a ZIP archive",
+        normalize_fn: Some(normalize_bytes),
         ..aster_forge_config::ConfigDefinition::private_system()
     },
     ConfigDef {
@@ -1101,6 +1463,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_FILE_PROCESSING_ARCHIVE_EXTRACT,
         description: "Maximum per-file uncompressed-to-compressed byte ratio accepted for ZIP archive entries",
+        normalize_fn: Some(normalize_bytes),
         ..aster_forge_config::ConfigDefinition::private_system()
     },
     ConfigDef {
@@ -1115,6 +1478,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_FILE_PROCESSING_ARCHIVE_EXTRACT,
         description: "Maximum wall-clock seconds allowed for one online archive extraction task",
+        normalize_fn: Some(normalize_operation_interval),
         ..aster_forge_config::ConfigDefinition::private_system()
     },
     ConfigDef {
@@ -1217,6 +1581,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_FILE_PROCESSING_ARCHIVE_BUILD,
         description: "Allow users to create ZIP archives as new workspace files",
+        normalize_fn: Some(normalize_operation_bool),
         ..aster_forge_config::ConfigDefinition::private_system()
     },
     ConfigDef {
@@ -1253,6 +1618,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_FILE_PROCESSING_ARCHIVE_BUILD,
         description: "Maximum expanded file and directory entries accepted for archive compression or download",
+        normalize_fn: Some(normalize_bytes),
         ..aster_forge_config::ConfigDefinition::private_system()
     },
     ConfigDef {
@@ -1267,6 +1633,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_FILE_PROCESSING_ARCHIVE_BUILD,
         description: "Maximum total source bytes accepted for archive compression or download",
+        normalize_fn: Some(normalize_bytes),
         ..aster_forge_config::ConfigDefinition::private_system()
     },
     ConfigDef {
@@ -1279,6 +1646,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_FILE_PROCESSING_ARCHIVE_BUILD,
         description: "Maximum estimated or actual ZIP output bytes accepted for archive compression or download",
+        normalize_fn: Some(normalize_bytes),
         ..aster_forge_config::ConfigDefinition::private_system()
     },
     ConfigDef {
@@ -1291,6 +1659,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_FILE_PROCESSING_MEDIA,
         description: "Maximum original file size eligible for thumbnail generation in bytes",
+        normalize_fn: Some(normalize_bytes),
         ..aster_forge_config::ConfigDefinition::private_system()
     },
     ConfigDef {
@@ -1303,6 +1672,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_FILE_PROCESSING_MEDIA,
         description: "Maximum generated thumbnail width or height in pixels",
+        normalize_fn: Some(normalize_derivative_dimension),
         ..aster_forge_config::ConfigDefinition::private_system()
     },
     ConfigDef {
@@ -1315,6 +1685,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_FILE_PROCESSING_MEDIA,
         description: "Maximum generated image preview width or height in pixels",
+        normalize_fn: Some(normalize_derivative_dimension),
         ..aster_forge_config::ConfigDefinition::private_system()
     },
     ConfigDef {
@@ -1327,6 +1698,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_FILE_PROCESSING_MEDIA,
         description: "Enable backend blob-level media metadata extraction and cache",
+        normalize_fn: Some(normalize_operation_bool),
         ..aster_forge_config::ConfigDefinition::private_system()
     },
     ConfigDef {
@@ -1341,6 +1713,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_FILE_PROCESSING_MEDIA,
         description: "Maximum original file size eligible for backend media metadata extraction in bytes",
+        normalize_fn: Some(normalize_bytes),
         ..aster_forge_config::ConfigDefinition::private_system()
     },
     ConfigDef {
@@ -1353,6 +1726,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_FILE_PROCESSING_MEDIA,
         description: "Unified media processing registry for thumbnail and metadata processors",
+        normalize_fn: Some(normalize_media_processing_registry),
         ..aster_forge_config::ConfigDefinition::private_system()
     },
     ConfigDef {
@@ -1365,6 +1739,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_FILE_PROCESSING_MEDIA,
         description: "Default web frontend image preview strategy: original_first or preview_first",
+        normalize_fn: Some(normalize_image_preview_preference),
         ..aster_forge_config::ConfigDefinition::private_system()
     },
     // ── User ───────────────────────────────────────────────
@@ -1378,6 +1753,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_USER_REGISTRATION,
         description: "Whether new users can self-register from the public auth flow",
+        normalize_fn: Some(normalize_allow_user_registration),
         ..aster_forge_config::ConfigDefinition::private_system()
     },
     ConfigDef {
@@ -1390,6 +1766,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_USER_REGISTRATION,
         description: "Whether newly registered users must activate their account by email before signing in",
+        normalize_fn: Some(normalize_register_activation_enabled),
         ..aster_forge_config::ConfigDefinition::private_system()
     },
     ConfigDef {
@@ -1402,6 +1779,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_USER_REGISTRATION,
         description: "Allowed local-account email addresses and exact ASCII domains. Empty means no allowlist restriction. Applies to local registration and local email changes only. Internationalized domains must be entered in punycode form",
+        normalize_fn: Some(normalize_local_email_policy),
         ..aster_forge_config::ConfigDefinition::private_system()
     },
     ConfigDef {
@@ -1414,6 +1792,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_USER_REGISTRATION,
         description: "Blocked local-account email addresses and exact ASCII domains. Blocklist wins over allowlist. Applies to local registration and local email changes only. Internationalized domains must be entered in punycode form",
+        normalize_fn: Some(normalize_local_email_policy),
         ..aster_forge_config::ConfigDefinition::private_system()
     },
     ConfigDef {
@@ -1426,6 +1805,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_USER_REGISTRATION,
         description: "Allow users to sign in with already registered passkeys; disabling this keeps credentials but blocks passkey login",
+        normalize_fn: Some(normalize_email_code_login_bool),
         ..aster_forge_config::ConfigDefinition::private_system()
     },
     ConfigDef {
@@ -1438,6 +1818,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_USER_AVATAR,
         description: "Local directory used for uploaded avatar files (relative paths resolve under ./data)",
+        normalize_fn: Some(normalize_avatar_dir),
         ..aster_forge_config::ConfigDefinition::private_system()
     },
     ConfigDef {
@@ -1450,6 +1831,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_USER_AVATAR,
         description: "Maximum avatar upload size in bytes before the request is rejected",
+        normalize_fn: Some(normalize_bytes),
         ..aster_forge_config::ConfigDefinition::private_system()
     },
     ConfigDef {
@@ -1499,6 +1881,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_AUDIT,
         description: "Audit actions that should be recorded",
+        normalize_fn: Some(normalize_recorded_actions),
         ..aster_forge_config::ConfigDefinition::private_system()
     },
     // ── Mail ──────────────────────────────────────────────
@@ -1512,6 +1895,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_MAIL_CONFIG,
         description: "SMTP server hostname used for transactional email delivery",
+        normalize_fn: Some(normalize_smtp_host),
         ..aster_forge_config::ConfigDefinition::private_system()
     },
     ConfigDef {
@@ -1524,6 +1908,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_MAIL_CONFIG,
         description: "SMTP server port used for transactional email delivery",
+        normalize_fn: Some(normalize_smtp_port),
         ..aster_forge_config::ConfigDefinition::private_system()
     },
     ConfigDef {
@@ -1560,6 +1945,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_MAIL_CONFIG,
         description: "From address used for account activation and contact verification email",
+        normalize_fn: Some(normalize_mail_address),
         ..aster_forge_config::ConfigDefinition::private_system()
     },
     ConfigDef {
@@ -1572,6 +1958,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_MAIL_CONFIG,
         description: "Display name used for account activation and contact verification email",
+        normalize_fn: Some(normalize_mail_name),
         ..aster_forge_config::ConfigDefinition::private_system()
     },
     ConfigDef {
@@ -1584,6 +1971,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_MAIL_CONFIG,
         description: "Whether SMTP uses encryption. Port 465 uses implicit SSL/TLS; other ports use STARTTLS when enabled",
+        normalize_fn: Some(normalize_mail_security),
         ..aster_forge_config::ConfigDefinition::private_system()
     },
     ConfigDef {
@@ -1601,6 +1989,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_MAIL_TEMPLATE,
         description: "Subject template for registration activation emails",
+        normalize_fn: Some(normalize_mail_template_subject),
         ..aster_forge_config::ConfigDefinition::private_system()
     },
     ConfigDef {
@@ -1618,6 +2007,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_MAIL_TEMPLATE,
         description: "HTML template for registration activation emails. Prefer a complete HTML document for best client compatibility",
+        normalize_fn: Some(normalize_mail_template_body),
         ..aster_forge_config::ConfigDefinition::private_system()
     },
     ConfigDef {
@@ -1635,6 +2025,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_MAIL_TEMPLATE,
         description: "Subject template for email change confirmation emails",
+        normalize_fn: Some(normalize_mail_template_subject),
         ..aster_forge_config::ConfigDefinition::private_system()
     },
     ConfigDef {
@@ -1652,6 +2043,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_MAIL_TEMPLATE,
         description: "HTML template for email change confirmation emails. Prefer a complete HTML document for best client compatibility",
+        normalize_fn: Some(normalize_mail_template_body),
         ..aster_forge_config::ConfigDefinition::private_system()
     },
     ConfigDef {
@@ -1669,6 +2061,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_MAIL_TEMPLATE,
         description: "Subject template for password reset emails",
+        normalize_fn: Some(normalize_mail_template_subject),
         ..aster_forge_config::ConfigDefinition::private_system()
     },
     ConfigDef {
@@ -1686,6 +2079,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_MAIL_TEMPLATE,
         description: "HTML template for password reset emails. Prefer a complete HTML document for best client compatibility",
+        normalize_fn: Some(normalize_mail_template_body),
         ..aster_forge_config::ConfigDefinition::private_system()
     },
     ConfigDef {
@@ -1703,6 +2097,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_MAIL_TEMPLATE,
         description: "Subject template for password reset confirmation emails",
+        normalize_fn: Some(normalize_mail_template_subject),
         ..aster_forge_config::ConfigDefinition::private_system()
     },
     ConfigDef {
@@ -1720,6 +2115,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_MAIL_TEMPLATE,
         description: "HTML template for password reset confirmation emails. Prefer a complete HTML document for best client compatibility",
+        normalize_fn: Some(normalize_mail_template_body),
         ..aster_forge_config::ConfigDefinition::private_system()
     },
     ConfigDef {
@@ -1737,6 +2133,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_MAIL_TEMPLATE,
         description: "Subject template for previous-address email change notices",
+        normalize_fn: Some(normalize_mail_template_subject),
         ..aster_forge_config::ConfigDefinition::private_system()
     },
     ConfigDef {
@@ -1754,6 +2151,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_MAIL_TEMPLATE,
         description: "HTML template for previous-address email change notices. Prefer a complete HTML document for best client compatibility",
+        normalize_fn: Some(normalize_mail_template_body),
         ..aster_forge_config::ConfigDefinition::private_system()
     },
     ConfigDef {
@@ -1771,6 +2169,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_MAIL_TEMPLATE,
         description: "Subject template for external auth email verification emails",
+        normalize_fn: Some(normalize_mail_template_subject),
         ..aster_forge_config::ConfigDefinition::private_system()
     },
     ConfigDef {
@@ -1788,6 +2187,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_MAIL_TEMPLATE,
         description: "HTML template for external auth email verification emails. Prefer a complete HTML document for best client compatibility",
+        normalize_fn: Some(normalize_mail_template_body),
         ..aster_forge_config::ConfigDefinition::private_system()
     },
     ConfigDef {
@@ -1805,6 +2205,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_MAIL_TEMPLATE,
         description: "Subject template for login email code messages",
+        normalize_fn: Some(normalize_mail_template_subject),
         ..aster_forge_config::ConfigDefinition::private_system()
     },
     ConfigDef {
@@ -1822,6 +2223,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_MAIL_TEMPLATE,
         description: "HTML template for login email code messages. Prefer a complete HTML document for best client compatibility",
+        normalize_fn: Some(normalize_mail_template_body),
         ..aster_forge_config::ConfigDefinition::private_system()
     },
     ConfigDef {
@@ -1839,6 +2241,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_MAIL_TEMPLATE,
         description: "Subject template for user invitation emails",
+        normalize_fn: Some(normalize_mail_template_subject),
         ..aster_forge_config::ConfigDefinition::private_system()
     },
     ConfigDef {
@@ -1856,6 +2259,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_MAIL_TEMPLATE,
         description: "HTML template for user invitation emails. Prefer a complete HTML document for best client compatibility",
+        normalize_fn: Some(normalize_mail_template_body),
         ..aster_forge_config::ConfigDefinition::private_system()
     },
     // ── General ─────────────────────────────────────────────
@@ -1869,6 +2273,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_SITE,
         description: "Trusted public HTTP(S) frontend origins as a JSON string array. They are used to generate share, preview, WebDAV, WOPI, and callback URLs, and they also extend exact-match trusted frontend origins for cookie-authenticated same-site CSRF checks. This is separate from CORS and mainly affects same-site subdomain deployments; do not add domains you do not control. The first origin is the fallback",
+        normalize_fn: Some(normalize_public_site_url),
         ..aster_forge_config::ConfigDefinition::private_system()
     },
     ConfigDef {
@@ -1881,6 +2286,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_SITE,
         description: "Public browser title used by anonymous and authenticated pages",
+        normalize_fn: Some(normalize_branding_title),
         ..aster_forge_config::ConfigDefinition::private_system()
     },
     ConfigDef {
@@ -1893,6 +2299,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_SITE,
         description: "Public HTML description metadata exposed to anonymous pages",
+        normalize_fn: Some(normalize_branding_description),
         ..aster_forge_config::ConfigDefinition::private_system()
     },
     ConfigDef {
@@ -1905,6 +2312,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_SITE,
         description: "Public favicon URL applied at runtime for anonymous and authenticated pages",
+        normalize_fn: Some(normalize_branding_favicon_url),
         ..aster_forge_config::ConfigDefinition::private_system()
     },
     ConfigDef {
@@ -1917,6 +2325,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_SITE,
         description: "Public site logo URL used on light surfaces such as headers and forms",
+        normalize_fn: Some(normalize_branding_wordmark_dark_url),
         ..aster_forge_config::ConfigDefinition::private_system()
     },
     ConfigDef {
@@ -1929,6 +2338,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_SITE,
         description: "Public site logo URL used on dark surfaces such as the login hero panel",
+        normalize_fn: Some(normalize_branding_wordmark_light_url),
         ..aster_forge_config::ConfigDefinition::private_system()
     },
     ConfigDef {
@@ -1941,6 +2351,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_SITE_PREVIEW,
         description: "Lifetime of WOPI access tokens in seconds",
+        normalize_fn: Some(normalize_wopi_ttl),
         ..aster_forge_config::ConfigDefinition::private_system()
     },
     ConfigDef {
@@ -1953,6 +2364,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_SITE_PREVIEW,
         description: "Lifetime of active WOPI locks in seconds before they expire automatically",
+        normalize_fn: Some(normalize_wopi_ttl),
         ..aster_forge_config::ConfigDefinition::private_system()
     },
     ConfigDef {
@@ -1965,6 +2377,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_SITE_PREVIEW,
         description: "How long fetched WOPI discovery metadata stays cached in seconds",
+        normalize_fn: Some(normalize_wopi_ttl),
         ..aster_forge_config::ConfigDefinition::private_system()
     },
     ConfigDef {
@@ -1977,6 +2390,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_SITE_PREVIEW,
         description: "Public preview app registry used by the web frontend, including extension bindings",
+        normalize_fn: Some(normalize_preview_apps),
         ..aster_forge_config::ConfigDefinition::private_system()
     },
 ];

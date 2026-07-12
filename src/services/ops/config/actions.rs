@@ -1,5 +1,5 @@
 use crate::api::api_error_code::ApiErrorCode;
-use crate::config::{mail, media_processing, operations};
+use crate::config::{media_processing, operations};
 use crate::db::repository::user_repo;
 use crate::errors::{AsterError, MapAsterErr, Result, validation_error_with_code};
 use crate::runtime::{MailRuntimeState, SharedRuntimeState};
@@ -240,7 +240,8 @@ async fn execute_mail_action(
         ConfigActionType::SendTestEmail => {
             let actor = user_repo::find_by_id(state.writer_db(), actor_user_id).await?;
             let requested_target = target_email.unwrap_or(&actor.email);
-            let normalized_target = mail::normalize_mail_address_config_value(requested_target)?;
+            let normalized_target =
+                aster_forge_mail::normalize_mail_address_config_value(requested_target)?;
             if normalized_target.is_empty() {
                 return Err(AsterError::validation_error("target_email is required"));
             }

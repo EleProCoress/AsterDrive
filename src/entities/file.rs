@@ -125,7 +125,7 @@ impl ActiveModelBehavior for ActiveModel {
 
             if let (Some(name), Some(mime_type)) = (name.as_deref(), mime_type.as_deref()) {
                 let classification =
-                    crate::utils::file_classification::classify_file(name, mime_type);
+                    aster_forge_file_classification::classify_file(name, mime_type);
                 self.extension = Set(classification.extension);
                 self.compound_extension = Set(classification.compound_extension);
                 self.file_category = Set(classification.category);

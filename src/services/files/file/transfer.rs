@@ -173,7 +173,7 @@ pub(crate) async fn batch_duplicate_file_records_with_specs_in_scope(
     let models: Vec<file::ActiveModel> = copy_specs
         .iter()
         .map(|spec| {
-            let classification = crate::utils::file_classification::classify_file(
+            let classification = aster_forge_file_classification::classify_file(
                 &spec.dest_name,
                 &spec.src.mime_type,
             );
@@ -237,8 +237,7 @@ pub(crate) async fn duplicate_file_record_in_scope(
     storage::check_quota(&txn, scope, blob_size).await?;
 
     file_repo::increment_blob_ref_count(&txn, blob.id).await?;
-    let classification =
-        crate::utils::file_classification::classify_file(dest_name, &src.mime_type);
+    let classification = aster_forge_file_classification::classify_file(dest_name, &src.mime_type);
 
     let new_file = file::ActiveModel {
         name: Set(dest_name.to_string()),
@@ -356,7 +355,7 @@ pub(crate) async fn batch_duplicate_file_records_to_mixed_folders_in_scope(
     let models: Vec<file::ActiveModel> = copy_specs
         .iter()
         .map(|spec| {
-            let classification = crate::utils::file_classification::classify_file(
+            let classification = aster_forge_file_classification::classify_file(
                 &spec.dest_name,
                 &spec.src.mime_type,
             );

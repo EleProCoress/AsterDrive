@@ -13,8 +13,8 @@ use tokio_util::sync::CancellationToken;
 
 use super::{FollowerAppState, PrimaryAppState, SharedRuntimeState};
 use crate::runtime::tasks::BackgroundTasks;
-use crate::services::mail::sender::MailSender;
 use crate::services::share::ShareDownloadRollbackWorker;
+use aster_forge_mail::MailSender;
 
 pub const BACKGROUND_TASKS_COMPONENT: &str = "background_tasks";
 const BACKGROUND_TASKS_SHUTDOWN_PHASE: &str = "background_tasks";
@@ -352,7 +352,7 @@ mod tests {
         let resources = MailOutboxRuntimeResources::new(
             state.writer_db().clone(),
             state.runtime_config.clone(),
-            crate::services::mail::sender::memory_sender(),
+            aster_forge_mail::memory_sender(),
         );
         let registry = aster_forge_runtime::RuntimeComponentRegistry::configured(|registry| {
             aster_forge_runtime::runtime_component(register_background_tasks).register(registry);

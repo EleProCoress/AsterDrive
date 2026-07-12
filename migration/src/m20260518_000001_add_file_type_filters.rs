@@ -1,5 +1,6 @@
 //! 数据库迁移：为文件搜索增加后缀和分类派生字段。
 
+use aster_forge_file_classification::{FileClassification, classify_file};
 use sea_orm_migration::prelude::*;
 use sea_orm_migration::sea_orm::{ConnectionTrait, TransactionTrait};
 
@@ -168,12 +169,6 @@ struct FileTypeBackfill {
     classification: FileClassification,
 }
 
-struct FileClassification {
-    extension: String,
-    compound_extension: Option<String>,
-    category: &'static str,
-}
-
 fn extension_case(updates: &[FileTypeBackfill]) -> SimpleExpr {
     let first = &updates[0];
     let mut expr = Expr::case(
@@ -208,247 +203,15 @@ fn file_category_case(updates: &[FileTypeBackfill]) -> SimpleExpr {
     let first = &updates[0];
     let mut expr = Expr::case(
         Expr::col(Files::Id).eq(first.id),
-        first.classification.category,
+        first.classification.category.as_str(),
     );
     for update in &updates[1..] {
         expr = expr.case(
             Expr::col(Files::Id).eq(update.id),
-            update.classification.category,
+            update.classification.category.as_str(),
         );
     }
     expr.finally(Expr::col(Files::FileCategory)).into()
-}
-
-fn classify_file(name: &str, mime_type: &str) -> FileClassification {
-    let extension = extension_from_name(name).unwrap_or_default();
-    let compound_extension = compound_extension_from_name(name);
-    let category =
-        classify_extension_and_mime(&extension, compound_extension.as_deref(), mime_type);
-    FileClassification {
-        extension,
-        compound_extension,
-        category,
-    }
-}
-
-fn extension_from_name(name: &str) -> Option<String> {
-    let trimmed = name.trim();
-    let dot = trimmed.rfind('.')?;
-    if dot == 0 || dot + 1 >= trimmed.len() {
-        return None;
-    }
-    Some(trimmed[dot + 1..].to_ascii_lowercase())
-}
-
-fn compound_extension_from_name(name: &str) -> Option<String> {
-    let normalized = name.trim().to_ascii_lowercase();
-    [
-        "tar.gz", "tar.bz2", "tar.xz", "tar.zst", "tar.br", "tar.lz", "tar.lzma", "tar.lzo",
-    ]
-    .iter()
-    .find(|extension| normalized.ends_with(&format!(".{extension}")))
-    .map(|extension| (*extension).to_string())
-}
-
-fn classify_extension_and_mime(
-    extension: &str,
-    compound_extension: Option<&str>,
-    mime_type: &str,
-) -> &'static str {
-    if compound_extension.is_some()
-        || matches!(
-            extension,
-            "zip"
-                | "rar"
-                | "7z"
-                | "tar"
-                | "gz"
-                | "bz2"
-                | "xz"
-                | "zst"
-                | "br"
-                | "tgz"
-                | "tbz"
-                | "tbz2"
-                | "txz"
-                | "lz"
-                | "lzma"
-                | "lzo"
-                | "cab"
-                | "iso"
-                | "dmg"
-        )
-    {
-        return "archive";
-    }
-    if matches!(
-        extension,
-        "xls" | "xlsx" | "ods" | "csv" | "tsv" | "numbers"
-    ) {
-        return "spreadsheet";
-    }
-    if matches!(extension, "ppt" | "pptx" | "odp" | "key") {
-        return "presentation";
-    }
-    if matches!(
-        extension,
-        "jpg"
-            | "jpeg"
-            | "png"
-            | "gif"
-            | "webp"
-            | "bmp"
-            | "tif"
-            | "tiff"
-            | "svg"
-            | "ico"
-            | "avif"
-            | "heic"
-            | "heif"
-            | "raw"
-            | "cr2"
-            | "nef"
-            | "orf"
-            | "rw2"
-    ) {
-        return "image";
-    }
-    if matches!(
-        extension,
-        "mp4"
-            | "m4v"
-            | "mov"
-            | "avi"
-            | "mkv"
-            | "webm"
-            | "flv"
-            | "wmv"
-            | "mpeg"
-            | "mpg"
-            | "3gp"
-            | "ts"
-            | "m2ts"
-            | "ogv"
-    ) {
-        return "video";
-    }
-    if matches!(
-        extension,
-        "mp3"
-            | "wav"
-            | "flac"
-            | "aac"
-            | "m4a"
-            | "ogg"
-            | "oga"
-            | "opus"
-            | "wma"
-            | "aiff"
-            | "alac"
-            | "mid"
-            | "midi"
-    ) {
-        return "audio";
-    }
-    if matches!(
-        extension,
-        "pdf"
-            | "txt"
-            | "md"
-            | "markdown"
-            | "rtf"
-            | "doc"
-            | "docx"
-            | "odt"
-            | "pages"
-            | "epub"
-            | "tex"
-    ) {
-        return "document";
-    }
-    if matches!(
-        extension,
-        "rs" | "ts"
-            | "tsx"
-            | "js"
-            | "jsx"
-            | "mjs"
-            | "cjs"
-            | "json"
-            | "jsonc"
-            | "yaml"
-            | "yml"
-            | "toml"
-            | "xml"
-            | "html"
-            | "htm"
-            | "css"
-            | "scss"
-            | "sass"
-            | "less"
-            | "sql"
-            | "sh"
-            | "bash"
-            | "zsh"
-            | "fish"
-            | "ps1"
-            | "py"
-            | "rb"
-            | "go"
-            | "java"
-            | "kt"
-            | "kts"
-            | "swift"
-            | "c"
-            | "h"
-            | "cpp"
-            | "cc"
-            | "cxx"
-            | "hpp"
-            | "cs"
-            | "php"
-            | "lua"
-            | "dart"
-            | "vue"
-            | "svelte"
-            | "lock"
-            | "ini"
-            | "conf"
-            | "dockerfile"
-            | "makefile"
-    ) {
-        return "code";
-    }
-
-    classify_mime(mime_type)
-}
-
-fn classify_mime(mime_type: &str) -> &'static str {
-    let mime = mime_type.trim().to_ascii_lowercase();
-    if mime.starts_with("image/") {
-        "image"
-    } else if mime.starts_with("video/") {
-        "video"
-    } else if mime.starts_with("audio/") {
-        "audio"
-    } else if mime == "application/pdf" || mime.starts_with("text/") {
-        "document"
-    } else if mime.contains("spreadsheet") || mime.contains("excel") || mime.ends_with("/csv") {
-        "spreadsheet"
-    } else if mime.contains("presentation") || mime.contains("powerpoint") {
-        "presentation"
-    } else if mime.contains("zip")
-        || mime.contains("compressed")
-        || mime.contains("x-tar")
-        || mime.contains("x-7z")
-        || mime.contains("x-rar")
-    {
-        "archive"
-    } else if mime.contains("json") || mime.contains("xml") {
-        "code"
-    } else {
-        "other"
-    }
 }
 
 #[derive(DeriveIden)]

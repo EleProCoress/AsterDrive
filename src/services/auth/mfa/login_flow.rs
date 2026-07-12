@@ -7,9 +7,7 @@ use sea_orm::{ActiveValue::Set, ConnectionTrait};
 use serde::Serialize;
 
 use crate::api::api_error_code::ApiErrorCode;
-use crate::config::{
-    auth_runtime::RuntimeEmailCodeLoginPolicy, branding, mail::RuntimeMailSettings,
-};
+use crate::config::{auth_runtime::RuntimeEmailCodeLoginPolicy, branding, mail};
 use crate::db::repository::{
     mfa_email_code_repo, mfa_factor_repo, mfa_login_flow_repo, mfa_recovery_code_repo,
     mfa_totp_setup_flow_repo, user_repo,
@@ -263,7 +261,7 @@ pub async fn send_email_code(
     let subject = rendered.subject.clone();
     if let Err(error) = sender::send_rendered(
         state,
-        sender::MailRecipient {
+        aster_forge_mail::MailRecipient {
             address: user.email.clone(),
             display_name: Some(user.username.clone()),
         },
@@ -631,8 +629,7 @@ fn email_code_policy_ready(
     state: &impl SharedRuntimeState,
     policy: &RuntimeEmailCodeLoginPolicy,
 ) -> bool {
-    policy.enabled
-        && RuntimeMailSettings::from_runtime_config(state.runtime_config()).is_ready_for_delivery()
+    policy.enabled && mail::runtime_mail_settings(state.runtime_config()).is_ready_for_delivery()
 }
 
 fn generate_email_code() -> String {

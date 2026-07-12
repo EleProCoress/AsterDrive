@@ -400,6 +400,30 @@ impl From<aster_forge_db::DbError> for AsterError {
     }
 }
 
+impl From<aster_forge_mail::MailConfigError> for AsterError {
+    fn from(value: aster_forge_mail::MailConfigError) -> Self {
+        Self::validation_error(value.to_string())
+    }
+}
+
+impl From<aster_forge_mail::MailDeliveryError> for AsterError {
+    fn from(value: aster_forge_mail::MailDeliveryError) -> Self {
+        match value {
+            aster_forge_mail::MailDeliveryError::NotConfigured(message) => {
+                Self::mail_not_configured(message)
+            }
+            aster_forge_mail::MailDeliveryError::InvalidMessage(message) => {
+                Self::validation_error(message)
+            }
+            aster_forge_mail::MailDeliveryError::Config(message) => Self::config_error(message),
+            aster_forge_mail::MailDeliveryError::Delivery(message) => {
+                Self::mail_delivery_failed(message)
+            }
+            aster_forge_mail::MailDeliveryError::Internal(message) => Self::internal_error(message),
+        }
+    }
+}
+
 impl From<aster_forge_api::ApiError> for AsterError {
     fn from(value: aster_forge_api::ApiError) -> Self {
         Self::validation_error(value.to_string())
@@ -423,6 +447,12 @@ impl From<aster_forge_config::ConfigCoreError> for AsterError {
                 Self::internal_error(message)
             }
         }
+    }
+}
+
+impl From<aster_forge_file_classification::FileClassificationError> for AsterError {
+    fn from(error: aster_forge_file_classification::FileClassificationError) -> Self {
+        Self::validation_error(error.message())
     }
 }
 

@@ -686,7 +686,7 @@ fn doctor_public_site_url_check(runtime_config: &crate::config::RuntimeConfig) -
 }
 
 fn doctor_mail_check(runtime_config: &crate::config::RuntimeConfig) -> DoctorCheck {
-    let settings = crate::config::mail::RuntimeMailSettings::from_runtime_config(runtime_config);
+    let settings = crate::config::mail::runtime_mail_settings(runtime_config);
     let mut details = vec![
         format!(
             "smtp_host={}",

@@ -7,6 +7,7 @@ use aster_forge_db::transaction;
 use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 
+use crate::config::definitions::CONFIG_REGISTRY;
 use crate::config::system_config as shared_system_config;
 use crate::db::repository::config_repo;
 use crate::errors::{AsterError, Result};
@@ -564,7 +565,8 @@ fn normalize_entries(
                 entry.key
             )));
         }
-        let value_type = shared_system_config::get_definition(&entry.key)
+        let value_type = CONFIG_REGISTRY
+            .get(&entry.key)
             .map(|def| def.value_type)
             .unwrap_or(ConfigValueType::String);
         let value = entry.value.to_storage_for_type(value_type)?;
@@ -575,21 +577,13 @@ fn normalize_entries(
         });
     }
 
-    for entry in &storage_entries {
-        if let Some(def) = shared_system_config::get_definition(&entry.key) {
-            shared_system_config::validate_value_type(def.value_type, &entry.value)?;
-        }
-    }
-
     storage_entries
         .iter()
         .map(|entry| {
-            let value = if shared_system_config::get_definition(&entry.key).is_some() {
-                shared_system_config::normalize_system_value(
-                    &current_lookup,
-                    &entry.key,
-                    &entry.value,
-                )?
+            let value = if CONFIG_REGISTRY.contains_key(&entry.key) {
+                CONFIG_REGISTRY
+                    .normalize_value(&current_lookup, &entry.key, &entry.value)
+                    .map_err(AsterError::from)?
             } else {
                 entry.value.clone()
             };
@@ -619,7 +613,8 @@ fn resolve_validate_entries(args: &ValidateArgs) -> Result<Vec<ImportItem>> {
 }
 
 fn parse_cli_config_value(key: &str, value: &str) -> Result<ConfigValue> {
-    if !shared_system_config::get_definition(key)
+    if !CONFIG_REGISTRY
+        .get(key)
         .map(|def| def.value_type.is_string_array())
         .unwrap_or(false)
     {
@@ -664,7 +659,7 @@ fn read_import_items(path: &Path) -> Result<Vec<ImportItem>> {
 }
 
 fn preview_system_config(key: &str, value: &str) -> SystemConfig {
-    let model = if let Some(def) = shared_system_config::get_definition(key) {
+    let model = if let Some(def) = CONFIG_REGISTRY.get(key) {
         system_config::Model {
             id: 0,
             key: key.to_string(),

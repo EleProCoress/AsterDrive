@@ -296,7 +296,7 @@ pub(crate) async fn store_preuploaded_nondedup(
             active.blob_id = Set(blob.id);
             active.size = Set(blob.size);
             let classification =
-                crate::utils::file_classification::classify_file(&current_name, &mime);
+                aster_forge_file_classification::classify_file(&current_name, &mime);
             active.mime_type = Set(mime);
             active.extension = Set(classification.extension);
             active.compound_extension = Set(classification.compound_extension);

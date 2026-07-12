@@ -6,14 +6,7 @@ use utoipa::ToSchema;
 
 use crate::config::{RuntimeConfig, branding, mail, site_url};
 use crate::errors::{AsterError, MapAsterErr, Result};
-use aster_forge_mail::{MailTemplateCode, StoredMailPayload};
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RenderedMail {
-    pub subject: String,
-    pub text_body: String,
-    pub html_body: String,
-}
+use aster_forge_mail::{MailTemplateCode, RenderedMail, StoredMailPayload};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]

@@ -1,9 +1,9 @@
 use crate::api::pagination::OffsetPage;
-use crate::config::definitions::ALL_CONFIGS;
+use crate::config::definitions::CONFIG_REGISTRY;
 use crate::config::media_processing::MEDIA_PROCESSING_REGISTRY_JSON_KEY;
 use crate::config::operations::{MEDIA_METADATA_ENABLED_KEY, MEDIA_METADATA_MAX_SOURCE_BYTES_KEY};
 use crate::config::system_config as shared_system_config;
-use crate::config::{auth_runtime, mail, mail::RuntimeMailSettings};
+use crate::config::{auth_runtime, mail};
 use crate::db::repository::config_repo;
 use crate::errors::{AsterError, Result};
 use crate::runtime::SharedRuntimeState;
@@ -102,18 +102,9 @@ pub async fn set_with_visibility(
 ) -> Result<SystemConfig> {
     validate_visibility_target(key, visibility)?;
     let value = value.into();
-    let value_type = ALL_CONFIGS
-        .iter()
-        .find(|def| def.key == key)
-        .map(|def| def.value_type)
-        .unwrap_or(ConfigValueType::String);
-    let mut normalized_value = value.to_storage_for_type(value_type)?;
-
-    if let Some(def) = ALL_CONFIGS.iter().find(|def| def.key == key) {
-        validate_value_type(def.value_type, &normalized_value)?;
-        normalized_value = normalize_system_value(state, key, &normalized_value)?;
-    }
-    validate_config_dependencies(state, key, &normalized_value)?;
+    let normalized_value = CONFIG_REGISTRY
+        .value_to_storage_for_key(state.runtime_config().as_ref(), key, &value)
+        .map_err(AsterError::from)?;
 
     let changed =
         upsert_config_and_apply_dependents(state, key, &normalized_value, visibility, updated_by)
@@ -195,18 +186,9 @@ pub async fn set_with_audit_and_visibility(
 ) -> Result<SystemConfig> {
     validate_visibility_target(key, visibility)?;
     let value = value.clone();
-    let value_type = ALL_CONFIGS
-        .iter()
-        .find(|def| def.key == key)
-        .map(|def| def.value_type)
-        .unwrap_or(ConfigValueType::String);
-    let mut normalized_value = value.to_storage_for_type(value_type)?;
-
-    if let Some(def) = ALL_CONFIGS.iter().find(|def| def.key == key) {
-        validate_value_type(def.value_type, &normalized_value)?;
-        normalized_value = normalize_system_value(state, key, &normalized_value)?;
-    }
-    validate_config_dependencies(state, key, &normalized_value)?;
+    let normalized_value = CONFIG_REGISTRY
+        .value_to_storage_for_key(state.runtime_config().as_ref(), key, &value)
+        .map_err(AsterError::from)?;
 
     let prior_visibility = config_repo::find_by_key(state.reader_db(), key)
         .await?
@@ -306,44 +288,13 @@ async fn audit_config_update(
     .await;
 }
 
-fn validate_value_type(value_type: ConfigValueType, value: &str) -> Result<()> {
-    shared_system_config::validate_value_type(value_type, value)
-}
-
 fn validate_visibility_target(key: &str, visibility: Option<ConfigVisibility>) -> Result<()> {
-    if visibility.is_some() && ALL_CONFIGS.iter().any(|def| def.key == key) {
+    if visibility.is_some() && CONFIG_REGISTRY.contains_key(key) {
         return Err(AsterError::validation_error(
             "visibility can only be changed for custom configuration",
         ));
     }
     Ok(())
-}
-
-fn normalize_system_value(
-    state: &impl SharedRuntimeState,
-    key: &str,
-    value: &str,
-) -> Result<String> {
-    shared_system_config::normalize_system_value(state.runtime_config().as_ref(), key, value)
-}
-
-fn validate_config_dependencies(
-    state: &impl SharedRuntimeState,
-    key: &str,
-    value: &str,
-) -> Result<()> {
-    if key != auth_runtime::AUTH_EMAIL_CODE_LOGIN_ENABLED_KEY || value != "true" {
-        return Ok(());
-    }
-
-    let settings = RuntimeMailSettings::from_runtime_config(state.runtime_config());
-    if settings.is_ready_for_delivery() {
-        return Ok(());
-    }
-
-    Err(AsterError::validation_error(
-        "email code MFA requires complete SMTP mail configuration",
-    ))
 }
 
 async fn upsert_config_and_apply_dependents(
@@ -418,13 +369,13 @@ fn mail_config_change_disables_email_code_mfa(
             state.runtime_config().get(lookup_key).unwrap_or_default()
         }
     };
-    let settings = RuntimeMailSettings {
+    let settings = aster_forge_mail::MailRuntimeSettings {
         smtp_host: lookup(mail::MAIL_SMTP_HOST_KEY),
         smtp_port: state
             .runtime_config()
             .get(mail::MAIL_SMTP_PORT_KEY)
             .and_then(|raw| raw.trim().parse().ok())
-            .unwrap_or(mail::DEFAULT_MAIL_SMTP_PORT),
+            .unwrap_or(aster_forge_mail::DEFAULT_MAIL_SMTP_PORT),
         smtp_username: lookup(mail::MAIL_SMTP_USERNAME_KEY),
         smtp_password: lookup(mail::MAIL_SMTP_PASSWORD_KEY),
         from_address: lookup(mail::MAIL_FROM_ADDRESS_KEY),
@@ -432,9 +383,10 @@ fn mail_config_change_disables_email_code_mfa(
             .runtime_config()
             .get(mail::MAIL_FROM_NAME_KEY)
             .unwrap_or_default(),
-        encryption_enabled: state
-            .runtime_config()
-            .get_bool_or(mail::MAIL_SECURITY_KEY, mail::DEFAULT_MAIL_SECURITY),
+        encryption_enabled: state.runtime_config().get_bool_or(
+            mail::MAIL_SECURITY_KEY,
+            aster_forge_mail::DEFAULT_MAIL_SECURITY,
+        ),
     };
 
     !settings.is_ready_for_delivery()
@@ -525,7 +477,7 @@ mod tests {
                 cache,
                 config_sync,
                 metrics: crate::metrics::NoopMetrics::arc(),
-                mail_sender: crate::services::mail::sender::memory_sender(),
+                mail_sender: aster_forge_mail::memory_sender(),
                 storage_change_tx,
                 share_download_rollback,
                 background_task_dispatch_wakeup:

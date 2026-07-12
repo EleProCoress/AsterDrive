@@ -152,9 +152,7 @@ fn avatar_upload_payload() -> (String, Vec<u8>) {
     (boundary, body)
 }
 
-fn extract_verification_token(
-    message: &aster_drive::services::mail::sender::MailMessage,
-) -> String {
+fn extract_verification_token(message: &aster_forge_mail::MailMessage) -> String {
     common::extract_token_from_mail_message(
         message,
         "/api/v1/auth/contact-verification/confirm?token=",
@@ -162,9 +160,7 @@ fn extract_verification_token(
     .expect("verification link missing from mail body")
 }
 
-fn extract_password_reset_token(
-    message: &aster_drive::services::mail::sender::MailMessage,
-) -> String {
+fn extract_password_reset_token(message: &aster_forge_mail::MailMessage) -> String {
     common::extract_token_from_mail_message(message, "/reset-password?token=")
         .expect("password reset link missing from mail body")
 }
@@ -1949,7 +1945,7 @@ async fn test_register_requires_activation_until_confirmed() {
     assert_eq!(body["code"], "auth.credentials_failed");
     assert_eq!(body["msg"], "Invalid Credentials");
 
-    let memory_sender = aster_drive::services::mail::sender::memory_sender_ref(&mail_sender)
+    let memory_sender = aster_forge_mail::memory_sender_ref(&mail_sender)
         .expect("memory mail sender should be available in tests");
     let token = extract_verification_token(
         &memory_sender
@@ -2005,7 +2001,7 @@ async fn test_register_skips_activation_when_register_activation_is_disabled() {
     assert_eq!(body["data"]["email_verified"], true);
 
     common::flush_mail_outbox_with(&db, &runtime_config, &mail_sender).await;
-    let memory_sender = aster_drive::services::mail::sender::memory_sender_ref(&mail_sender)
+    let memory_sender = aster_forge_mail::memory_sender_ref(&mail_sender)
         .expect("memory mail sender should be available in tests");
     assert!(memory_sender.messages().is_empty());
 
@@ -2089,7 +2085,7 @@ async fn test_register_resend_is_generic_for_unknown_identifier_and_cooldown() {
     assert_eq!(resp.status(), 200);
     common::flush_mail_outbox_with(&db, &runtime_config, &mail_sender).await;
 
-    let memory_sender = aster_drive::services::mail::sender::memory_sender_ref(&mail_sender)
+    let memory_sender = aster_forge_mail::memory_sender_ref(&mail_sender)
         .expect("memory mail sender should be available in tests");
     assert_eq!(memory_sender.messages().len(), 1);
 }
@@ -2150,7 +2146,7 @@ async fn test_register_activation_resend_ignores_allowlist_and_hides_blocklist()
     );
     common::flush_mail_outbox_with(&db, &runtime_config, &mail_sender).await;
 
-    let memory_sender = aster_drive::services::mail::sender::memory_sender_ref(&mail_sender)
+    let memory_sender = aster_forge_mail::memory_sender_ref(&mail_sender)
         .expect("memory mail sender should be available in tests");
     assert_eq!(memory_sender.messages().len(), 2);
 }
@@ -2177,7 +2173,7 @@ async fn test_email_change_confirmation_redirects_and_notifies_previous_email() 
     assert_eq!(resp.status(), 200);
     common::flush_mail_outbox_with(&db, &runtime_config, &mail_sender).await;
 
-    let memory_sender = aster_drive::services::mail::sender::memory_sender_ref(&mail_sender)
+    let memory_sender = aster_forge_mail::memory_sender_ref(&mail_sender)
         .expect("memory mail sender should be available in tests");
     let token = extract_verification_token(
         &memory_sender
@@ -2355,7 +2351,7 @@ async fn test_email_change_resend_returns_generic_success_during_cooldown() {
     );
     common::flush_mail_outbox_with(&db, &runtime_config, &mail_sender).await;
 
-    let memory_sender = aster_drive::services::mail::sender::memory_sender_ref(&mail_sender)
+    let memory_sender = aster_forge_mail::memory_sender_ref(&mail_sender)
         .expect("memory mail sender should be available in tests");
     assert_eq!(memory_sender.messages().len(), 1);
 }
@@ -2378,7 +2374,7 @@ async fn test_password_reset_request_is_generic_for_unknown_email() {
     let body: Value = test::read_body_json(resp).await;
     assert_eq!(body["code"], "success");
 
-    let memory_sender = aster_drive::services::mail::sender::memory_sender_ref(&mail_sender)
+    let memory_sender = aster_forge_mail::memory_sender_ref(&mail_sender)
         .expect("memory mail sender should be available in tests");
     assert!(memory_sender.messages().is_empty());
 }
@@ -2406,7 +2402,7 @@ async fn test_password_reset_rotates_session_and_sends_notice_and_records_audit_
     assert_eq!(resp.status(), 200);
     common::flush_mail_outbox_with(&db, &runtime_config, &mail_sender).await;
 
-    let memory_sender = aster_drive::services::mail::sender::memory_sender_ref(&mail_sender)
+    let memory_sender = aster_forge_mail::memory_sender_ref(&mail_sender)
         .expect("memory mail sender should be available in tests");
     let token = extract_password_reset_token(
         &memory_sender
@@ -2513,7 +2509,7 @@ async fn test_password_reset_confirm_rejects_reused_token() {
     assert_eq!(resp.status(), 200);
     common::flush_mail_outbox_with(&db, &runtime_config, &mail_sender).await;
 
-    let memory_sender = aster_drive::services::mail::sender::memory_sender_ref(&mail_sender)
+    let memory_sender = aster_forge_mail::memory_sender_ref(&mail_sender)
         .expect("memory mail sender should be available in tests");
     let token = extract_password_reset_token(
         &memory_sender
@@ -2569,7 +2565,7 @@ async fn test_password_reset_confirm_rejects_expired_token() {
     assert_eq!(resp.status(), 200);
     common::flush_mail_outbox_with(&db, &runtime_config, &mail_sender).await;
 
-    let memory_sender = aster_drive::services::mail::sender::memory_sender_ref(&mail_sender)
+    let memory_sender = aster_forge_mail::memory_sender_ref(&mail_sender)
         .expect("memory mail sender should be available in tests");
     let token = extract_password_reset_token(
         &memory_sender
@@ -2622,7 +2618,7 @@ async fn test_contact_verification_confirm_rejects_password_reset_token() {
     assert_eq!(resp.status(), 200);
     common::flush_mail_outbox_with(&db, &runtime_config, &mail_sender).await;
 
-    let memory_sender = aster_drive::services::mail::sender::memory_sender_ref(&mail_sender)
+    let memory_sender = aster_forge_mail::memory_sender_ref(&mail_sender)
         .expect("memory mail sender should be available in tests");
     let token = extract_password_reset_token(
         &memory_sender
@@ -2672,7 +2668,7 @@ async fn test_password_reset_request_cooldown_returns_generic_success() {
     assert_eq!(resp.status(), 200);
     common::flush_mail_outbox_with(&db, &runtime_config, &mail_sender).await;
 
-    let memory_sender = aster_drive::services::mail::sender::memory_sender_ref(&mail_sender)
+    let memory_sender = aster_forge_mail::memory_sender_ref(&mail_sender)
         .expect("memory mail sender should be available in tests");
     assert_eq!(memory_sender.messages().len(), 1);
 }

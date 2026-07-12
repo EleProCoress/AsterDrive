@@ -19,7 +19,7 @@ use crate::services::{
     workspace::storage::{self, WorkspaceStorageScope},
 };
 use crate::types::FileCategory;
-use crate::utils::file_classification::{parse_extension_filters, parse_file_category};
+use aster_forge_file_classification::{parse_extension_filters, parse_file_category};
 
 #[derive(Deserialize)]
 #[cfg_attr(
@@ -248,12 +248,14 @@ fn normalize_file_filters(params: &SearchParams) -> Result<NormalizedFileFilters
         .as_deref()
         .map(parse_file_category)
         .transpose()
+        .map_err(AsterError::from)
         .map_err(|error| error.with_api_error_code(ApiErrorCode::SearchCategoryInvalid))?;
     let extensions = params
         .extensions
         .as_deref()
         .map(parse_extension_filters)
         .transpose()
+        .map_err(AsterError::from)
         .map_err(|error| error.with_api_error_code(ApiErrorCode::SearchExtensionsInvalid))?
         .unwrap_or_default();
 

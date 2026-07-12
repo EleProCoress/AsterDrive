@@ -10,10 +10,12 @@ use crate::errors::Result;
 use crate::runtime::MailRuntimeState;
 use crate::services::{
     mail::audit,
-    mail::sender::{self, MailSender},
+    mail::sender,
     mail::template::{self, MailTemplatePayload},
 };
-use aster_forge_mail::{DispatchStats, MailOutboxDispatchConfig, MailOutboxRetryPolicy};
+use aster_forge_mail::{
+    DispatchStats, MailOutboxDispatchConfig, MailOutboxRetryPolicy, MailSender,
+};
 
 const MAIL_OUTBOX_BATCH_SIZE: u64 = 20;
 const MAIL_OUTBOX_PROCESSING_STALE_SECS: i64 = 60;
@@ -142,7 +144,7 @@ async fn deliver_one(
     sender::send_rendered_with(
         runtime_config,
         mail_sender,
-        sender::MailRecipient {
+        aster_forge_mail::MailRecipient {
             address: row.to_address.clone(),
             display_name: row.to_name.clone(),
         },

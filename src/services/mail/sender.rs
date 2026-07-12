@@ -1,186 +1,18 @@
-//! 服务模块：`mail::sender`。
+//! 产品邮件投递入口。
 
-use std::any::Any;
-use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::sync::Arc;
 
-use async_trait::async_trait;
 use chrono::Utc;
-use lettre::message::{Mailbox, MultiPart, SinglePart, header::ContentType};
-use lettre::transport::smtp::authentication::Credentials;
-use lettre::{AsyncSmtpTransport, AsyncTransport, Message, Tokio1Executor};
-use tokio::time::timeout;
 
 use crate::config::RuntimeConfig;
 use crate::config::{mail, site_url};
-use crate::errors::{AsterError, MapAsterErr, Result};
+use crate::errors::Result;
 use crate::runtime::MailRuntimeState;
-use crate::services::mail::template::RenderedMail;
 use crate::utils::id;
-
-const SMTP_SEND_TIMEOUT_SECS: u64 = 15;
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct MailRecipient {
-    pub address: String,
-    pub display_name: Option<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct MailMessage {
-    pub from: MailRecipient,
-    pub to: MailRecipient,
-    pub subject: String,
-    pub text_body: String,
-    pub html_body: String,
-}
-
-#[async_trait]
-pub trait MailSender: Send + Sync {
-    async fn send(&self, message: MailMessage) -> Result<()>;
-    fn as_any(&self) -> &dyn Any;
-}
+use aster_forge_mail::{MailRecipient, MailSender, RenderedMail};
 
 pub fn runtime_sender(runtime_config: Arc<RuntimeConfig>) -> Arc<dyn MailSender> {
-    Arc::new(RuntimeMailSender { runtime_config })
-}
-
-pub fn memory_sender() -> Arc<dyn MailSender> {
-    Arc::new(MemoryMailSender::default())
-}
-
-pub fn memory_sender_ref(sender: &Arc<dyn MailSender>) -> Option<&MemoryMailSender> {
-    sender.as_ref().as_any().downcast_ref::<MemoryMailSender>()
-}
-
-#[derive(Default)]
-pub struct MemoryMailSender {
-    outbox: Mutex<Vec<MailMessage>>,
-}
-
-impl MemoryMailSender {
-    pub fn messages(&self) -> Vec<MailMessage> {
-        match self.outbox.lock() {
-            Ok(outbox) => outbox.clone(),
-            Err(error) => {
-                tracing::warn!(%error, "memory mail sender outbox lock poisoned");
-                Vec::new()
-            }
-        }
-    }
-
-    pub fn last_message(&self) -> Option<MailMessage> {
-        match self.outbox.lock() {
-            Ok(outbox) => outbox.last().cloned(),
-            Err(error) => {
-                tracing::warn!(%error, "memory mail sender outbox lock poisoned");
-                None
-            }
-        }
-    }
-}
-
-#[async_trait]
-impl MailSender for MemoryMailSender {
-    async fn send(&self, message: MailMessage) -> Result<()> {
-        self.outbox
-            .lock()
-            .map_err(|error| {
-                AsterError::internal_error(format!(
-                    "memory mail sender outbox lock poisoned: {error}"
-                ))
-            })?
-            .push(message);
-        Ok(())
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-}
-
-struct RuntimeMailSender {
-    runtime_config: Arc<RuntimeConfig>,
-}
-
-#[async_trait]
-impl MailSender for RuntimeMailSender {
-    async fn send(&self, message: MailMessage) -> Result<()> {
-        let settings = mail::RuntimeMailSettings::from_runtime_config(&self.runtime_config);
-        if !settings.is_configured() {
-            return Err(AsterError::mail_not_configured(
-                "mail service is not configured",
-            ));
-        }
-        if !settings.is_ready_for_delivery() {
-            return Err(AsterError::mail_not_configured(
-                "mail SMTP username and password must both be set or both be empty",
-            ));
-        }
-
-        let to_address = message.to.address.clone();
-        let subject = message.subject.clone();
-        tracing::debug!(
-            smtp_host = %settings.smtp_host,
-            smtp_port = settings.smtp_port,
-            encryption_enabled = settings.encryption_enabled,
-            to = %to_address,
-            subject = %subject,
-            timeout_secs = SMTP_SEND_TIMEOUT_SECS,
-            "mail: preparing runtime SMTP delivery"
-        );
-
-        let email = build_lettre_message(message)?;
-        let mailer = build_transport(&settings)?;
-        match timeout(
-            Duration::from_secs(SMTP_SEND_TIMEOUT_SECS),
-            mailer.send(email),
-        )
-        .await
-        {
-            Ok(Ok(_)) => {
-                tracing::debug!(
-                    smtp_host = %settings.smtp_host,
-                    smtp_port = settings.smtp_port,
-                    to = %to_address,
-                    subject = %subject,
-                    timeout_secs = SMTP_SEND_TIMEOUT_SECS,
-                    "mail: SMTP delivery completed"
-                );
-                Ok(())
-            }
-            Ok(Err(error)) => {
-                tracing::debug!(
-                    smtp_host = %settings.smtp_host,
-                    smtp_port = settings.smtp_port,
-                    to = %to_address,
-                    subject = %subject,
-                    error = %error,
-                    timeout_secs = SMTP_SEND_TIMEOUT_SECS,
-                    "mail: SMTP delivery failed"
-                );
-                Err(AsterError::mail_delivery_failed(error.to_string()))
-            }
-            Err(_) => {
-                tracing::debug!(
-                    smtp_host = %settings.smtp_host,
-                    smtp_port = settings.smtp_port,
-                    to = %to_address,
-                    subject = %subject,
-                    timeout_secs = SMTP_SEND_TIMEOUT_SECS,
-                    "mail: SMTP delivery timed out"
-                );
-                Err(AsterError::mail_delivery_failed(format!(
-                    "mail delivery timed out after {} seconds",
-                    SMTP_SEND_TIMEOUT_SECS
-                )))
-            }
-        }
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
+    aster_forge_mail::smtp_sender(move || mail::runtime_mail_settings(&runtime_config))
 }
 
 pub async fn send_rendered(
@@ -197,27 +29,10 @@ pub async fn send_rendered_with(
     to: MailRecipient,
     rendered: RenderedMail,
 ) -> Result<()> {
-    let settings = mail::RuntimeMailSettings::from_runtime_config(runtime_config);
-    let from = MailRecipient {
-        address: settings.from_address,
-        display_name: (!settings.from_name.is_empty()).then_some(settings.from_name),
-    };
-    tracing::debug!(
-        from = %from.address,
-        to = %to.address,
-        subject = %rendered.subject,
-        "mail: dispatching rendered message through configured sender"
-    );
-
-    mail_sender
-        .send(MailMessage {
-            from,
-            to,
-            subject: rendered.subject,
-            text_body: rendered.text_body,
-            html_body: rendered.html_body,
-        })
+    let settings = mail::runtime_mail_settings(runtime_config);
+    aster_forge_mail::send_rendered_with(mail_sender, &settings, to, rendered)
         .await
+        .map_err(Into::into)
 }
 
 pub async fn send_test_email(
@@ -256,67 +71,4 @@ pub async fn send_test_email(
 
 pub fn build_verification_token() -> String {
     format!("cv_{}", id::new_short_token())
-}
-
-fn build_transport(
-    settings: &mail::RuntimeMailSettings,
-) -> Result<AsyncSmtpTransport<Tokio1Executor>> {
-    tracing::debug!(
-        smtp_host = %settings.smtp_host,
-        smtp_port = settings.smtp_port,
-        encryption_enabled = settings.encryption_enabled,
-        auth_enabled = !settings.smtp_username.is_empty(),
-        "mail: building SMTP transport"
-    );
-    let mut transport = if settings.encryption_enabled {
-        if settings.smtp_port == 465 {
-            AsyncSmtpTransport::<Tokio1Executor>::relay(&settings.smtp_host)
-                .map_aster_err(AsterError::config_error)?
-                .port(settings.smtp_port)
-        } else {
-            AsyncSmtpTransport::<Tokio1Executor>::starttls_relay(&settings.smtp_host)
-                .map_aster_err(AsterError::config_error)?
-                .port(settings.smtp_port)
-        }
-    } else {
-        AsyncSmtpTransport::<Tokio1Executor>::builder_dangerous(&settings.smtp_host)
-            .port(settings.smtp_port)
-    };
-
-    if !settings.smtp_username.is_empty() {
-        transport = transport.credentials(Credentials::new(
-            settings.smtp_username.clone(),
-            settings.smtp_password.clone(),
-        ));
-    }
-
-    Ok(transport.build())
-}
-
-fn build_lettre_message(message: MailMessage) -> Result<Message> {
-    let from = mailbox(message.from)?;
-    let to = mailbox(message.to)?;
-
-    Message::builder()
-        .from(from)
-        .to(to)
-        .subject(message.subject)
-        .multipart(
-            MultiPart::alternative()
-                .singlepart(SinglePart::plain(message.text_body))
-                .singlepart(
-                    SinglePart::builder()
-                        .header(ContentType::TEXT_HTML)
-                        .body(message.html_body),
-                ),
-        )
-        .map_aster_err(AsterError::config_error)
-}
-
-fn mailbox(recipient: MailRecipient) -> Result<Mailbox> {
-    let address = recipient
-        .address
-        .parse()
-        .map_aster_err(AsterError::validation_error)?;
-    Ok(Mailbox::new(recipient.display_name, address))
 }

@@ -81,7 +81,7 @@ async fn create_file_from_blob_with_name_mode<C: ConnectionTrait>(
     // `resolve_unique_*` 只能减少冲突，不能彻底消灭并发窗口。
     // 这里仍然依赖数据库唯一约束兜底，并在冲突时继续推进到下一个副本名。
     for attempt in 0..max_attempts {
-        let classification = crate::utils::file_classification::classify_file(&final_name, &mime);
+        let classification = aster_forge_file_classification::classify_file(&final_name, &mime);
         let created = file::ActiveModel {
             name: Set(final_name.clone()),
             folder_id: Set(folder_id),

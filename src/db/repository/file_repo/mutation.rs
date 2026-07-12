@@ -44,7 +44,7 @@ pub async fn create_with_blob<C: ConnectionTrait>(
         mime_type,
         now,
     } = input;
-    let classification = crate::utils::file_classification::classify_file(name, mime_type);
+    let classification = aster_forge_file_classification::classify_file(name, mime_type);
 
     File::insert(file::ActiveModel {
         name: Set(name.to_string()),

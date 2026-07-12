@@ -20,7 +20,6 @@ pub use super::external_auth_provider::{
     StoredExternalAuthProviderOptions, parse_external_auth_provider_options,
     serialize_external_auth_provider_options,
 };
-pub use super::file_category::FileCategory;
 pub use super::media_metadata::{
     AudioMediaMetadata, ImageMediaMetadata, MediaMetadataKind, MediaMetadataPayload,
     MediaMetadataStatus, StoredMediaMetadataPayload, VideoMediaMetadata,
@@ -51,3 +50,4 @@ pub use super::task::{
 pub use super::team::TeamMemberRole;
 pub use super::user::{AvatarSource, UserRole, UserStatus};
 pub use super::user_invitation::UserInvitationStatus;
+pub use aster_forge_file_classification::FileCategory;

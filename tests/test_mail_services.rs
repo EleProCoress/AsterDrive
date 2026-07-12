@@ -5,16 +5,13 @@ use std::sync::{Arc, Mutex};
 
 use aster_drive::config::{audit, mail, site_url};
 use aster_drive::entities::audit_log;
-use aster_drive::errors::{AsterError, Result};
 use aster_drive::runtime::SharedRuntimeState;
-use aster_drive::services::{
-    mail::outbox,
-    mail::sender::{self, MailMessage, MailSender},
-    mail::template::RenderedMail,
-};
+use aster_drive::services::{mail::outbox, mail::sender};
 use aster_drive::types::AuditAction;
 use aster_forge_db::mail_outbox;
-use aster_forge_mail::{MailOutboxStatus, MailTemplateCode, StoredMailPayload};
+use aster_forge_mail::{
+    MailMessage, MailOutboxStatus, MailSender, MailTemplateCode, RenderedMail, StoredMailPayload,
+};
 use async_trait::async_trait;
 use chrono::{Duration, Utc};
 use sea_orm::{ActiveModelTrait, EntityTrait, Set};
@@ -40,9 +37,11 @@ impl FailingMailSender {
 
 #[async_trait]
 impl MailSender for FailingMailSender {
-    async fn send(&self, _message: MailMessage) -> Result<()> {
+    async fn send(&self, _message: MailMessage) -> aster_forge_mail::MailSendResult<()> {
         *self.attempts.lock().expect("attempt counter lock") += 1;
-        Err(AsterError::mail_delivery_failed(self.message.clone()))
+        Err(aster_forge_mail::MailDeliveryError::Delivery(
+            self.message.clone(),
+        ))
     }
 
     fn as_any(&self) -> &dyn Any {
@@ -133,12 +132,12 @@ async fn mail_audit_count(db: &sea_orm::DatabaseConnection, action: AuditAction)
 async fn test_memory_sender_records_messages_and_send_rendered_uses_runtime_from_fields() {
     let state = common::setup().await;
     apply_mail_config(&state);
-    let sender = sender::memory_sender();
+    let sender = aster_forge_mail::memory_sender();
 
     sender::send_rendered_with(
         &state.runtime_config,
         &sender,
-        sender::MailRecipient {
+        aster_forge_mail::MailRecipient {
             address: "target@example.com".to_string(),
             display_name: Some("Target User".to_string()),
         },
@@ -151,7 +150,7 @@ async fn test_memory_sender_records_messages_and_send_rendered_uses_runtime_from
     .await
     .unwrap();
 
-    let memory = sender::memory_sender_ref(&sender).unwrap();
+    let memory = aster_forge_mail::memory_sender_ref(&sender).unwrap();
     let messages = memory.messages();
     assert_eq!(messages.len(), 1);
     assert_eq!(memory.last_message(), messages.last().cloned());
@@ -169,7 +168,7 @@ async fn test_send_rendered_state_wrapper_and_test_email_include_site_context() 
 
     sender::send_rendered(
         &state,
-        sender::MailRecipient {
+        aster_forge_mail::MailRecipient {
             address: "first@example.com".to_string(),
             display_name: None,
         },
@@ -185,7 +184,7 @@ async fn test_send_rendered_state_wrapper_and_test_email_include_site_context() 
         .await
         .unwrap();
 
-    let memory = sender::memory_sender_ref(&state.mail_sender).unwrap();
+    let memory = aster_forge_mail::memory_sender_ref(&state.mail_sender).unwrap();
     let messages = memory.messages();
     assert_eq!(messages.len(), 2);
     assert_eq!(messages[0].subject, "Wrapped");
@@ -205,11 +204,11 @@ async fn test_runtime_sender_rejects_missing_and_partial_smtp_configuration_befo
     let state = common::setup().await;
     let sender = sender::runtime_sender(state.runtime_config.clone());
     let message = MailMessage {
-        from: sender::MailRecipient {
+        from: aster_forge_mail::MailRecipient {
             address: "noreply@example.com".to_string(),
             display_name: None,
         },
-        to: sender::MailRecipient {
+        to: aster_forge_mail::MailRecipient {
             address: "target@example.com".to_string(),
             display_name: None,
         },
@@ -219,8 +218,11 @@ async fn test_runtime_sender_rejects_missing_and_partial_smtp_configuration_befo
     };
 
     let error = sender.send(message.clone()).await.unwrap_err();
-    assert_eq!(error.code(), "E008");
-    assert!(error.message().contains("not configured"));
+    assert!(matches!(
+        error,
+        aster_forge_mail::MailDeliveryError::NotConfigured(ref message)
+            if message.contains("not configured")
+    ));
 
     state.runtime_config.apply(common::system_config_model(
         mail::MAIL_SMTP_HOST_KEY,
@@ -235,8 +237,11 @@ async fn test_runtime_sender_rejects_missing_and_partial_smtp_configuration_befo
         "user",
     ));
     let error = sender.send(message).await.unwrap_err();
-    assert_eq!(error.code(), "E008");
-    assert!(error.message().contains("username and password"));
+    assert!(matches!(
+        error,
+        aster_forge_mail::MailDeliveryError::NotConfigured(ref message)
+            if message.contains("username and password")
+    ));
 }
 
 #[tokio::test]
@@ -271,7 +276,7 @@ async fn test_mail_outbox_dispatch_sends_due_message_and_clears_payload() {
     );
     assert!(stored.sent_at.is_some());
 
-    let memory = sender::memory_sender_ref(&state.mail_sender).unwrap();
+    let memory = aster_forge_mail::memory_sender_ref(&state.mail_sender).unwrap();
     let message = memory.last_message().unwrap();
     assert_eq!(message.to.address, "user@example.com");
     assert_eq!(message.to.display_name.as_deref(), Some("User"));
@@ -320,7 +325,7 @@ async fn test_mail_outbox_dispatch_skips_future_retry_rows() {
     assert_eq!(stats.claimed, 0);
     assert_eq!(stats.sent, 0);
     assert!(
-        sender::memory_sender_ref(&state.mail_sender)
+        aster_forge_mail::memory_sender_ref(&state.mail_sender)
             .unwrap()
             .messages()
             .is_empty()
@@ -579,7 +584,7 @@ async fn test_mail_outbox_dispatch_invalid_payload_schedules_retry_without_sendi
     assert_eq!(stats.claimed, 1);
     assert_eq!(stats.retried, 1);
     assert!(
-        sender::memory_sender_ref(&state.mail_sender)
+        aster_forge_mail::memory_sender_ref(&state.mail_sender)
             .unwrap()
             .messages()
             .is_empty()
@@ -608,7 +613,7 @@ async fn test_mail_outbox_dispatch_does_not_reclaim_fresh_processing_rows() {
 
     assert_eq!(stats.claimed, 0);
     assert!(
-        sender::memory_sender_ref(&state.mail_sender)
+        aster_forge_mail::memory_sender_ref(&state.mail_sender)
             .unwrap()
             .messages()
             .is_empty()

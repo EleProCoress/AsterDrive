@@ -8,11 +8,11 @@ pub mod tasks;
 use crate::config::{Config, RuntimeConfig};
 use crate::metrics::SharedMetricsRecorder;
 use crate::services::{
-    events::storage_change::StorageChangeEvent, mail::sender::MailSender,
-    share::ShareDownloadRollbackQueue,
+    events::storage_change::StorageChangeEvent, share::ShareDownloadRollbackQueue,
 };
 use crate::storage::{DriverRegistry, PolicySnapshot, remote_protocol::RemoteProtocolRuntime};
 use aster_forge_db::DbHandles;
+use aster_forge_mail::MailSender;
 use sea_orm::DatabaseConnection;
 use std::sync::Arc;
 use tokio::sync::Notify;
@@ -345,7 +345,7 @@ mod tests {
             cache,
             config_sync: aster_forge_config::ConfigSyncRuntime::disabled_for_test("aster_drive"),
             metrics: crate::metrics::NoopMetrics::arc(),
-            mail_sender: crate::services::mail::sender::memory_sender(),
+            mail_sender: aster_forge_mail::memory_sender(),
             storage_change_tx,
             share_download_rollback,
             background_task_dispatch_wakeup:

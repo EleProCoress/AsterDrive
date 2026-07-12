@@ -80,7 +80,7 @@ async fn build_dispatch_test_state() -> crate::runtime::PrimaryAppState {
         cache,
         config_sync: aster_forge_config::ConfigSyncRuntime::disabled_for_test("aster_drive"),
         metrics: crate::metrics::NoopMetrics::arc(),
-        mail_sender: crate::services::mail::sender::memory_sender(),
+        mail_sender: aster_forge_mail::memory_sender(),
         storage_change_tx,
         share_download_rollback,
         background_task_dispatch_wakeup:
