@@ -12,7 +12,7 @@ use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::{PrimaryAppState, SharedRuntimeState};
 use crate::services::task::types::TaskStepInfo;
 use crate::storage::error::{StorageErrorKind, storage_driver_error_with_code};
-use crate::utils::numbers::u64_to_i64;
+use aster_forge_utils::numbers::u64_to_i64;
 
 use super::super::steps::{TASK_STEP_DOWNLOAD_SOURCE, set_task_step_active};
 use super::super::{TaskExecutionContext, mark_task_progress};
@@ -91,7 +91,7 @@ impl Aria2OfflineDownloadEngine {
             follow_torrent: "false".to_string(),
             follow_metalink: "false".to_string(),
             max_redirect: "0".to_string(),
-            user_agent: crate::utils::OUTBOUND_HTTP_USER_AGENT.to_string(),
+            user_agent: crate::config::OUTBOUND_HTTP_USER_AGENT.to_string(),
             split: self.split.to_string(),
             max_connection_per_server: self.max_connection_per_server.to_string(),
             lowest_speed_limit: self
@@ -402,7 +402,7 @@ impl Aria2RpcClient {
             .map_aster_err_ctx("parse aria2 RPC URL", AsterError::validation_error)?;
         let client = reqwest::Client::builder()
             .timeout(timeout)
-            .user_agent(crate::utils::OUTBOUND_HTTP_USER_AGENT)
+            .user_agent(crate::config::OUTBOUND_HTTP_USER_AGENT)
             .build()
             .map_aster_err_ctx("build aria2 RPC HTTP client", AsterError::internal_error)?;
         Ok(Self {
@@ -514,7 +514,7 @@ impl Aria2RpcClient {
     ) -> std::result::Result<T, Aria2RpcCallError> {
         let request = Aria2JsonRpcRequest {
             jsonrpc: "2.0",
-            id: format!("asterdrive-{}", crate::utils::id::new_uuid()),
+            id: format!("asterdrive-{}", aster_forge_utils::id::new_uuid()),
             method: method.as_str(),
             params,
         };
@@ -939,7 +939,7 @@ pub(super) fn parse_aria2_length(value: &str, field: &str) -> Result<i64> {
     let parsed = value
         .parse::<u64>()
         .map_aster_err_ctx(&format!("parse {field}"), AsterError::storage_driver_error)?;
-    u64_to_i64(parsed, field)
+    Ok(u64_to_i64(parsed, field)?)
 }
 
 async fn downloaded_file_size(path: &Path) -> Result<i64> {
@@ -947,7 +947,10 @@ async fn downloaded_file_size(path: &Path) -> Result<i64> {
         "stat offline download temp file",
         AsterError::storage_driver_error,
     )?;
-    u64_to_i64(metadata.len(), "offline download temp file size")
+    Ok(u64_to_i64(
+        metadata.len(),
+        "offline download temp file size",
+    )?)
 }
 
 async fn sha256_file(path: &Path) -> Result<String> {
@@ -955,7 +958,7 @@ async fn sha256_file(path: &Path) -> Result<String> {
         "open offline download temp file",
         AsterError::storage_driver_error,
     )?;
-    let mut hasher = crate::utils::hash::new_sha256();
+    let mut hasher = aster_forge_crypto::new_sha256();
     let mut buffer = vec![0_u8; 64 * 1024];
     loop {
         let read = file.read(&mut buffer).await.map_aster_err_ctx(
@@ -967,5 +970,5 @@ async fn sha256_file(path: &Path) -> Result<String> {
         }
         hasher.update(&buffer[..read]);
     }
-    Ok(crate::utils::hash::sha256_digest_to_hex(&hasher.finalize()))
+    Ok(aster_forge_crypto::sha256_digest_to_hex(&hasher.finalize()))
 }

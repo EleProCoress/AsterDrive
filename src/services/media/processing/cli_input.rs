@@ -320,7 +320,7 @@ mod tests {
         assert!(prepared.input_arg().ends_with("source.heic"));
         let stored = tokio::fs::read(prepared.input_arg()).await.unwrap();
         assert_eq!(stored, b"local-source");
-        crate::utils::cleanup_temp_dir(temp_dir.to_string_lossy().as_ref()).await;
+        aster_forge_utils::fs::cleanup_temp_dir(temp_dir.to_string_lossy().as_ref()).await;
     }
 
     #[tokio::test]
@@ -350,7 +350,7 @@ mod tests {
         assert!(prepared.input_arg().ends_with("source.csv"));
         let stored = tokio::fs::read(prepared.input_arg()).await.unwrap();
         assert_eq!(stored, b"local-source");
-        crate::utils::cleanup_temp_dir(temp_dir.to_string_lossy().as_ref()).await;
+        aster_forge_utils::fs::cleanup_temp_dir(temp_dir.to_string_lossy().as_ref()).await;
     }
 
     #[tokio::test]
@@ -379,7 +379,7 @@ mod tests {
             prepared.input_arg(),
             "https://example.com/presigned-source.mp4"
         );
-        crate::utils::cleanup_temp_dir(temp_dir.to_string_lossy().as_ref()).await;
+        aster_forge_utils::fs::cleanup_temp_dir(temp_dir.to_string_lossy().as_ref()).await;
     }
 
     #[tokio::test]
@@ -407,6 +407,6 @@ mod tests {
         assert!(prepared.input_arg().ends_with("source.mp4"));
         let stored = tokio::fs::read(prepared.input_arg()).await.unwrap();
         assert_eq!(stored, b"streamed-source");
-        crate::utils::cleanup_temp_dir(temp_dir.to_string_lossy().as_ref()).await;
+        aster_forge_utils::fs::cleanup_temp_dir(temp_dir.to_string_lossy().as_ref()).await;
     }
 }

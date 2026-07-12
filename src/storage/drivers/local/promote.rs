@@ -2,7 +2,7 @@ use std::path::Path;
 
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::storage::traits::driver::StorageDriver;
-use crate::utils::numbers;
+use aster_forge_utils::numbers;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PromoteLocalFileOutcome {
@@ -124,7 +124,7 @@ async fn promote_local_file_via_temp_copy(
             target.display()
         )));
     };
-    let temp_name = format!(".aster-promote-{}.tmp", crate::utils::id::new_uuid());
+    let temp_name = format!(".aster-promote-{}.tmp", aster_forge_utils::id::new_uuid());
     let temp_path = parent.join(temp_name);
 
     match copy_file_to_temp(local_path, &temp_path, expected_size, &checkpoint).await {
@@ -172,7 +172,7 @@ async fn promote_local_file_via_temp_copy(
 
 async fn cleanup_promoted_source(local_path: &str, preserve_source: bool) {
     if !preserve_source {
-        crate::utils::cleanup_temp_file(local_path).await;
+        aster_forge_utils::fs::cleanup_temp_file(local_path).await;
     }
 }
 

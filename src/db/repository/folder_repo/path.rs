@@ -8,7 +8,7 @@ use sea_orm::{
 
 use crate::entities::folder::{self, Entity as Folder};
 use crate::errors::{AsterError, Result};
-use crate::utils::numbers::usize_to_i64;
+use aster_forge_utils::numbers::usize_to_i64;
 
 use super::query::{find_by_id, find_by_name_in_parent};
 
@@ -600,7 +600,7 @@ pub async fn find_ancestors<C: ConnectionTrait>(
     folder_id: i64,
 ) -> Result<Vec<(i64, String)>> {
     let folder = find_by_id(db, folder_id).await?;
-    crate::utils::verify_optional_owner(folder.owner_user_id, user_id, "folder")?;
+    crate::types::ownership::verify_optional_owner(folder.owner_user_id, user_id, "folder")?;
     if folder.deleted_at.is_some() {
         return Err(AsterError::file_not_found(format!(
             "folder #{folder_id} is in trash"

@@ -10,7 +10,7 @@ use crate::entities::file_blob;
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::{PrimaryAppState, SharedRuntimeState};
 use crate::storage::{StorageDriver, StorageErrorKind};
-use crate::utils::numbers::u64_to_usize;
+use aster_forge_utils::numbers::u64_to_usize;
 
 use crate::services::media::processing::shared::{
     ThumbnailContext, ThumbnailData, requires_server_side_source_limit,
@@ -246,7 +246,7 @@ mod tests {
     use crate::errors::{AsterError, Result};
     use crate::storage::error::storage_driver_error;
     use crate::storage::{BlobMetadata, StorageDriver, StorageErrorKind};
-    use crate::utils::numbers::u64_to_usize;
+    use aster_forge_utils::numbers::u64_to_usize;
     use async_trait::async_trait;
     use bytes::Bytes;
     use std::sync::{

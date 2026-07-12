@@ -75,10 +75,10 @@ pub async fn create_enrollment_command<S: SharedRuntimeState>(
             "public_site_url must be configured before generating enrollment commands",
         )
     })?;
-    let token = format!("enr_{}", crate::utils::id::new_short_token());
-    let ack_token = format!("enr_ack_{}", crate::utils::id::new_short_token());
-    let token_hash = crate::utils::hash::sha256_hex(token.as_bytes());
-    let ack_token_hash = crate::utils::hash::sha256_hex(ack_token.as_bytes());
+    let token = format!("enr_{}", aster_forge_utils::id::new_short_token());
+    let ack_token = format!("enr_ack_{}", aster_forge_utils::id::new_short_token());
+    let token_hash = aster_forge_crypto::sha256_hex(token.as_bytes());
+    let ack_token_hash = aster_forge_crypto::sha256_hex(ack_token.as_bytes());
     let expires_at = Utc::now() + Duration::minutes(DEFAULT_ENROLLMENT_TTL_MINUTES);
     let created_at = Utc::now();
 
@@ -126,7 +126,7 @@ pub async fn redeem_enrollment_token<S: SharedRuntimeState>(
         return Err(AsterError::validation_error("token cannot be blank"));
     }
 
-    let token_hash = crate::utils::hash::sha256_hex(trimmed.as_bytes());
+    let token_hash = aster_forge_crypto::sha256_hex(trimmed.as_bytes());
     transaction::with_transaction(state.writer_db(), async |txn| {
         let enrollment = follower_enrollment_session_repo::find_by_token_hash(txn, &token_hash)
             .await?
@@ -234,5 +234,5 @@ fn normalize_ack_token_hash(value: &str) -> String {
         return raw_hash.to_ascii_lowercase();
     }
 
-    crate::utils::hash::sha256_hex(value.as_bytes())
+    aster_forge_crypto::sha256_hex(value.as_bytes())
 }

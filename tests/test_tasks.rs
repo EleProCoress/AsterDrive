@@ -746,7 +746,7 @@ async fn run_failing_personal_archive_extract_with_filename(
     }
 
     let task_temp_dir =
-        aster_drive::utils::paths::task_temp_dir(&state.config.server.temp_dir, task_id);
+        aster_forge_utils::paths::task_temp_dir(&state.config.server.temp_dir, task_id);
     assert!(
         !std::path::Path::new(&task_temp_dir).exists(),
         "failed extract task should cleanup temp dir"
@@ -2224,7 +2224,7 @@ async fn test_cleanup_expired_keeps_terminal_task_records() {
     .expect("expired task should be inserted");
 
     let task_temp_dir =
-        aster_drive::utils::paths::task_temp_dir(&state.config.server.temp_dir, task.id);
+        aster_forge_utils::paths::task_temp_dir(&state.config.server.temp_dir, task.id);
     std::fs::create_dir_all(&task_temp_dir).expect("task temp dir should be created");
     std::fs::write(format!("{task_temp_dir}/artifact.tmp"), b"expired")
         .expect("task temp artifact should be written");
@@ -2254,7 +2254,7 @@ async fn test_cleanup_expired_scans_offline_download_temp_dir() {
     let state = common::setup().await;
     let custom_temp_root = std::env::temp_dir().join(format!(
         "aster-drive-offline-task-cleanup-{}",
-        aster_drive::utils::id::new_uuid()
+        aster_forge_utils::id::new_uuid()
     ));
     let custom_temp_root = custom_temp_root.to_string_lossy().to_string();
     state.runtime_config.apply(common::system_config_model(
@@ -2295,7 +2295,7 @@ async fn test_cleanup_expired_scans_offline_download_temp_dir() {
     .await
     .expect("expired offline download task should be inserted");
 
-    let task_temp_dir = aster_drive::utils::paths::task_temp_dir(&custom_temp_root, task.id);
+    let task_temp_dir = aster_forge_utils::paths::task_temp_dir(&custom_temp_root, task.id);
     std::fs::create_dir_all(&task_temp_dir).expect("offline download temp dir should be created");
     std::fs::write(format!("{task_temp_dir}/source"), b"expired")
         .expect("offline download temp artifact should be written");
@@ -3395,7 +3395,7 @@ async fn test_archive_compress_task_rejects_quota_before_building_archive() {
     );
 
     let task_temp_dir =
-        aster_drive::utils::paths::task_temp_dir(&state.config.server.temp_dir, task_id);
+        aster_forge_utils::paths::task_temp_dir(&state.config.server.temp_dir, task_id);
     assert!(
         !std::path::Path::new(&task_temp_dir).exists(),
         "failed archive compress task should not leave temp dir"
@@ -4360,7 +4360,7 @@ async fn test_archive_extract_task_fails_before_staging_when_quota_is_insufficie
     );
 
     let task_temp_dir =
-        aster_drive::utils::paths::task_temp_dir(&state.config.server.temp_dir, task_id);
+        aster_forge_utils::paths::task_temp_dir(&state.config.server.temp_dir, task_id);
     assert!(
         !std::path::Path::new(&task_temp_dir).exists(),
         "failed extract task should cleanup temp dir"
@@ -4457,7 +4457,7 @@ async fn test_archive_extract_task_fails_when_staging_limit_is_exceeded() {
     );
 
     let task_temp_dir =
-        aster_drive::utils::paths::task_temp_dir(&state.config.server.temp_dir, task_id);
+        aster_forge_utils::paths::task_temp_dir(&state.config.server.temp_dir, task_id);
     assert!(
         !std::path::Path::new(&task_temp_dir).exists(),
         "failed extract task should cleanup temp dir"
@@ -4542,7 +4542,7 @@ async fn test_archive_extract_task_rejects_entry_size_tampering() {
     );
 
     let task_temp_dir =
-        aster_drive::utils::paths::task_temp_dir(&state.config.server.temp_dir, task_id);
+        aster_forge_utils::paths::task_temp_dir(&state.config.server.temp_dir, task_id);
     assert!(
         !std::path::Path::new(&task_temp_dir).exists(),
         "failed extract task should cleanup temp dir"

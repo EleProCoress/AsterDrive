@@ -3,7 +3,7 @@
 use crate::config::bool_like::parse_bool_like;
 use crate::config::{RuntimeConfig, media_processing};
 use crate::errors::{AsterError, Result};
-use crate::utils::numbers::{u64_to_i64, u64_to_usize, usize_to_u64};
+use aster_forge_utils::numbers::{u64_to_i64, u64_to_usize, usize_to_u64};
 use serde::{Deserialize, Serialize};
 
 pub use crate::config::definitions::{
@@ -1645,7 +1645,7 @@ mod tests {
         let runtime_config = RuntimeConfig::new();
         assert_eq!(
             archive_extract_max_staging_bytes(&runtime_config),
-            crate::utils::numbers::u64_to_i64(
+            aster_forge_utils::numbers::u64_to_i64(
                 DEFAULT_ARCHIVE_EXTRACT_MAX_STAGING_BYTES,
                 ARCHIVE_EXTRACT_MAX_STAGING_BYTES_KEY,
             )
@@ -1880,7 +1880,7 @@ mod tests {
         runtime_config.apply(config_model(AVATAR_MAX_UPLOAD_SIZE_BYTES_KEY, "invalid"));
         assert_eq!(
             avatar_max_upload_size_bytes(&runtime_config),
-            crate::utils::numbers::u64_to_usize(
+            aster_forge_utils::numbers::u64_to_usize(
                 DEFAULT_AVATAR_MAX_UPLOAD_SIZE_BYTES,
                 AVATAR_MAX_UPLOAD_SIZE_BYTES_KEY,
             )
@@ -1897,7 +1897,7 @@ mod tests {
         ));
         assert_eq!(
             archive_extract_max_staging_bytes(&runtime_config),
-            crate::utils::numbers::u64_to_i64(
+            aster_forge_utils::numbers::u64_to_i64(
                 DEFAULT_ARCHIVE_EXTRACT_MAX_STAGING_BYTES,
                 ARCHIVE_EXTRACT_MAX_STAGING_BYTES_KEY,
             )

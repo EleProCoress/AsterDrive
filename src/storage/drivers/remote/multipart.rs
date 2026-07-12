@@ -46,7 +46,7 @@ impl AsyncRead for HashingReader {
 #[async_trait]
 impl MultipartStorageDriver for RemoteDriver {
     async fn create_multipart_upload(&self, _path: &str) -> Result<String> {
-        Ok(crate::utils::id::new_uuid())
+        Ok(aster_forge_utils::id::new_uuid())
     }
 
     async fn presigned_upload_part_url(

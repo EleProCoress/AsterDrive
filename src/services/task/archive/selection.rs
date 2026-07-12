@@ -693,7 +693,7 @@ fn record_archive_build_entry(
     }
 
     let path_bytes =
-        crate::utils::numbers::usize_to_i64(entry_path.len(), "archive entry path bytes")?;
+        aster_forge_utils::numbers::usize_to_i64(entry_path.len(), "archive entry path bytes")?;
     let source_bytes = file_size.unwrap_or(0);
     let estimated_entry_bytes = source_bytes
         .checked_add(path_bytes)

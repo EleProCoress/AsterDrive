@@ -173,7 +173,7 @@ impl AzureBlobDriver {
     async fn copy_object_via_temp_file(&self, src_path: &str, dest_path: &str) -> Result<String> {
         use tokio::io::AsyncWriteExt as _;
 
-        let temp_path = crate::utils::raii::TempFileGuard::new(
+        let temp_path = aster_forge_utils::raii::TempFileGuard::new(
             std::env::temp_dir().join(format!(
                 "aster_azure_copy_{}_{}",
                 std::process::id(),

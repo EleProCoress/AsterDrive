@@ -61,7 +61,7 @@ impl StorageDriver for PreviewMemoryRangeDriver {
     ) -> Result<Box<dyn tokio::io::AsyncRead + Unpin + Send>> {
         self.range_calls.fetch_add(1, Ordering::SeqCst);
         let start =
-            crate::utils::numbers::u64_to_usize(offset, "preview memory range start offset")?;
+            aster_forge_utils::numbers::u64_to_usize(offset, "preview memory range start offset")?;
         let end = length
             .map(|len| {
                 offset
@@ -69,7 +69,9 @@ impl StorageDriver for PreviewMemoryRangeDriver {
                     .ok_or_else(|| AsterError::internal_error("preview memory range end overflow"))
             })
             .transpose()?
-            .map(|end| crate::utils::numbers::u64_to_usize(end, "preview memory range end offset"))
+            .map(|end| {
+                aster_forge_utils::numbers::u64_to_usize(end, "preview memory range end offset")
+            })
             .transpose()?
             .unwrap_or(self.data.len())
             .min(self.data.len());
@@ -95,7 +97,7 @@ impl StorageDriver for PreviewMemoryRangeDriver {
 
     async fn metadata(&self, _path: &str) -> Result<BlobMetadata> {
         Ok(BlobMetadata {
-            size: crate::utils::numbers::usize_to_u64(
+            size: aster_forge_utils::numbers::usize_to_u64(
                 self.data.len(),
                 "preview memory driver data length",
             )?,
@@ -394,9 +396,11 @@ async fn manifest_marks_preview_only_names_as_not_extract_compatible() {
         zip.write_all(b"hello").expect("file should write");
         zip.finish().expect("zip should finish").into_inner()
     };
-    let source_size =
-        crate::utils::numbers::usize_to_i64(bytes.len(), "preview compatibility test zip size")
-            .expect("test zip size should fit i64");
+    let source_size = aster_forge_utils::numbers::usize_to_i64(
+        bytes.len(),
+        "preview compatibility test zip size",
+    )
+    .expect("test zip size should fit i64");
     let source_file = preview_test_file(source_size);
     let blob = preview_test_blob(source_size);
     let driver = Arc::new(PreviewMemoryRangeDriver::new(bytes));
@@ -422,7 +426,7 @@ async fn raw_manifest_can_be_redecoded_without_rescanning_storage() {
     let raw_name = b"\xb2\xe2\xca\xd4.txt";
     let bytes = create_single_file_zip_with_raw_name(raw_name, b"hello");
     let source_size =
-        crate::utils::numbers::usize_to_i64(bytes.len(), "preview recode test zip size")
+        aster_forge_utils::numbers::usize_to_i64(bytes.len(), "preview recode test zip size")
             .expect("test zip size should fit i64");
     let source_file = preview_test_file(source_size);
     let blob = preview_test_blob(source_size);
@@ -719,7 +723,7 @@ async fn range_manifest_scan_uses_get_range_without_full_stream() {
         zip.finish().expect("zip should finish").into_inner()
     };
     let source_size =
-        crate::utils::numbers::usize_to_i64(bytes.len(), "preview range test zip size")
+        aster_forge_utils::numbers::usize_to_i64(bytes.len(), "preview range test zip size")
             .expect("test zip size should fit i64");
     let source_file = preview_test_file(source_size);
     let blob = preview_test_blob(source_size);

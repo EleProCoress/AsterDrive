@@ -1,7 +1,7 @@
 use actix_web::http::header::HeaderValue;
 
 use crate::errors::{AsterError, Result};
-use crate::utils::numbers;
+use aster_forge_utils::numbers;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct DownloadRangeRequest {

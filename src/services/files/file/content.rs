@@ -20,7 +20,7 @@ use crate::services::{
     },
 };
 
-use crate::utils::numbers::usize_to_i64;
+use aster_forge_utils::numbers::usize_to_i64;
 
 pub(crate) struct StreamedTempUpload {
     pub temp_path: String,
@@ -73,8 +73,8 @@ pub(crate) async fn stream_request_body_to_temp_upload(
         )
     } else {
         let temp_dir = &state.config().server.temp_dir;
-        let runtime_temp_dir = crate::utils::paths::runtime_temp_dir(temp_dir);
-        let temp_path = crate::utils::paths::runtime_temp_file_path(
+        let runtime_temp_dir = aster_forge_utils::paths::runtime_temp_dir(temp_dir);
+        let temp_path = aster_forge_utils::paths::runtime_temp_file_path(
             temp_dir,
             &uuid::Uuid::new_v4().to_string(),
         );
@@ -126,14 +126,14 @@ pub(crate) async fn stream_request_body_to_temp_upload(
     drop(temp_file);
 
     if let Err(error) = write_result {
-        crate::utils::cleanup_temp_file(&temp_path).await;
+        aster_forge_utils::fs::cleanup_temp_file(&temp_path).await;
         return Err(error);
     }
 
     if let Some(declared_size) = declared_size
         && size != declared_size
     {
-        crate::utils::cleanup_temp_file(&temp_path).await;
+        aster_forge_utils::fs::cleanup_temp_file(&temp_path).await;
         return Err(validation_error_with_code(
             ApiErrorCode::UploadRequestSizeMismatch,
             "request body length does not match declared size",
@@ -141,7 +141,7 @@ pub(crate) async fn stream_request_body_to_temp_upload(
     }
 
     let precomputed_hash =
-        hasher.map(|hasher| crate::utils::hash::sha256_digest_to_hex(&hasher.finalize()));
+        hasher.map(|hasher| aster_forge_crypto::sha256_digest_to_hex(&hasher.finalize()));
 
     Ok(StreamedTempUpload {
         temp_path,
@@ -308,7 +308,7 @@ pub(crate) async fn update_content_in_scope(
         let precomputed_hash = should_dedup.then(|| {
             let mut hasher = Sha256::new();
             hasher.update(&body);
-            crate::utils::hash::sha256_digest_to_hex(&hasher.finalize())
+            aster_forge_crypto::sha256_digest_to_hex(&hasher.finalize())
         });
         let staging_path = staging_path.to_string_lossy().into_owned();
         let result = storage::store_from_temp_with_hints(
@@ -324,12 +324,12 @@ pub(crate) async fn update_content_in_scope(
             },
         )
         .await;
-        crate::utils::cleanup_temp_file(&staging_path).await;
+        aster_forge_utils::fs::cleanup_temp_file(&staging_path).await;
         result
     } else {
         let temp_dir = &state.config().server.temp_dir;
-        let runtime_temp_dir = crate::utils::paths::runtime_temp_dir(temp_dir);
-        let temp_path = crate::utils::paths::runtime_temp_file_path(
+        let runtime_temp_dir = aster_forge_utils::paths::runtime_temp_dir(temp_dir);
+        let temp_path = aster_forge_utils::paths::runtime_temp_file_path(
             temp_dir,
             &uuid::Uuid::new_v4().to_string(),
         );
@@ -350,7 +350,7 @@ pub(crate) async fn update_content_in_scope(
             true,
         )
         .await;
-        crate::utils::cleanup_temp_file(&temp_path).await;
+        aster_forge_utils::fs::cleanup_temp_file(&temp_path).await;
         result
     };
 
@@ -440,7 +440,7 @@ pub(crate) async fn update_content_stream_in_scope(
         },
     )
     .await;
-    crate::utils::cleanup_temp_file(&temp_path).await;
+    aster_forge_utils::fs::cleanup_temp_file(&temp_path).await;
 
     let updated = result?;
     let new_blob = crate::db::repository::file_repo::find_blob_by_id(db, updated.blob_id).await?;

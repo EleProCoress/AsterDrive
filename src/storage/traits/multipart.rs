@@ -89,7 +89,8 @@ pub trait MultipartStorageDriver: Send + Sync {
         size: i64,
     ) -> Result<String> {
         let mut reader = reader;
-        let expected_size = crate::utils::numbers::bytes_to_usize(size, "multipart part size")?;
+        let expected_size =
+            aster_forge_utils::numbers::bytes_to_usize(size, "multipart part size")?;
         let mut data = Vec::with_capacity(expected_size);
         let mut buffer = vec![0u8; DEFAULT_MULTIPART_READER_BUFFER_SIZE.min(expected_size.max(1))];
 

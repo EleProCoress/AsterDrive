@@ -58,7 +58,8 @@ pub(crate) async fn scan_manifest_from_storage_range(
     driver: Arc<dyn StorageDriver>,
     limits: &ArchivePreviewLimits,
 ) -> Result<ArchiveRawManifest> {
-    let source_size = crate::utils::numbers::i64_to_u64(source_file.size, "source archive size")?;
+    let source_size =
+        aster_forge_utils::numbers::i64_to_u64(source_file.size, "source archive size")?;
     let storage_path = blob.storage_path.clone();
     let handle = tokio::runtime::Handle::current();
     scan_manifest_with_reader(
@@ -119,15 +120,15 @@ where
             source_blob_id,
             source_hash: manifest_source_hash,
             generated_at,
-            entry_count: crate::utils::numbers::u64_to_i64(
+            entry_count: aster_forge_utils::numbers::u64_to_i64(
                 scanned.entry_count,
                 "archive preview entry count",
             )?,
-            file_count: crate::utils::numbers::u64_to_i64(
+            file_count: aster_forge_utils::numbers::u64_to_i64(
                 scanned.file_count,
                 "archive preview file count",
             )?,
-            directory_count: crate::utils::numbers::u64_to_i64(
+            directory_count: aster_forge_utils::numbers::u64_to_i64(
                 scanned.directory_count,
                 "archive preview directory count",
             )?,
@@ -275,12 +276,18 @@ fn cached_raw_display_scan_limits(
     limits: &ArchivePreviewLimits,
 ) -> Result<ArchiveScanLimits> {
     let mut scan_limits = limits.scan_limits;
-    let cached_entry_count =
-        crate::utils::numbers::usize_to_u64(raw_entries.len(), "archive cached raw entry count")?;
-    let stored_entry_count =
-        crate::utils::numbers::i64_to_u64(raw_manifest.entry_count, "archive preview entry count")?;
-    let stored_file_count =
-        crate::utils::numbers::i64_to_u64(raw_manifest.file_count, "archive preview file count")?;
+    let cached_entry_count = aster_forge_utils::numbers::usize_to_u64(
+        raw_entries.len(),
+        "archive cached raw entry count",
+    )?;
+    let stored_entry_count = aster_forge_utils::numbers::i64_to_u64(
+        raw_manifest.entry_count,
+        "archive preview entry count",
+    )?;
+    let stored_file_count = aster_forge_utils::numbers::i64_to_u64(
+        raw_manifest.file_count,
+        "archive preview file count",
+    )?;
 
     scan_limits.max_entries = scan_limits
         .max_entries
@@ -301,7 +308,7 @@ fn cached_raw_display_scan_limits(
 }
 
 fn max_i64_u64_count(stored: i64, scanned: u64, value_name: &str) -> Result<i64> {
-    Ok(stored.max(crate::utils::numbers::u64_to_i64(scanned, value_name)?))
+    Ok(stored.max(aster_forge_utils::numbers::u64_to_i64(scanned, value_name)?))
 }
 
 fn fit_manifest_to_limit(

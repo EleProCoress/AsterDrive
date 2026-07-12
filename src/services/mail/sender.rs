@@ -8,8 +8,8 @@ use crate::config::RuntimeConfig;
 use crate::config::{mail, site_url};
 use crate::errors::Result;
 use crate::runtime::MailRuntimeState;
-use crate::utils::id;
 use aster_forge_mail::{MailRecipient, MailSender, RenderedMail};
+use aster_forge_utils::id;
 
 pub fn runtime_sender(runtime_config: Arc<RuntimeConfig>) -> Arc<dyn MailSender> {
     aster_forge_mail::smtp_sender(move || mail::runtime_mail_settings(&runtime_config))

@@ -15,7 +15,7 @@ use crate::storage::traits::extensions::{
     ProviderResumableUploadCapabilities, ProviderResumableUploadDriver, StorageCapacityInfo,
     StreamUploadDriver,
 };
-use crate::utils::numbers;
+use aster_forge_utils::numbers;
 
 pub use client::{
     MicrosoftGraphAccessTokenProvider, MicrosoftGraphClient, MicrosoftGraphClientConfig,

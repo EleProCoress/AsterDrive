@@ -18,8 +18,8 @@ use crate::services::events::storage_change::StorageChangeWorkspace;
 use crate::services::ops::audit::{self, AuditContext, AuditRequestInfo};
 use crate::services::{auth::local, user::account, workspace::team};
 use crate::types::TokenType;
-use crate::utils::numbers::{u64_to_i64, usize_to_i64};
 use actix_web::{HttpRequest, HttpResponse, web};
+use aster_forge_utils::numbers::{u64_to_i64, usize_to_i64};
 use bytes::Bytes;
 use tokio_util::sync::CancellationToken;
 

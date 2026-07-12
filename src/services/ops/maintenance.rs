@@ -76,11 +76,11 @@ pub async fn cleanup_expired_completed_upload_sessions(
                 }
             }
 
-            let temp_dir = crate::utils::paths::upload_temp_dir(
+            let temp_dir = aster_forge_utils::paths::upload_temp_dir(
                 &state.config().server.upload_temp_dir,
                 &session.id,
             );
-            crate::utils::cleanup_temp_dir(&temp_dir).await;
+            aster_forge_utils::fs::cleanup_temp_dir(&temp_dir).await;
 
             match upload_session_repo::delete(state.writer_db(), &session.id).await {
                 Ok(()) => {
@@ -251,7 +251,7 @@ async fn current_blob_ref_counts(
         })?;
         actual.insert(
             *blob_id,
-            crate::utils::numbers::i64_to_i32(total_refs, "blob actual reference count")?,
+            aster_forge_utils::numbers::i64_to_i32(total_refs, "blob actual reference count")?,
         );
     }
 

@@ -9,8 +9,8 @@ use crate::entities::share;
 use crate::errors::{AsterError, Result};
 use crate::runtime::SharedRuntimeState;
 use crate::services::workspace::storage::{WorkspaceResourceScope, WorkspaceStorageScope};
-use crate::utils::hash;
 use aster_forge_cache::CacheExt;
+use aster_forge_crypto as hash;
 
 const ACTIVE_SHARE_TARGET_CACHE_TTL: u64 = 60;
 const SHARE_TOKEN_LOOKUP_CACHE_TTL: u64 = 60;

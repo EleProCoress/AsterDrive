@@ -21,7 +21,7 @@ use crate::services::{
     user::profile,
 };
 use crate::types::{BackgroundTaskKind, BackgroundTaskStatus, UserStatus};
-use crate::utils::numbers::u32_to_usize;
+use aster_forge_utils::numbers::u32_to_usize;
 
 type DateTimeUtc = DateTime<Utc>;
 

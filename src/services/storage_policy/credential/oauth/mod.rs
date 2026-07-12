@@ -26,7 +26,7 @@ use crate::types::{
     StorageAuthorizationFlowStatus, StorageCredentialKind, StorageCredentialProvider,
     StorageCredentialStatus, parse_storage_policy_options,
 };
-use crate::utils::id;
+use aster_forge_utils::id;
 
 use super::{
     FLOW_TTL_SECS, MicrosoftGraphApplicationConfigInput, MicrosoftGraphAuthorizationContext,
@@ -387,7 +387,8 @@ async fn start_microsoft_graph_authorization(
         scopes: scopes.clone(),
     };
     let now = Utc::now();
-    let ttl = crate::utils::numbers::u64_to_i64(FLOW_TTL_SECS, "storage authorization flow ttl")?;
+    let ttl =
+        aster_forge_utils::numbers::u64_to_i64(FLOW_TTL_SECS, "storage authorization flow ttl")?;
     storage_policy_authorization_flow_repo::cancel_pending_for_policy(
         state.writer_db(),
         policy_id,

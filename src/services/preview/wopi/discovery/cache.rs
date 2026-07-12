@@ -4,10 +4,10 @@ use std::time::Duration as StdDuration;
 use chrono::{Duration, Utc};
 use moka::future::Cache;
 
+use crate::config::OUTBOUND_HTTP_USER_AGENT;
 use crate::config::wopi;
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::SharedRuntimeState;
-use crate::utils::OUTBOUND_HTTP_USER_AGENT;
 
 use super::parser::parse_discovery_xml;
 use super::types::{CachedWopiDiscovery, WopiDiscovery};
@@ -121,7 +121,7 @@ fn discovery_cache_ttl(runtime_config: &crate::config::RuntimeConfig) -> Duratio
 #[cfg(test)]
 mod tests {
     use super::{build_discovery_client, build_discovery_client_with_user_agent};
-    use crate::utils::OUTBOUND_HTTP_USER_AGENT;
+    use crate::config::OUTBOUND_HTTP_USER_AGENT;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     #[tokio::test]

@@ -11,6 +11,7 @@ pub mod entity;
 pub mod external_auth_provider;
 mod facade;
 pub mod media_metadata;
+pub(crate) mod ownership;
 pub mod passkey;
 pub mod preferences;
 pub mod storage_credential;

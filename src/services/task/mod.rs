@@ -70,8 +70,8 @@ use crate::services::{
     workspace::storage::{self, WorkspaceStorageScope},
 };
 use crate::types::{BackgroundTaskKind, BackgroundTaskStatus, StoredTaskResult, StoredTaskSteps};
-use crate::utils::numbers::{i64_to_i32, i64_to_u64};
 use aster_forge_api::{OffsetPage, SortOrder};
+use aster_forge_utils::numbers::{i64_to_i32, i64_to_u64};
 
 pub use dispatch::{DispatchStats, cleanup_expired, dispatch_due, drain};
 use registry::{build_task_presentation, decode_task_payload, decode_task_result};
@@ -1041,8 +1041,11 @@ pub(super) async fn prepare_task_temp_dir_in_root(
     // 这样任务被 stale reclaim 后，新旧 worker 不会写进同一个目录。
     // 这里也只清当前 lease 的 token 目录，避免旧 worker 启动时把新 lease 的产物删掉。
     cleanup_task_temp_dir_for_lease_in_root(temp_root, lease).await?;
-    let task_temp_dir =
-        crate::utils::paths::task_token_temp_dir(temp_root, lease.task_id, lease.processing_token);
+    let task_temp_dir = aster_forge_utils::paths::task_token_temp_dir(
+        temp_root,
+        lease.task_id,
+        lease.processing_token,
+    );
     tokio::fs::create_dir_all(&task_temp_dir)
         .await
         .map_err(|error| {
@@ -1055,7 +1058,7 @@ pub(super) async fn cleanup_task_temp_dir_for_lease_in_root(
     temp_root: &str,
     lease: TaskLease,
 ) -> Result<()> {
-    crate::utils::cleanup_temp_dir(&crate::utils::paths::task_token_temp_dir(
+    aster_forge_utils::fs::cleanup_temp_dir(&aster_forge_utils::paths::task_token_temp_dir(
         temp_root,
         lease.task_id,
         lease.processing_token,
@@ -1092,7 +1095,10 @@ pub(super) async fn cleanup_task_temp_dir_for_task_in_root(
 ) -> Result<()> {
     // 成功路径会删整个任务根目录，因为到这里说明已经没有活跃 lease 需要保留产物了。
     // 如果任务在失败/崩溃/重启中断时没走到这里，后续由 task-cleanup 周期任务兜底清理。
-    crate::utils::cleanup_temp_dir(&crate::utils::paths::task_temp_dir(temp_root, task_id)).await;
+    aster_forge_utils::fs::cleanup_temp_dir(&aster_forge_utils::paths::task_temp_dir(
+        temp_root, task_id,
+    ))
+    .await;
     Ok(())
 }
 
@@ -1107,7 +1113,7 @@ fn ensure_task_in_scope(task: &background_task::Model, scope: WorkspaceStorageSc
             let creator_user_id = task.creator_user_id.ok_or_else(|| {
                 AsterError::internal_error(format!("task #{} is missing creator_user_id", task.id))
             })?;
-            crate::utils::verify_owner(creator_user_id, user_id, "task")?;
+            crate::types::ownership::verify_owner(creator_user_id, user_id, "task")?;
         }
         WorkspaceStorageScope::Team { team_id, .. } => {
             if task.team_id != Some(team_id) {

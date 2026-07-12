@@ -10,7 +10,7 @@ use crate::entities::{auth_session, user};
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::SharedRuntimeState;
 use crate::types::TokenType;
-use crate::utils::numbers::{i64_to_u64, u64_to_i64, u64_to_usize};
+use aster_forge_utils::numbers::{i64_to_u64, u64_to_i64, u64_to_usize};
 
 use super::session::get_auth_snapshot;
 use super::{AuthSnapshot, Claims};

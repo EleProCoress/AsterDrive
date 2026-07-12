@@ -10,11 +10,11 @@ use std::sync::Arc;
 use tokio::io::AsyncRead;
 use tokio_util::io::StreamReader;
 
+use crate::config::OUTBOUND_HTTP_USER_AGENT;
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::storage::error::{StorageErrorKind, storage_driver_error};
 use crate::storage::traits::driver::BlobMetadata;
 use crate::storage::traits::extensions::{StorageCapacityInfo, StorageCapacityStatus};
-use crate::utils::OUTBOUND_HTTP_USER_AGENT;
 
 use super::error::{invalid_graph_url, map_graph_response_error, map_reqwest_error};
 

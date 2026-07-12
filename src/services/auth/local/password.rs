@@ -4,7 +4,7 @@ use crate::api::api_error_code::ApiErrorCode;
 use crate::db::repository::user_repo;
 use crate::errors::{AsterError, Result, auth_forbidden_with_code};
 use crate::runtime::SharedRuntimeState;
-use crate::utils::hash;
+use aster_forge_crypto as hash;
 use aster_forge_db::transaction;
 
 use super::session::{invalidate_auth_snapshot_cache, purge_all_auth_sessions_in_connection};

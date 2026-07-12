@@ -291,7 +291,7 @@ pub(super) async fn purge_folder_forest_in_resource_scope(
         "purged folder forest permanently"
     );
     Ok(FolderPurgeSummary {
-        purged: crate::utils::numbers::usize_to_u32(folder_ids.len(), "purged folder count")?,
+        purged: aster_forge_utils::numbers::usize_to_u32(folder_ids.len(), "purged folder count")?,
         freed_bytes: file_summary.freed_bytes,
     })
 }
@@ -303,7 +303,7 @@ mod tests {
 
     fn make_file_ids(count: usize) -> Vec<i64> {
         (0..count)
-            .map(|id| crate::utils::numbers::usize_to_i64(id, "test file id").unwrap())
+            .map(|id| aster_forge_utils::numbers::usize_to_i64(id, "test file id").unwrap())
             .collect()
     }
 

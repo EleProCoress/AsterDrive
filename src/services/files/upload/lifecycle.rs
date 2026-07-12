@@ -13,7 +13,7 @@ use crate::services::files::upload::shared::{
 };
 use crate::storage::StorageDriver;
 use crate::types::UploadSessionStatus;
-use crate::utils::numbers::usize_to_u32;
+use aster_forge_utils::numbers::usize_to_u32;
 
 const DEFERRED_UPLOAD_SESSION_CLEANUP_GRACE_SECS: i64 = 15;
 

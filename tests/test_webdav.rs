@@ -143,7 +143,7 @@ async fn seed_real_webdav_account(state: &PrimaryAppState) -> (String, String) {
     webdav_account::ActiveModel {
         user_id: Set(user.id),
         username: Set(username.clone()),
-        password_hash: Set(aster_drive::utils::hash::hash_password(&password)
+        password_hash: Set(aster_forge_crypto::hash_password(&password)
             .expect("real WebDAV test password should hash")),
         root_folder_id: Set(None),
         is_active: Set(true),
@@ -225,7 +225,7 @@ async fn seed_real_team_webdav_accounts(
         user_id: Set(user.id),
         team_id: Set(None),
         username: Set(personal_username.clone()),
-        password_hash: Set(aster_drive::utils::hash::hash_password(&personal_password)
+        password_hash: Set(aster_forge_crypto::hash_password(&personal_password)
             .expect("personal WebDAV password should hash")),
         root_folder_id: Set(None),
         is_active: Set(true),
@@ -243,7 +243,7 @@ async fn seed_real_team_webdav_accounts(
         user_id: Set(user.id),
         team_id: Set(Some(team.id)),
         username: Set(team_username.clone()),
-        password_hash: Set(aster_drive::utils::hash::hash_password(&team_password)
+        password_hash: Set(aster_forge_crypto::hash_password(&team_password)
             .expect("team WebDAV password should hash")),
         root_folder_id: Set(None),
         is_active: Set(true),
@@ -1789,7 +1789,7 @@ async fn test_webdav_put_existing_collection_returns_method_not_allowed() {
 async fn test_webdav_get_and_head_do_not_create_runtime_temp_files() {
     let state = common::setup().await;
     let runtime_temp_dir =
-        aster_drive::utils::paths::runtime_temp_dir(&state.config.server.temp_dir);
+        aster_forge_utils::paths::runtime_temp_dir(&state.config.server.temp_dir);
     let db1 = state.writer_db().clone();
     let db2 = state.writer_db().clone();
     let webdav_config = aster_drive::config::WebDavConfig::default();
@@ -1854,7 +1854,7 @@ async fn test_webdav_get_and_head_do_not_create_runtime_temp_files() {
 async fn test_webdav_put_local_fast_path_avoids_runtime_temp_files() {
     let state = common::setup().await;
     let runtime_temp_dir =
-        aster_drive::utils::paths::runtime_temp_dir(&state.config.server.temp_dir);
+        aster_forge_utils::paths::runtime_temp_dir(&state.config.server.temp_dir);
     let db1 = state.writer_db().clone();
     let db2 = state.writer_db().clone();
     let webdav_config = aster_drive::config::WebDavConfig::default();
@@ -1913,7 +1913,7 @@ async fn test_webdav_put_local_fast_path_avoids_runtime_temp_files() {
 async fn test_webdav_put_without_content_length_avoids_runtime_temp_files() {
     let state = common::setup().await;
     let runtime_temp_dir =
-        aster_drive::utils::paths::runtime_temp_dir(&state.config.server.temp_dir);
+        aster_forge_utils::paths::runtime_temp_dir(&state.config.server.temp_dir);
     let upload_temp_dir = state.config.server.upload_temp_dir.clone();
     let db1 = state.writer_db().clone();
     let db2 = state.writer_db().clone();

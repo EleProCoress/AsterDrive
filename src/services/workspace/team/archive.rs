@@ -95,11 +95,11 @@ async fn cleanup_team_upload_sessions(
             }
         }
 
-        let temp_dir = crate::utils::paths::upload_temp_dir(
+        let temp_dir = aster_forge_utils::paths::upload_temp_dir(
             &state.config().server.upload_temp_dir,
             &session.id,
         );
-        crate::utils::cleanup_temp_dir(&temp_dir).await;
+        aster_forge_utils::fs::cleanup_temp_dir(&temp_dir).await;
     }
 
     if !sessions.is_empty() {

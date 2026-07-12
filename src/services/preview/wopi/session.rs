@@ -306,7 +306,7 @@ async fn create_access_token_session(
     state: &impl SharedRuntimeState,
     payload: &WopiAccessTokenPayload,
 ) -> Result<String> {
-    let token = format!("wopi_{}", crate::utils::id::new_short_token());
+    let token = format!("wopi_{}", aster_forge_utils::id::new_short_token());
     let token_hash = access_token_hash(&token);
     let expires_at = DateTime::from_timestamp(payload.exp, 0)
         .ok_or_else(|| AsterError::internal_error("invalid WOPI access token expiry"))?;
@@ -330,7 +330,7 @@ async fn create_access_token_session(
 }
 
 pub(crate) fn access_token_hash(token: &str) -> String {
-    crate::utils::hash::sha256_hex(token.as_bytes())
+    aster_forge_crypto::sha256_hex(token.as_bytes())
 }
 
 fn payload_from_session(session: &CachedWopiSession) -> Result<WopiAccessTokenPayload> {

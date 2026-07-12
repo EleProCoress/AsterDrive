@@ -8,7 +8,7 @@ use crate::entities::share;
 use crate::errors::{AsterError, Result};
 use crate::runtime::{PrimaryAppState, SharedRuntimeState};
 use crate::services::user::profile;
-use crate::utils::hash;
+use aster_forge_crypto as hash;
 
 use super::cache::invalidate_share_token_record_cache_for_share;
 use super::models::{SharePublicInfo, SharePublicOwnerInfo};

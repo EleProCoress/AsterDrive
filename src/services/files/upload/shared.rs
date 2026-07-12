@@ -16,7 +16,8 @@ use crate::runtime::SharedRuntimeState;
 use crate::storage::MultipartStorageDriver;
 use crate::storage::StorageErrorKind;
 use crate::types::UploadSessionStatus;
-use crate::utils::{id, paths};
+use aster_forge_utils::id;
+use aster_forge_utils::paths;
 
 const INIT_MULTIPART_ABORT_MAX_ATTEMPTS: u32 = 3;
 const INIT_MULTIPART_ABORT_INITIAL_BACKOFF_MS: u64 = 50;
@@ -257,7 +258,7 @@ where
 
 pub(super) async fn cleanup_upload_temp_dir(state: &impl SharedRuntimeState, upload_id: &str) {
     let temp_dir = paths::upload_temp_dir(&state.config().server.upload_temp_dir, upload_id);
-    crate::utils::cleanup_temp_dir(&temp_dir).await;
+    aster_forge_utils::fs::cleanup_temp_dir(&temp_dir).await;
 }
 
 /// 根据 session 查找已完成的文件（幂等重试用）

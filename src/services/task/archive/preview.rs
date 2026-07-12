@@ -95,7 +95,7 @@ fn archive_preview_task_display_name(
     limit_signature: &str,
 ) -> String {
     let source_hash_short = source_hash.chars().take(12).collect::<String>();
-    let limit_hash = crate::utils::hash::sha256_hex(limit_signature.as_bytes());
+    let limit_hash = aster_forge_crypto::sha256_hex(limit_signature.as_bytes());
     let limit_hash_short = limit_hash.chars().take(12).collect::<String>();
     format!(
         "Generate archive preview for file #{file_id} blob #{blob_id} {source_hash_short} {limit_hash_short}"

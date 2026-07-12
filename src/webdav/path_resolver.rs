@@ -10,8 +10,8 @@ use crate::entities::{file, folder};
 use crate::errors::AsterError;
 use crate::runtime::SharedRuntimeState;
 use crate::services::workspace::storage::WorkspaceStorageScope;
-use crate::utils::hash;
 use crate::webdav::dav::{DavPath, FsError};
+use aster_forge_crypto as hash;
 
 pub(crate) use cache::{WEBDAV_PARENT_CACHE_PREFIX, WEBDAV_PATH_CACHE_PREFIX};
 

@@ -208,7 +208,7 @@ async fn render_avatar_with_vips_cli(
     original: Vec<u8>,
     command: &str,
 ) -> Result<ProcessedAvatar> {
-    let temp_root = crate::utils::paths::runtime_temp_dir(&state.config().server.temp_dir);
+    let temp_root = aster_forge_utils::paths::runtime_temp_dir(&state.config().server.temp_dir);
     let temp_dir =
         PathBuf::from(temp_root).join(format!("media-vips-avatar-{}", uuid::Uuid::new_v4()));
     tokio::fs::create_dir_all(&temp_dir)

@@ -153,7 +153,8 @@ impl MultipartStorageDriver for S3Driver {
         size: i64,
     ) -> Result<String> {
         let key = self.full_key(path);
-        let content_length = crate::utils::numbers::i64_to_u64(size, "S3 multipart part size")?;
+        let content_length =
+            aster_forge_utils::numbers::i64_to_u64(size, "S3 multipart part size")?;
         let body = ByteStream::from_body_1_x(super::stream_upload::SizedReaderBody::new(
             reader,
             content_length,

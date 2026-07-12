@@ -9,10 +9,10 @@ use reqwest::Method;
 use tokio::io::{AsyncRead, AsyncReadExt};
 use tokio_util::io::{ReaderStream, StreamReader};
 
+use crate::config::OUTBOUND_HTTP_USER_AGENT;
 use crate::entities::managed_follower;
 use crate::errors::{AsterError, Result};
 use crate::storage::error::{StorageErrorKind, storage_driver_error};
-use crate::utils::OUTBOUND_HTTP_USER_AGENT;
 
 use super::auth::{normalize_remote_base_url, sign_internal_request};
 use super::errors::{build_remote_status_error_from_parts, map_reqwest_error};
@@ -87,7 +87,7 @@ impl RemoteRequestBody {
                         ),
                     ));
                 }
-                let capacity = crate::utils::numbers::u64_to_usize(
+                let capacity = aster_forge_utils::numbers::u64_to_usize(
                     size,
                     "reverse tunnel buffered upload size",
                 )?;

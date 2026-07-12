@@ -901,7 +901,7 @@ async fn start_login_persists_pkce_flow_and_rejects_replayed_state() {
 
     let consumed = external_auth_login_flow_repo::consume_by_state_hash(
         state.writer_db(),
-        &aster_drive::utils::hash::sha256_hex(authorize_request.state.as_bytes()),
+        &aster_forge_crypto::sha256_hex(authorize_request.state.as_bytes()),
         Utc::now(),
     )
     .await
@@ -909,7 +909,7 @@ async fn start_login_persists_pkce_flow_and_rejects_replayed_state() {
     assert!(consumed.is_some());
     let replay = external_auth_login_flow_repo::consume_by_state_hash(
         state.writer_db(),
-        &aster_drive::utils::hash::sha256_hex(authorize_request.state.as_bytes()),
+        &aster_forge_crypto::sha256_hex(authorize_request.state.as_bytes()),
         Utc::now(),
     )
     .await

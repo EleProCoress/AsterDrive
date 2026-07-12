@@ -24,8 +24,8 @@ use crate::services::{
     ops::audit::AuditRequestInfo,
 };
 use crate::types::{MfaFirstFactor, MfaMethod, MfaPersistentFactorMethod};
-use crate::utils::hash;
-use crate::utils::numbers::{i64_to_u64, u64_to_i64};
+use aster_forge_crypto as hash;
+use aster_forge_utils::numbers::{i64_to_u64, u64_to_i64};
 
 use super::{
     EMAIL_CODE_DIGITS, MFA_LOGIN_FLOW_TTL_SECS, MFA_MAX_ATTEMPTS, MfaEmailCodeSendResponse, crypto,
@@ -110,7 +110,7 @@ pub async fn create_login_flow(
     user_agent: Option<&str>,
     methods: Vec<MfaMethod>,
 ) -> Result<MfaChallengeStart> {
-    let flow_token = format!("mfa_{}", crate::utils::id::new_short_token());
+    let flow_token = format!("mfa_{}", aster_forge_utils::id::new_short_token());
     let now = Utc::now();
     let ttl = u64_to_i64(MFA_LOGIN_FLOW_TTL_SECS, "mfa login flow ttl")?;
     mfa_login_flow_repo::create(

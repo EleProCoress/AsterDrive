@@ -141,7 +141,7 @@ impl RemoteTunnelRegistry {
         // concurrency limit; one lane serializes requests, so size lanes for
         // the expected parallel traffic.
         let (request_tx, request_rx) = mpsc::channel(REMOTE_TUNNEL_STREAM_CHANNEL_CAPACITY);
-        let lane_id = crate::utils::id::new_uuid();
+        let lane_id = aster_forge_utils::id::new_uuid();
         let lane = Arc::new(StreamingTunnelLane {
             lane_id: lane_id.clone(),
             remote_node_id: remote_node.id,
@@ -198,7 +198,7 @@ impl RemoteTunnelRegistry {
             lane: lane.clone(),
         };
 
-        let request_id = crate::utils::id::new_uuid();
+        let request_id = aster_forge_utils::id::new_uuid();
         let (start_tx, start_rx) = oneshot::channel();
         let (body_tx, body_rx) = mpsc::channel(REMOTE_TUNNEL_STREAM_CHANNEL_CAPACITY);
         let response_complete = Arc::new(AtomicBool::new(false));

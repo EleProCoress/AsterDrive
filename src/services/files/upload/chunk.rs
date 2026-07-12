@@ -24,8 +24,8 @@ use crate::services::files::upload::shared::{
     expected_chunk_size_for_upload, upload_session_chunk_unavailable_error,
 };
 use crate::types::UploadSessionStatus;
-use crate::utils::numbers::{i64_to_u64, usize_to_i64};
-use crate::utils::paths;
+use aster_forge_utils::numbers::{i64_to_u64, usize_to_i64};
+use aster_forge_utils::paths;
 
 const RELAY_STREAM_PIPE_BUFFER_SIZE: usize = 64 * 1024;
 
@@ -612,7 +612,7 @@ async fn upload_chunk_impl(
         &chunk_dir,
         &format!(
             ".chunk_{chunk_number}.{}.partial",
-            crate::utils::id::new_uuid()
+            aster_forge_utils::id::new_uuid()
         ),
     );
 
@@ -826,7 +826,7 @@ async fn upload_chunk_payload_impl(
         &chunk_dir,
         &format!(
             ".chunk_{chunk_number}.{}.partial",
-            crate::utils::id::new_uuid()
+            aster_forge_utils::id::new_uuid()
         ),
     );
 

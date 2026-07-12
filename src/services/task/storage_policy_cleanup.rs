@@ -13,7 +13,7 @@ use crate::storage::connectors::{
     cleanup_snapshot_for_policy,
 };
 use crate::types::{StoredStoragePolicyAllowedTypes, StoredStoragePolicyOptions};
-use crate::utils::numbers::u64_to_i64;
+use aster_forge_utils::numbers::u64_to_i64;
 
 use super::spec::{self, StoragePolicyTempCleanupTask, decode_payload_as};
 use super::steps::{
@@ -329,7 +329,10 @@ fn cleanup_target_count(payload: &StoragePolicyTempCleanupTaskPayload) -> Result
         .ok_or_else(|| {
             AsterError::internal_error("storage policy cleanup target count overflow")
         })?;
-    crate::utils::numbers::usize_to_i64(total, "storage policy cleanup target count")
+    Ok(aster_forge_utils::numbers::usize_to_i64(
+        total,
+        "storage policy cleanup target count",
+    )?)
 }
 
 fn dedup_strings(values: impl Iterator<Item = String>) -> Vec<String> {

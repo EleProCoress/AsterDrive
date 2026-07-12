@@ -7,7 +7,7 @@ use crate::errors::{AsterError, Result};
 use crate::external_auth::{ExternalAuthCallback, registry};
 use crate::runtime::SharedRuntimeState;
 use crate::types::ExternalAuthProviderKind;
-use crate::utils::numbers::u64_to_i64;
+use aster_forge_utils::numbers::u64_to_i64;
 
 use super::normalize::{callback_redirect_uri, normalize_key, normalize_return_path, state_hash};
 use super::providers::external_auth_provider_config;

@@ -53,7 +53,7 @@ fn gravatar_hash(email: &str) -> String {
     let normalized = email.trim().to_lowercase();
     let mut hasher = Md5::new();
     hasher.update(normalized.as_bytes());
-    crate::utils::hash::bytes_to_hex(&hasher.finalize())
+    aster_forge_crypto::bytes_to_hex(&hasher.finalize())
 }
 
 fn gravatar_url(email: &str, size: u32, base_url: &str) -> String {

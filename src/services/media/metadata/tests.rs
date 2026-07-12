@@ -123,11 +123,11 @@ impl StorageDriver for RangeOnlyDriver {
     ) -> Result<Box<dyn AsyncRead + Unpin + Send>> {
         self.range_calls.fetch_add(1, Ordering::SeqCst);
         if let Some(length) = length {
-            let length = crate::utils::numbers::u64_to_usize(length, "range test length")?;
+            let length = aster_forge_utils::numbers::u64_to_usize(length, "range test length")?;
             self.range_bytes_requested
                 .fetch_add(length, Ordering::SeqCst);
         }
-        let start = crate::utils::numbers::u64_to_usize(offset, "range test start")?;
+        let start = aster_forge_utils::numbers::u64_to_usize(offset, "range test start")?;
         let end = length
             .map(|length| {
                 offset
@@ -135,7 +135,7 @@ impl StorageDriver for RangeOnlyDriver {
                     .ok_or_else(|| AsterError::internal_error("range test end offset overflow"))
             })
             .transpose()?
-            .map(|end| crate::utils::numbers::u64_to_usize(end, "range test end"))
+            .map(|end| aster_forge_utils::numbers::u64_to_usize(end, "range test end"))
             .transpose()?
             .unwrap_or(self.data.len())
             .min(self.data.len());
@@ -161,7 +161,7 @@ impl StorageDriver for RangeOnlyDriver {
 
     async fn metadata(&self, _path: &str) -> Result<crate::storage::BlobMetadata> {
         Ok(crate::storage::BlobMetadata {
-            size: crate::utils::numbers::usize_to_u64(self.data.len(), "range test data")?,
+            size: aster_forge_utils::numbers::usize_to_u64(self.data.len(), "range test data")?,
             content_type: None,
         })
     }

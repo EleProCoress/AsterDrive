@@ -11,10 +11,10 @@ use openidconnect::{
 };
 use openidconnect::{EndpointMaybeSet, EndpointNotSet, EndpointSet};
 
+use crate::config::OUTBOUND_HTTP_USER_AGENT;
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::services::auth::local;
 use crate::types::{ExternalAuthProtocol, ExternalAuthProviderKind};
-use crate::utils::OUTBOUND_HTTP_USER_AGENT;
 
 use crate::external_auth::driver::{
     ExternalAuthAuthorizationStart, ExternalAuthCallback, ExternalAuthProfile,

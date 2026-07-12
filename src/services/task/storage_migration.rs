@@ -14,9 +14,9 @@ use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::{PrimaryAppState, SharedRuntimeState, TaskRuntimeState};
 use crate::storage::{MultipartStorageDriver, StorageDriver, StorageErrorKind};
 use crate::types::BackgroundTaskKind;
-use crate::utils::hash::{new_sha256, sha256_digest_to_hex, sha256_hex};
-use crate::utils::numbers::{bytes_to_usize, u64_to_i64};
+use aster_forge_crypto::{new_sha256, sha256_digest_to_hex, sha256_hex};
 use aster_forge_db::transaction;
+use aster_forge_utils::numbers::{bytes_to_usize, u64_to_i64};
 
 use super::spec::{self, StoragePolicyMigrationTask, decode_payload_as};
 use super::steps::{

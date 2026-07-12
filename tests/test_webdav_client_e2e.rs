@@ -43,7 +43,7 @@ struct ClientCommandOutput {
 struct RcloneWebdavClient {
     server: RunningWebdavServer,
     work_dir: PathBuf,
-    _work_dir_guard: aster_drive::utils::raii::TempDirGuard,
+    _work_dir_guard: aster_forge_utils::raii::TempDirGuard,
     config_path: PathBuf,
 }
 
@@ -65,10 +65,10 @@ fn unique_name(label: &str) -> String {
     format!("{label}-{}", uuid::Uuid::new_v4().simple())
 }
 
-fn temp_dir(label: &str) -> (PathBuf, aster_drive::utils::raii::TempDirGuard) {
+fn temp_dir(label: &str) -> (PathBuf, aster_forge_utils::raii::TempDirGuard) {
     let path = std::env::temp_dir().join(unique_name(label));
     std::fs::create_dir_all(&path).expect("client e2e temp dir should be created");
-    let guard = aster_drive::utils::raii::TempDirGuard::new(path.clone(), "webdav client e2e");
+    let guard = aster_forge_utils::raii::TempDirGuard::new(path.clone(), "webdav client e2e");
     (path, guard)
 }
 
@@ -152,7 +152,7 @@ async fn seed_real_webdav_account(state: &PrimaryAppState) -> (String, String) {
     webdav_account::ActiveModel {
         user_id: Set(user.id),
         username: Set(username.clone()),
-        password_hash: Set(aster_drive::utils::hash::hash_password(&password)
+        password_hash: Set(aster_forge_crypto::hash_password(&password)
             .expect("real WebDAV client test password should hash")),
         root_folder_id: Set(None),
         is_active: Set(true),

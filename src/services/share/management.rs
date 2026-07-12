@@ -20,8 +20,9 @@ use crate::services::{
     user::profile,
     workspace::storage::{self, WorkspaceStorageScope},
 };
-use crate::utils::{hash, id};
 use aster_forge_api::{OffsetPage, SortOrder};
+use aster_forge_crypto as hash;
+use aster_forge_utils::id;
 
 use super::cache::{
     invalidate_active_share_target_cache_for_scope, invalidate_active_share_target_cache_for_share,

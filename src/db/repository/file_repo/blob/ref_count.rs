@@ -6,7 +6,7 @@ use sea_orm::{
 
 use crate::entities::file_blob::{self, Entity as FileBlob};
 use crate::errors::{AsterError, Result};
-use crate::utils::numbers::usize_to_u64;
+use aster_forge_utils::numbers::usize_to_u64;
 
 pub async fn find_active_blob_by_hash<C: ConnectionTrait>(
     db: &C,

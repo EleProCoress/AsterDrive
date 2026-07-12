@@ -13,7 +13,7 @@ use crate::services::workspace::storage;
 use crate::storage::StorageDriver;
 use crate::storage::traits::multipart::{MultipartStorageDriver, UploadedMultipartPart};
 use crate::types::UploadSessionStatus;
-use crate::utils::numbers::u64_to_i64;
+use aster_forge_utils::numbers::u64_to_i64;
 
 use super::contract::{VerifiedUploadedBlob, cleanup_verified_upload_after_db_failure};
 
@@ -121,8 +121,10 @@ pub(super) async fn complete_relay_multipart(
 ) -> Result<file::Model> {
     let db = state.writer_db();
     let parts = upload_session_part_repo::list_by_upload(db, &session.id).await?;
-    let expected_parts =
-        crate::utils::numbers::i32_to_usize(session.total_chunks, "upload session total_chunks")?;
+    let expected_parts = aster_forge_utils::numbers::i32_to_usize(
+        session.total_chunks,
+        "upload session total_chunks",
+    )?;
     if parts.len() != expected_parts {
         return Err(upload_assembly_error_with_code(
             ApiErrorCode::UploadIncompleteParts,
@@ -498,8 +500,10 @@ fn validate_uploaded_part_numbers(
         ));
     }
 
-    let expected_parts =
-        crate::utils::numbers::i32_to_usize(session.total_chunks, "upload session total_chunks")?;
+    let expected_parts = aster_forge_utils::numbers::i32_to_usize(
+        session.total_chunks,
+        "upload session total_chunks",
+    )?;
     if completed_parts.len() != expected_parts {
         return Err(upload_assembly_error_with_code(
             ApiErrorCode::UploadIncompleteParts,

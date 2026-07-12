@@ -45,7 +45,7 @@ pub async fn cleanup_expired(state: &impl SharedRuntimeState) -> Result<u64> {
 
 async fn cleanup_expired_in_root(state: &impl SharedRuntimeState, temp_root: &str) -> Result<u64> {
     let now = Utc::now();
-    let tasks_root = crate::utils::paths::temp_file_path(temp_root, "tasks");
+    let tasks_root = aster_forge_utils::paths::temp_file_path(temp_root, "tasks");
     let mut entries = match tokio::fs::read_dir(&tasks_root).await {
         Ok(entries) => entries,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(0),
@@ -109,7 +109,7 @@ async fn cleanup_expired_in_root(state: &impl SharedRuntimeState, temp_root: &st
             continue;
         }
 
-        crate::utils::cleanup_temp_dir(&path_display).await;
+        aster_forge_utils::fs::cleanup_temp_dir(&path_display).await;
         let still_exists = tokio::fs::try_exists(&path).await.map_err(|error| {
             AsterError::storage_driver_error(format!(
                 "verify task temp dir cleanup {path_display}: {error}"

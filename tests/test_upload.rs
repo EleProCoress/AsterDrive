@@ -70,7 +70,7 @@ async fn upload_same_content_direct_and_chunked(
     let pattern = b"same content across direct and chunked upload paths\n";
     let content = pattern.repeat((10_485_760 / pattern.len()) + 1);
     let content = &content[..10_485_760];
-    let temp_path = aster_drive::utils::paths::temp_file_path(
+    let temp_path = aster_forge_utils::paths::temp_file_path(
         &state.config.server.temp_dir,
         &uuid::Uuid::new_v4().to_string(),
     );
@@ -718,7 +718,7 @@ async fn store_temp_file_in_personal_space(
     filename: &str,
     data: &[u8],
 ) -> i64 {
-    let temp_path = aster_drive::utils::paths::temp_file_path(
+    let temp_path = aster_forge_utils::paths::temp_file_path(
         &state.config.server.temp_dir,
         &format!("download-test-{}", uuid::Uuid::new_v4()),
     );
@@ -758,11 +758,11 @@ async fn test_concurrent_store_from_temp_same_name_auto_renames() {
     .await
     .unwrap();
 
-    let temp_path_1 = aster_drive::utils::paths::temp_file_path(
+    let temp_path_1 = aster_forge_utils::paths::temp_file_path(
         &state.config.server.temp_dir,
         &format!("concurrent-store-{}", uuid::Uuid::new_v4()),
     );
-    let temp_path_2 = aster_drive::utils::paths::temp_file_path(
+    let temp_path_2 = aster_forge_utils::paths::temp_file_path(
         &state.config.server.temp_dir,
         &format!("concurrent-store-{}", uuid::Uuid::new_v4()),
     );
@@ -2043,7 +2043,7 @@ async fn test_concurrent_chunk_upload_idempotent() {
         .chunks(2, 0),
     )
     .await;
-    tokio::fs::create_dir_all(aster_drive::utils::paths::upload_temp_dir(
+    tokio::fs::create_dir_all(aster_forge_utils::paths::upload_temp_dir(
         &state.config.server.upload_temp_dir,
         &upload_id,
     ))
@@ -2108,12 +2108,10 @@ async fn test_upload_chunk_replaces_stale_partial_local_chunk() {
     )
     .await;
 
-    let chunk_dir = aster_drive::utils::paths::upload_temp_dir(
-        &state.config.server.upload_temp_dir,
-        &upload_id,
-    );
+    let chunk_dir =
+        aster_forge_utils::paths::upload_temp_dir(&state.config.server.upload_temp_dir, &upload_id);
     tokio::fs::create_dir_all(&chunk_dir).await.unwrap();
-    let chunk_path = aster_drive::utils::paths::upload_chunk_path(
+    let chunk_path = aster_forge_utils::paths::upload_chunk_path(
         &state.config.server.upload_temp_dir,
         &upload_id,
         0,
@@ -2360,7 +2358,7 @@ async fn test_complete_upload_marks_session_failed_after_assembly_error() {
         .await
         .unwrap();
 
-    tokio::fs::remove_file(aster_drive::utils::paths::upload_chunk_path(
+    tokio::fs::remove_file(aster_forge_utils::paths::upload_chunk_path(
         &state.config.server.upload_temp_dir,
         &upload_id,
         1,
@@ -2483,12 +2481,12 @@ async fn test_complete_upload_keeps_remote_chunked_session_retryable_after_stora
     )
     .await;
 
-    let chunk0 = aster_drive::utils::paths::upload_chunk_path(
+    let chunk0 = aster_forge_utils::paths::upload_chunk_path(
         &state.config.server.upload_temp_dir,
         &upload_id,
         0,
     );
-    let chunk1 = aster_drive::utils::paths::upload_chunk_path(
+    let chunk1 = aster_forge_utils::paths::upload_chunk_path(
         &state.config.server.upload_temp_dir,
         &upload_id,
         1,
@@ -2637,10 +2635,8 @@ async fn test_file_upload_get_progress_scans_and_sorts_local_chunks() {
     )
     .await;
 
-    let temp_dir = aster_drive::utils::paths::upload_temp_dir(
-        &state.config.server.upload_temp_dir,
-        &upload_id,
-    );
+    let temp_dir =
+        aster_forge_utils::paths::upload_temp_dir(&state.config.server.upload_temp_dir, &upload_id);
     tokio::fs::create_dir_all(&temp_dir).await.unwrap();
     tokio::fs::write(format!("{temp_dir}/chunk_2"), b"two")
         .await
@@ -2745,7 +2741,7 @@ async fn test_file_upload_get_progress_uses_db_parts_for_terminal_relay_multipar
 #[actix_web::test]
 async fn test_sqlite_reader_routes_do_not_wait_for_busy_writer_pool() {
     use aster_drive::services::auth::local;
-    use aster_drive::utils::raii::TempDirGuard;
+    use aster_forge_utils::raii::TempDirGuard;
     use sea_orm::{ConnectionTrait, TransactionTrait};
 
     let temp_dir =
@@ -2940,7 +2936,7 @@ async fn test_file_upload_cleanup_expired_removes_local_sessions_only() {
     )
     .await;
 
-    let expired_dir = aster_drive::utils::paths::upload_temp_dir(
+    let expired_dir = aster_forge_utils::paths::upload_temp_dir(
         &state.config.server.upload_temp_dir,
         &expired_id,
     );
@@ -2948,7 +2944,7 @@ async fn test_file_upload_cleanup_expired_removes_local_sessions_only() {
     tokio::fs::write(format!("{expired_dir}/chunk_0"), b"temp")
         .await
         .unwrap();
-    let assembling_dir = aster_drive::utils::paths::upload_temp_dir(
+    let assembling_dir = aster_forge_utils::paths::upload_temp_dir(
         &state.config.server.upload_temp_dir,
         &assembling_id,
     );
@@ -2982,7 +2978,7 @@ async fn test_file_upload_cleanup_expired_removes_local_sessions_only() {
         std::path::Path::new(&assembling_dir).exists(),
         "assembling temp dir must not be removed while completion is in progress"
     );
-    aster_drive::utils::cleanup_temp_dir(&assembling_dir).await;
+    aster_forge_utils::fs::cleanup_temp_dir(&assembling_dir).await;
 }
 
 #[actix_web::test]
@@ -3015,10 +3011,8 @@ async fn test_file_upload_cleanup_expired_keeps_remote_sessions_when_storage_is_
     )
     .await;
 
-    let expired_dir = aster_drive::utils::paths::upload_temp_dir(
-        &state.config.server.upload_temp_dir,
-        &upload_id,
-    );
+    let expired_dir =
+        aster_forge_utils::paths::upload_temp_dir(&state.config.server.upload_temp_dir, &upload_id);
     tokio::fs::create_dir_all(&expired_dir).await.unwrap();
     tokio::fs::write(format!("{expired_dir}/chunk_0"), b"temp")
         .await
@@ -3137,10 +3131,8 @@ async fn test_cancel_upload_aborts_presigned_multipart_session_on_rustfs() {
     );
     assert_eq!(progress.chunks_on_disk, vec![1]);
 
-    let temp_dir = aster_drive::utils::paths::upload_temp_dir(
-        &state.config.server.upload_temp_dir,
-        &upload_id,
-    );
+    let temp_dir =
+        aster_forge_utils::paths::upload_temp_dir(&state.config.server.upload_temp_dir, &upload_id);
     tokio::fs::create_dir_all(&temp_dir).await.unwrap();
     tokio::fs::write(format!("{temp_dir}/chunk_0"), b"temp")
         .await
@@ -3208,10 +3200,8 @@ async fn test_cancel_upload_keeps_remote_session_when_object_cleanup_is_unavaila
     )
     .await;
 
-    let temp_dir = aster_drive::utils::paths::upload_temp_dir(
-        &state.config.server.upload_temp_dir,
-        &upload_id,
-    );
+    let temp_dir =
+        aster_forge_utils::paths::upload_temp_dir(&state.config.server.upload_temp_dir, &upload_id);
     tokio::fs::create_dir_all(&temp_dir).await.unwrap();
     tokio::fs::write(format!("{temp_dir}/chunk_0"), b"temp")
         .await
@@ -4138,7 +4128,7 @@ async fn test_relay_stream_chunked_upload_s3_e2e() {
         .await
         .unwrap();
     assert!(oversized_progress.chunks_on_disk.is_empty());
-    let oversized_relay_temp_dir = aster_drive::utils::paths::upload_temp_dir(
+    let oversized_relay_temp_dir = aster_forge_utils::paths::upload_temp_dir(
         &state.config.server.upload_temp_dir,
         &oversized_upload_id,
     );
@@ -4147,10 +4137,8 @@ async fn test_relay_stream_chunked_upload_s3_e2e() {
         "oversized relay_stream chunks should not create local upload temp dirs"
     );
 
-    let relay_temp_dir = aster_drive::utils::paths::upload_temp_dir(
-        &state.config.server.upload_temp_dir,
-        &upload_id,
-    );
+    let relay_temp_dir =
+        aster_forge_utils::paths::upload_temp_dir(&state.config.server.upload_temp_dir, &upload_id);
     assert!(
         !std::path::Path::new(&relay_temp_dir).exists(),
         "relay_stream should not create local upload temp dir"

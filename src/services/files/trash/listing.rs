@@ -4,7 +4,7 @@ use crate::db::repository::{file_repo, folder_repo};
 use crate::errors::Result;
 use crate::runtime::SharedRuntimeState;
 use crate::services::workspace::storage::{self, WorkspaceStorageScope};
-use crate::utils::numbers::usize_to_u64;
+use aster_forge_utils::numbers::usize_to_u64;
 
 use super::common::{
     build_trash_file_item, build_trash_folder_item, build_trash_path_cache, load_retention_days,

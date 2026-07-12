@@ -539,7 +539,7 @@ async fn check_blob_object(
             };
         }
     };
-    let expected_size = crate::utils::numbers::i64_to_u64(blob.size, "blob size")?;
+    let expected_size = aster_forge_utils::numbers::i64_to_u64(blob.size, "blob size")?;
     if metadata.size == expected_size {
         Ok(BlobObjectCheck::Present)
     } else {
@@ -589,7 +589,10 @@ async fn current_blob_ref_count<C: sea_orm::ConnectionTrait>(db: &C, blob_id: i6
     let total_refs = file_refs
         .checked_add(version_refs)
         .ok_or_else(|| AsterError::internal_error("blob ref count overflow during reconcile"))?;
-    crate::utils::numbers::i64_to_i32(total_refs, "blob actual reference count")
+    Ok(aster_forge_utils::numbers::i64_to_i32(
+        total_refs,
+        "blob actual reference count",
+    )?)
 }
 
 async fn current_blob_ref_counts(
@@ -610,7 +613,7 @@ async fn current_blob_ref_counts(
         })?;
         counts.insert(
             *blob_id,
-            crate::utils::numbers::i64_to_i32(total_refs, "blob actual reference count")?,
+            aster_forge_utils::numbers::i64_to_i32(total_refs, "blob actual reference count")?,
         );
     }
 
@@ -628,7 +631,7 @@ impl<'a> BlobTargetScope<'a> {
         if let Some(blob_ids) = blob_ids {
             return Ok(Self {
                 blob_ids: Some(blob_ids),
-                total: crate::utils::numbers::usize_to_i64(
+                total: aster_forge_utils::numbers::usize_to_i64(
                     blob_ids.len(),
                     "blob maintenance target count",
                 )?,
@@ -684,7 +687,7 @@ async fn count_all_blob_targets(state: &PrimaryAppState) -> Result<(i64, Option<
         None => 0,
     };
     Ok((
-        crate::utils::numbers::u64_to_i64(count, "blob maintenance target count")?,
+        aster_forge_utils::numbers::u64_to_i64(count, "blob maintenance target count")?,
         max_blob_id,
     ))
 }
@@ -716,7 +719,7 @@ async fn load_target_blob_batch(
             if *next_index >= blob_ids.len() {
                 return Ok(Vec::new());
             }
-            let batch_size = crate::utils::numbers::u64_to_usize(
+            let batch_size = aster_forge_utils::numbers::u64_to_usize(
                 BLOB_MAINTENANCE_BATCH_SIZE,
                 "blob maintenance batch size",
             )?;

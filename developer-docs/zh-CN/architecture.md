@@ -250,6 +250,15 @@ primary 的 audit assembly 直接调用 `aster_forge_audit::audit_component_infa
 - Drive 保留具体 key、默认值、领域 normalizer、媒体处理环境引导、preview registry 修复、权限、audit 和 API 响应结构。
 - 已发布的历史 migration 不回改；新的 Drive migration 使用 Forge table/index builder 对齐共享 schema contract。
 
+通用工具与加密实现也直接使用 Forge，不在 Drive 保留 re-export 或改名转发层：
+
+- UUID/token、checked numeric conversion、loopback 判断、临时文件清理、RAII guard、runtime/upload/task path builder 使用 `aster_forge_utils`。
+- 密码 Argon2 hash/verify、SHA-256 和 hex 编码使用 `aster_forge_crypto`；Drive 只负责把 `CryptoError` 映射为产品内部错误。
+- Drive 的静态路径默认值保留在 `src/config/paths.rs`；相对路径和 SQLite URL 的通用解析由 Forge 完成，Drive adapter 只负责映射成 config error。
+- HTTP date、`If-Match` 强比较和 `If-None-Match` 弱比较使用 `aster_forge_utils::http_validators`，WebDAV / 文件路由继续负责协议状态码。
+- 资源 owner 检查属于 Drive 权限语义，集中在 crate-private `src/types/ownership.rs`，供 repo 和 service 直接使用，不复制判断，也不制造 repo 到 service 的反向依赖。`AsterDrive/<version>` outbound user-agent 是产品静态配置，保留在 `src/config/mod.rs`。
+- 原 `src/utils/` 已删除。新增共享 helper 时先判断应进入具体 Forge crate、产品领域模块还是协议层，不再恢复通用杂物目录。
+
 多实例部署的静态配置示例：
 
 ```toml

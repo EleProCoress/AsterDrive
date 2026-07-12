@@ -57,7 +57,7 @@ pub(crate) async fn create_archive_download_ticket_in_scope(
 ) -> Result<StreamTicketInfo> {
     let prepared = task::archive::prepare_archive_download_in_scope(state, scope, params).await?;
     let expires_at = Utc::now() + Duration::seconds(STREAM_TICKET_TTL_SECS);
-    let token = format!("st_{}", crate::utils::id::new_short_token());
+    let token = format!("st_{}", aster_forge_utils::id::new_short_token());
     let payload = StreamTicketPayload {
         actor_user_id: scope.actor_user_id(),
         team_id: scope.team_id(),
@@ -86,7 +86,7 @@ pub(crate) async fn create_shared_archive_download_ticket(
     let prepared =
         task::archive::prepare_shared_archive_download(state, share_token, params).await?;
     let expires_at = Utc::now() + Duration::seconds(STREAM_TICKET_TTL_SECS);
-    let token = format!("st_{}", crate::utils::id::new_short_token());
+    let token = format!("st_{}", aster_forge_utils::id::new_short_token());
     let payload = StreamTicketPayload {
         actor_user_id: 0,
         team_id: None,

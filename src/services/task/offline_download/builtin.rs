@@ -8,7 +8,7 @@ use tokio::io::AsyncWriteExt;
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::PrimaryAppState;
 use crate::services::task::types::TaskStepInfo;
-use crate::utils::numbers::usize_to_i64;
+use aster_forge_utils::numbers::usize_to_i64;
 
 use super::super::steps::{TASK_STEP_DOWNLOAD_SOURCE, set_task_step_active};
 use super::super::{TaskExecutionContext, mark_task_progress};
@@ -47,7 +47,7 @@ impl OfflineDownloadEngine for BuiltinHttpOfflineDownloadEngine {
         let client = reqwest::Client::builder()
             .redirect(reqwest::redirect::Policy::none())
             .timeout(self.request_timeout)
-            .user_agent(crate::utils::OUTBOUND_HTTP_USER_AGENT)
+            .user_agent(crate::config::OUTBOUND_HTTP_USER_AGENT)
             .resolve_to_addrs(&resolved.domain, &resolved.socket_addrs)
             .build()
             .map_aster_err_ctx(
@@ -90,7 +90,7 @@ impl OfflineDownloadEngine for BuiltinHttpOfflineDownloadEngine {
                 "create offline download temp file",
                 AsterError::storage_driver_error,
             )?;
-        let mut hasher = crate::utils::hash::new_sha256();
+        let mut hasher = aster_forge_crypto::new_sha256();
         let mut written = 0_i64;
         let progress_total = declared_content_length.unwrap_or(0).max(0);
         let mut last_progress = Instant::now()
@@ -169,7 +169,7 @@ impl OfflineDownloadEngine for BuiltinHttpOfflineDownloadEngine {
                 "offline download source returned an empty file",
             ));
         }
-        let sha256 = crate::utils::hash::sha256_digest_to_hex(&hasher.finalize());
+        let sha256 = aster_forge_crypto::sha256_digest_to_hex(&hasher.finalize());
         verify_expected_sha256(request.expected_sha256.as_deref(), &sha256)?;
 
         Ok(OfflineDownloadComplete::new(

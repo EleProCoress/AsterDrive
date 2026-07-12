@@ -281,7 +281,8 @@ async fn build_s3_direct_test_state() -> (PrimaryAppState, user::Model, MockDire
 #[tokio::test]
 async fn known_size_s3_write_avoids_runtime_temp_files() {
     let (state, user, driver) = build_s3_direct_test_state().await;
-    let runtime_temp_dir = crate::utils::paths::runtime_temp_dir(&state.config.server.temp_dir);
+    let runtime_temp_dir =
+        aster_forge_utils::paths::runtime_temp_dir(&state.config.server.temp_dir);
     let before = snapshot_dir_tree(Path::new(&runtime_temp_dir)).unwrap();
     let payload = b"stream direct to s3";
 

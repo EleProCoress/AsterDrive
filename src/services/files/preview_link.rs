@@ -182,7 +182,7 @@ fn build_payload(subject: PreviewSubject) -> PreviewTokenPayload {
     PreviewTokenPayload {
         subject,
         exp: (Utc::now() + Duration::seconds(PREVIEW_LINK_TTL_SECS)).timestamp(),
-        nonce: Some(crate::utils::id::new_short_token()),
+        nonce: Some(aster_forge_utils::id::new_short_token()),
     }
 }
 

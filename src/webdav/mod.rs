@@ -26,8 +26,8 @@ use xmltree::{Element, XMLNode};
 use crate::config::WebDavConfig;
 use crate::runtime::{PrimaryAppState, SharedRuntimeState};
 use crate::services::ops::audit;
-use crate::utils::numbers::u64_to_usize;
 use crate::webdav::dav::{DavLockSystem, DavPath};
+use aster_forge_utils::numbers::u64_to_usize;
 
 pub(crate) use responses::{
     fs_error_response, lock_token_matches_request_uri_response, lock_token_submitted_element,
@@ -467,7 +467,7 @@ pub(crate) fn parent_relative_path(relative: &str) -> Option<String> {
 }
 
 pub(crate) fn format_http_date(time: std::time::SystemTime) -> String {
-    crate::utils::http_validators::format_http_date(time)
+    aster_forge_utils::http_validators::format_http_date(time)
 }
 
 pub(crate) fn format_creation_date(time: std::time::SystemTime) -> String {

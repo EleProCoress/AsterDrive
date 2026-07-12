@@ -137,7 +137,7 @@ async fn store_test_file(
     filename: &str,
     bytes: &[u8],
 ) -> aster_drive::services::workspace::models::FileInfo {
-    let temp_path = aster_drive::utils::paths::temp_file_path(
+    let temp_path = aster_forge_utils::paths::temp_file_path(
         &state.config.server.temp_dir,
         &uuid::Uuid::new_v4().to_string(),
     );
@@ -221,7 +221,7 @@ async fn create_wopi_session(
     wopi_session_repo::create(
         state.writer_db(),
         aster_drive::entities::wopi_session::ActiveModel {
-            token_hash: Set(aster_drive::utils::hash::sha256_hex(token.as_bytes())),
+            token_hash: Set(aster_forge_crypto::sha256_hex(token.as_bytes())),
             actor_user_id: Set(actor_user_id),
             session_version: Set(1),
             team_id: Set(None),
@@ -523,7 +523,7 @@ async fn test_cleanup_expired_wopi_sessions_removes_only_expired_rows() {
     assert!(
         wopi_session_repo::find_by_token_hash(
             state.writer_db(),
-            &aster_drive::utils::hash::sha256_hex(b"expired-wopi-token"),
+            &aster_forge_crypto::sha256_hex(b"expired-wopi-token"),
         )
         .await
         .unwrap()
@@ -532,7 +532,7 @@ async fn test_cleanup_expired_wopi_sessions_removes_only_expired_rows() {
     assert!(
         wopi_session_repo::find_by_token_hash(
             state.writer_db(),
-            &aster_drive::utils::hash::sha256_hex(b"live-wopi-token"),
+            &aster_forge_crypto::sha256_hex(b"live-wopi-token"),
         )
         .await
         .unwrap()

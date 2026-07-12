@@ -89,7 +89,7 @@ pub fn encode_stream_frame(frame: &RemoteTunnelStreamFrame) -> Result<Bytes> {
             "reverse tunnel streaming frame metadata is too large",
         ));
     }
-    let meta_len = crate::utils::numbers::usize_to_u64(
+    let meta_len = aster_forge_utils::numbers::usize_to_u64(
         meta.len(),
         "reverse tunnel streaming frame metadata length",
     )?;
@@ -116,7 +116,7 @@ pub fn decode_stream_frame(bytes: Bytes) -> Result<RemoteTunnelStreamFrame> {
     let mut meta_len_bytes = [0u8; 8];
     meta_len_bytes.copy_from_slice(&bytes[1..9]);
     let meta_len_u64 = u64::from_be_bytes(meta_len_bytes);
-    let meta_len = crate::utils::numbers::u64_to_usize(
+    let meta_len = aster_forge_utils::numbers::u64_to_usize(
         meta_len_u64,
         "reverse tunnel streaming frame metadata length",
     )?;

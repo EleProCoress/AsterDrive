@@ -650,7 +650,7 @@ async fn aria2_output_dir_is_writable_by_external_process_user() {
 
     let root = std::env::temp_dir().join(format!(
         "aster-drive-aria2-output-dir-{}",
-        crate::utils::id::new_uuid()
+        aster_forge_utils::id::new_uuid()
     ));
     let temp_path = root.join("tasks/42/7/source");
 
@@ -673,7 +673,7 @@ async fn aria2_output_dir_repairs_existing_parent_permissions() {
 
     let root = std::env::temp_dir().join(format!(
         "aster-drive-aria2-existing-parent-{}",
-        crate::utils::id::new_uuid()
+        aster_forge_utils::id::new_uuid()
     ));
     let tasks_dir = root.join("tasks");
     std::fs::create_dir_all(&tasks_dir).unwrap();

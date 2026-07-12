@@ -19,7 +19,7 @@ use sea_orm::DatabaseConnection;
 use serde::Serialize;
 
 use crate::errors::{AsterError, Result};
-use crate::utils::numbers::{i64_to_usize, usize_to_i64};
+use aster_forge_utils::numbers::{i64_to_usize, usize_to_i64};
 
 use self::ui::ProgressReporter;
 use crate::cli::db_shared::{backend_name, join_strings, pending_migrations, redact_database_url};

@@ -450,8 +450,20 @@ impl From<aster_forge_config::ConfigCoreError> for AsterError {
     }
 }
 
+impl From<aster_forge_crypto::CryptoError> for AsterError {
+    fn from(value: aster_forge_crypto::CryptoError) -> Self {
+        Self::internal_error(value.to_string())
+    }
+}
+
 impl From<aster_forge_tasks::TaskCoreError> for AsterError {
     fn from(value: aster_forge_tasks::TaskCoreError) -> Self {
+        Self::internal_error(value.to_string())
+    }
+}
+
+impl From<aster_forge_utils::UtilsError> for AsterError {
+    fn from(value: aster_forge_utils::UtilsError) -> Self {
         Self::internal_error(value.to_string())
     }
 }

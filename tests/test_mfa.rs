@@ -22,9 +22,9 @@ impl aster_forge_mail::MailSender for FailingMailSender {
     async fn send(
         &self,
         _message: aster_forge_mail::MailMessage,
-    ) -> aster_drive::errors::Result<()> {
-        Err(aster_drive::errors::AsterError::mail_delivery_failed(
-            "forced mail delivery failure",
+    ) -> aster_forge_mail::MailSendResult<()> {
+        Err(aster_forge_mail::MailDeliveryError::Delivery(
+            "forced mail delivery failure".to_string(),
         ))
     }
 
@@ -247,7 +247,7 @@ async fn find_mfa_flow_by_token(
     db: &sea_orm::DatabaseConnection,
     flow_token: &str,
 ) -> aster_drive::entities::mfa_login_flow::Model {
-    let flow_hash = aster_drive::utils::hash::sha256_hex(flow_token.as_bytes());
+    let flow_hash = aster_forge_crypto::sha256_hex(flow_token.as_bytes());
     aster_drive::entities::mfa_login_flow::Entity::find()
         .filter(aster_drive::entities::mfa_login_flow::Column::FlowTokenHash.eq(flow_hash))
         .one(db)
@@ -820,7 +820,7 @@ async fn test_expired_mfa_flow_cannot_login() {
     let resp = login_raw(&app, "expiredmfa", "password123").await;
     let body: Value = test::read_body_json(resp).await;
     let flow_token = body["data"]["flow_token"].as_str().unwrap().to_string();
-    let flow_hash = aster_drive::utils::hash::sha256_hex(flow_token.as_bytes());
+    let flow_hash = aster_forge_crypto::sha256_hex(flow_token.as_bytes());
     let flow = aster_drive::entities::mfa_login_flow::Entity::find()
         .filter(aster_drive::entities::mfa_login_flow::Column::FlowTokenHash.eq(flow_hash))
         .one(&db)

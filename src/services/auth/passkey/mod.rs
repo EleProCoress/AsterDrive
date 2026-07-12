@@ -23,7 +23,7 @@ use crate::errors::{
 use crate::runtime::SharedRuntimeState;
 use crate::services::auth::local::{self, LoginResult, is_email_verified};
 use crate::types::StoredPasskeyCredential;
-use crate::utils::{
+use aster_forge_utils::{
     id,
     net::is_loopback_host,
     numbers::{u32_to_i64, u64_to_i64},
@@ -657,7 +657,7 @@ pub async fn finish_login(
             credential,
             result.backup_eligible(),
             result.backup_state(),
-            u32_to_i64(result.counter(), "passkey sign count")?,
+            u32_to_i64(result.counter()),
             now,
         )
         .await?

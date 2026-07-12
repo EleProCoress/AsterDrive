@@ -1,10 +1,10 @@
 //! 配置子模块：`loader`。
 
-use super::schema::Config;
-use crate::errors::{AsterError, MapAsterErr, Result};
-use crate::utils::paths::{
+use super::paths::{
     DEFAULT_CONFIG_PATH, resolve_config_relative_path, resolve_config_relative_sqlite_url,
 };
+use super::schema::Config;
+use crate::errors::{AsterError, MapAsterErr, Result};
 use config::{Config as RawConfig, Environment, File, FileFormat};
 use std::path::{Path, PathBuf};
 use toml_edit::{DocumentMut, Item, Table, value};
@@ -196,11 +196,11 @@ fn resolve_loaded_paths(base_dir: &Path, config_path: &Path, cfg: &mut Config) -
 #[cfg(test)]
 mod tests {
     use super::{ensure_default_config_exists, load_from_dir};
-    use crate::config::{Config, node_mode::NodeRuntimeMode};
-    use crate::utils::paths::{
+    use crate::config::paths::{
         DEFAULT_CONFIG_PATH, DEFAULT_SQLITE_DATABASE_PATH, DEFAULT_SQLITE_DATABASE_URL,
         DEFAULT_TEMP_DIR, DEFAULT_UPLOAD_TEMP_DIR,
     };
+    use crate::config::{Config, node_mode::NodeRuntimeMode};
     use std::path::{Path, PathBuf};
     use std::sync::{Mutex, OnceLock};
 

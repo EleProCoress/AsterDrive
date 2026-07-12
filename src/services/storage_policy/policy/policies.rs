@@ -630,7 +630,8 @@ async fn verify_s3_compatible_promotion_sample(
                 blob.storage_path, blob.id
             ))
         })?;
-        let actual_size = crate::utils::numbers::u64_to_i64(metadata.size, "blob metadata size")?;
+        let actual_size =
+            aster_forge_utils::numbers::u64_to_i64(metadata.size, "blob metadata size")?;
         if actual_size != blob.size {
             return Err(AsterError::storage_driver_error(format!(
                 "object '{}' (blob id {}) size mismatch before S3-compatible driver promotion: expected {}, got {}",

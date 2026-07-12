@@ -95,7 +95,7 @@ impl StorageRangeReader {
         })?;
 
         let bytes_len =
-            crate::utils::numbers::usize_to_u64(bytes.len(), "archive range response length")
+            aster_forge_utils::numbers::usize_to_u64(bytes.len(), "archive range response length")
                 .map_err(io::Error::other)?;
         if bytes_len > length {
             return Err(io::Error::new(
@@ -136,7 +136,8 @@ impl StorageRangeReader {
             return None;
         }
         let offset = self.position - self.buffer_start;
-        let Ok(offset) = crate::utils::numbers::u64_to_usize(offset, "archive range buffer offset")
+        let Ok(offset) =
+            aster_forge_utils::numbers::u64_to_usize(offset, "archive range buffer offset")
         else {
             return None;
         };
@@ -172,9 +173,11 @@ impl Read for StorageRangeReader {
             }
             let copy_len = available.len().min(output.len());
             output[..copy_len].copy_from_slice(&available[..copy_len]);
-            let copy_len_u64 =
-                crate::utils::numbers::usize_to_u64(copy_len, "archive range reader copy length")
-                    .map_err(io::Error::other)?;
+            let copy_len_u64 = aster_forge_utils::numbers::usize_to_u64(
+                copy_len,
+                "archive range reader copy length",
+            )
+            .map_err(io::Error::other)?;
             self.position = self
                 .position
                 .checked_add(copy_len_u64)
@@ -202,7 +205,7 @@ impl Seek for StorageRangeReader {
 
 fn seek_from_base(base: u64, offset: i64) -> io::Result<u64> {
     if offset >= 0 {
-        let offset = crate::utils::numbers::i64_to_u64(offset, "archive range seek offset")
+        let offset = aster_forge_utils::numbers::i64_to_u64(offset, "archive range seek offset")
             .map_err(io::Error::other)?;
         base.checked_add(offset)
             .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "seek target overflow"))
@@ -273,7 +276,8 @@ mod tests {
                 .lock()
                 .expect("range lock should not be poisoned")
                 .push((offset, length));
-            let start = crate::utils::numbers::u64_to_usize(offset, "memory range start offset")?;
+            let start =
+                aster_forge_utils::numbers::u64_to_usize(offset, "memory range start offset")?;
             let end = length
                 .map(|len| {
                     offset.checked_add(len).ok_or_else(|| {
@@ -281,7 +285,7 @@ mod tests {
                     })
                 })
                 .transpose()?
-                .map(|end| crate::utils::numbers::u64_to_usize(end, "memory range end offset"))
+                .map(|end| aster_forge_utils::numbers::u64_to_usize(end, "memory range end offset"))
                 .transpose()?
                 .unwrap_or(self.data.len())
                 .min(self.data.len());
@@ -307,7 +311,7 @@ mod tests {
 
         async fn metadata(&self, _path: &str) -> Result<BlobMetadata> {
             Ok(BlobMetadata {
-                size: crate::utils::numbers::usize_to_u64(
+                size: aster_forge_utils::numbers::usize_to_u64(
                     self.data.len(),
                     "memory driver data length",
                 )?,

@@ -9,7 +9,7 @@ use hkdf::Hkdf;
 use sha2::Sha256;
 
 use crate::errors::{AsterError, MapAsterErr, Result};
-use crate::utils::hash;
+use aster_forge_crypto as hash;
 
 const CIPHERTEXT_VERSION: &str = "v1";
 const STORAGE_CREDENTIAL_INFO: &[u8] = b"asterdrive:storage-credential-token:v1";

@@ -9,6 +9,7 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 use url::Url;
 
+use crate::config::OUTBOUND_HTTP_USER_AGENT;
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::external_auth::driver::{
     ExternalAuthAuthorizationStart, ExternalAuthCallback, ExternalAuthProfile,
@@ -18,7 +19,7 @@ use crate::external_auth::driver::{
 use crate::external_auth::url::{has_http_scheme, parse_url};
 use crate::services::auth::local;
 use crate::types::{ExternalAuthProtocol, ExternalAuthProviderKind};
-use crate::utils::{OUTBOUND_HTTP_USER_AGENT, id};
+use aster_forge_utils::id;
 
 const OAUTH2_DEFAULT_SCOPES: &str = "openid email profile";
 const OAUTH2_NAMESPACE_MAX_LEN: usize = 512;

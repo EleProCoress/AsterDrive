@@ -15,7 +15,7 @@ use crate::errors::{
     validation_error_with_code,
 };
 use crate::storage::StorageDriver;
-use crate::utils::raii::TempFileGuard;
+use aster_forge_utils::raii::TempFileGuard;
 use tokio::io::AsyncWriteExt;
 
 const THUMB_PREFIX: &str = "_thumb";
@@ -194,7 +194,7 @@ async fn materialize_thumbnail_source_stream(
     blob: &file_blob::Model,
     temp_root: &str,
 ) -> Result<TempFileGuard> {
-    let temp_dir = PathBuf::from(crate::utils::paths::runtime_temp_dir(temp_root));
+    let temp_dir = PathBuf::from(aster_forge_utils::paths::runtime_temp_dir(temp_root));
     tokio::fs::create_dir_all(&temp_dir)
         .await
         .map_aster_err_ctx("create thumbnail temp dir", thumbnail_source_stream_failed)?;
@@ -226,7 +226,8 @@ async fn materialize_thumbnail_source_stream(
     )?;
     drop(file);
 
-    let expected_size = crate::utils::numbers::i64_to_u64(blob.size, "thumbnail source blob size")?;
+    let expected_size =
+        aster_forge_utils::numbers::i64_to_u64(blob.size, "thumbnail source blob size")?;
     if copied != expected_size {
         return Err(thumbnail_source_stream_failed(format!(
             "thumbnail source stream size mismatch: expected {expected_size} bytes, got {copied}"
@@ -500,7 +501,7 @@ mod tests {
             bytes: source.clone(),
         };
         let source_size =
-            crate::utils::numbers::usize_to_i64(source.len(), "test thumbnail source size")
+            aster_forge_utils::numbers::usize_to_i64(source.len(), "test thumbnail source size")
                 .unwrap();
 
         let thumbnail = render_thumbnail_bytes(
@@ -513,7 +514,8 @@ mod tests {
         .unwrap();
 
         assert!(!thumbnail.is_empty());
-        let runtime_temp_dir = PathBuf::from(crate::utils::paths::runtime_temp_dir(&temp_root_str));
+        let runtime_temp_dir =
+            PathBuf::from(aster_forge_utils::paths::runtime_temp_dir(&temp_root_str));
         let mut entries = tokio::fs::read_dir(&runtime_temp_dir).await.unwrap();
         assert!(
             entries.next_entry().await.unwrap().is_none(),
@@ -555,7 +557,7 @@ mod tests {
 
     #[test]
     fn accepts_thumbnail_source_within_size_limit() {
-        let max_source_bytes = crate::utils::numbers::u64_to_i64(
+        let max_source_bytes = aster_forge_utils::numbers::u64_to_i64(
             DEFAULT_THUMBNAIL_MAX_SOURCE_BYTES,
             "thumbnail max source bytes",
         )
@@ -568,7 +570,7 @@ mod tests {
 
     #[test]
     fn rejects_thumbnail_source_above_size_limit() {
-        let max_source_bytes = crate::utils::numbers::u64_to_i64(
+        let max_source_bytes = aster_forge_utils::numbers::u64_to_i64(
             DEFAULT_THUMBNAIL_MAX_SOURCE_BYTES,
             "thumbnail max source bytes",
         )

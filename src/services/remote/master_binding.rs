@@ -89,7 +89,7 @@ pub async fn upsert_from_enrollment<C: ConnectionTrait>(
             tracing::error!(
                 attempts = STORAGE_NAMESPACE_ALLOCATION_ATTEMPTS,
                 candidates = ?candidates,
-                "failed to allocate unique master binding storage namespace after crate::utils::id::new_short_token candidates conflicted during insert"
+                "failed to allocate unique master binding storage namespace after aster_forge_utils::id::new_short_token candidates conflicted during insert"
             );
             Err(AsterError::internal_error(
                 "failed to allocate unique master binding storage namespace",
@@ -552,7 +552,7 @@ fn normalize_non_blank(field: &str, value: &str) -> Result<String> {
 }
 
 fn new_storage_namespace() -> String {
-    format!("mb_{}", crate::utils::id::new_short_token())
+    format!("mb_{}", aster_forge_utils::id::new_short_token())
 }
 
 #[cfg(test)]

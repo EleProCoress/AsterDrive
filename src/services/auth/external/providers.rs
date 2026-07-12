@@ -14,9 +14,9 @@ use crate::types::{
     ExternalAuthProviderKind, ExternalAuthProviderOptions, MicrosoftExternalAuthProviderOptions,
     serialize_external_auth_provider_options,
 };
-use crate::utils::id;
 use aster_forge_api::NullablePatch;
 use aster_forge_api::OffsetPage;
+use aster_forge_utils::id;
 
 use super::REDACTED_SECRET;
 use super::normalize::{

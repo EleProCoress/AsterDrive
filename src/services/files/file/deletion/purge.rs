@@ -12,7 +12,7 @@ use crate::services::{
     share,
     workspace::storage::{self, WorkspaceResourceScope, WorkspaceStorageScope},
 };
-use crate::utils::numbers::{i64_to_i32, usize_to_u32};
+use aster_forge_utils::numbers::{i64_to_i32, usize_to_u32};
 
 use super::blob_cleanup::ensure_blob_cleanup_if_unreferenced;
 

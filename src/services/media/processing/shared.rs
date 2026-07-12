@@ -16,7 +16,7 @@ use crate::types::MediaProcessorKind;
 const CLI_PROCESS_TIMEOUT: Duration = Duration::from_secs(60);
 const MAX_CLI_OUTPUT_BYTES: usize = 16 * 1024 * 1024;
 
-pub(crate) use crate::utils::raii::TempDirGuard;
+pub(crate) use aster_forge_utils::raii::TempDirGuard;
 
 pub(crate) fn run_cli_command_with_timeout(
     command: &str,

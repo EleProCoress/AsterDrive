@@ -16,7 +16,7 @@ use crate::services::files::upload::scope::{
 };
 use crate::services::workspace::storage::{self, resolve_policy_upload_transport};
 use crate::types::{UploadMode, UploadSessionStatus};
-use crate::utils::paths;
+use aster_forge_utils::paths;
 use futures::{StreamExt, stream};
 
 const RECOVERABLE_UPLOAD_SESSIONS_LIMIT: u64 = 100;

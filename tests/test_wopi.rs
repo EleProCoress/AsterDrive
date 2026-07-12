@@ -306,7 +306,7 @@ async fn test_open_wopi_session_persists_token_and_check_file_info_succeeds() {
         "access_token_ttl should stay within the default WOPI TTL window"
     );
 
-    let token_hash = aster_drive::utils::hash::sha256_hex(wopi_access_token.as_bytes());
+    let token_hash = aster_forge_crypto::sha256_hex(wopi_access_token.as_bytes());
     let stored_session = wopi_session_repo::find_by_token_hash(&db, &token_hash)
         .await
         .unwrap()
@@ -2085,7 +2085,7 @@ async fn test_disabled_wopi_app_invalidates_existing_access_token() {
         TEST_WOPI_APP_KEY
     );
     let wopi_access_token = launch["data"]["access_token"].as_str().unwrap().to_string();
-    let token_hash = aster_drive::utils::hash::sha256_hex(wopi_access_token.as_bytes());
+    let token_hash = aster_forge_crypto::sha256_hex(wopi_access_token.as_bytes());
 
     apply_test_wopi_registry(
         &runtime_config,
@@ -2143,7 +2143,7 @@ async fn test_disabled_user_invalidates_wopi_access_token() {
         TEST_WOPI_APP_KEY
     );
     let wopi_access_token = launch["data"]["access_token"].as_str().unwrap().to_string();
-    let token_hash = aster_drive::utils::hash::sha256_hex(wopi_access_token.as_bytes());
+    let token_hash = aster_forge_crypto::sha256_hex(wopi_access_token.as_bytes());
 
     let req = test::TestRequest::patch()
         .uri(&format!("/api/v1/admin/users/{user_id}"))
@@ -2189,7 +2189,7 @@ async fn test_expired_wopi_access_token_is_rejected_and_removed() {
         TEST_WOPI_APP_KEY
     );
     let wopi_access_token = launch["data"]["access_token"].as_str().unwrap().to_string();
-    let token_hash = aster_drive::utils::hash::sha256_hex(wopi_access_token.as_bytes());
+    let token_hash = aster_forge_crypto::sha256_hex(wopi_access_token.as_bytes());
     let stored_session = wopi_session_repo::find_by_token_hash(&db, &token_hash)
         .await
         .unwrap()
@@ -2323,7 +2323,7 @@ async fn test_revoked_user_sessions_invalidate_wopi_access_token() {
         .as_str()
         .expect("launch session should return access token")
         .to_string();
-    let token_hash = aster_drive::utils::hash::sha256_hex(wopi_access_token.as_bytes());
+    let token_hash = aster_forge_crypto::sha256_hex(wopi_access_token.as_bytes());
 
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1/admin/users/{}/sessions/revoke", user.id))
@@ -2421,7 +2421,7 @@ async fn test_team_file_wopi_open_persists_team_scope_and_allows_check_file_info
         .as_str()
         .expect("launch session should return access token")
         .to_string();
-    let token_hash = aster_drive::utils::hash::sha256_hex(wopi_access_token.as_bytes());
+    let token_hash = aster_forge_crypto::sha256_hex(wopi_access_token.as_bytes());
     let stored_session = wopi_session_repo::find_by_token_hash(&db, &token_hash)
         .await
         .unwrap()

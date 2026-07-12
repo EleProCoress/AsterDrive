@@ -66,7 +66,7 @@ impl ArchiveStagingProgressSink<'_, '_> {
         self.progress.processed_bytes = self
             .progress
             .processed_bytes
-            .checked_add(crate::utils::numbers::u64_to_i64(
+            .checked_add(aster_forge_utils::numbers::u64_to_i64(
                 copied,
                 "extracted bytes",
             )?)
@@ -79,7 +79,7 @@ impl ArchiveStagingProgressSink<'_, '_> {
         }
         self.progress.file_count += 1;
         if self.progress.file_count
-            > crate::utils::numbers::u64_to_i64(self.max_files, "archive max file count")?
+            > aster_forge_utils::numbers::u64_to_i64(self.max_files, "archive max file count")?
         {
             return Err(AsterError::validation_error(format!(
                 "archive extracted {} files, exceeds preflight limit {}",
@@ -231,7 +231,7 @@ pub(super) async fn download_file_to_temp(
         context,
         &mut stream,
         &mut output,
-        crate::utils::numbers::i64_to_u64(source_file.size, "source archive size")?,
+        aster_forge_utils::numbers::i64_to_u64(source_file.size, "source archive size")?,
         "source archive",
     )
     .await?;
@@ -276,7 +276,7 @@ where
         }
 
         let read_u64 =
-            crate::utils::numbers::usize_to_u64(read, "source archive stream chunk size")?;
+            aster_forge_utils::numbers::usize_to_u64(read, "source archive stream chunk size")?;
         let next_copied = copied
             .checked_add(read_u64)
             .ok_or_else(|| AsterError::internal_error("source archive byte counter overflow"))?;
@@ -385,7 +385,7 @@ pub(super) fn stage_zip_archive_for_extract(
                 Some(context),
                 &mut entry,
                 &mut output,
-                crate::utils::numbers::i64_to_u64(manifest_entry.size, "archive entry size")?,
+                aster_forge_utils::numbers::i64_to_u64(manifest_entry.size, "archive entry size")?,
                 &entry_context,
                 deadline,
             )?;
@@ -404,7 +404,7 @@ pub(super) fn stage_zip_archive_for_extract(
         total_bytes: progress.total_bytes,
         total_progress: progress.total_progress,
         file_count: progress.file_count,
-        directory_count: crate::utils::numbers::u64_to_i64(
+        directory_count: aster_forge_utils::numbers::u64_to_i64(
             preflight.directory_count,
             "archive directory count",
         )?,
@@ -519,7 +519,8 @@ fn ensure_archive_entry_matches_preflight<R: Read>(
         )));
     }
     if !is_dir {
-        let declared_size = crate::utils::numbers::u64_to_i64(entry.size(), "archive entry size")?;
+        let declared_size =
+            aster_forge_utils::numbers::u64_to_i64(entry.size(), "archive entry size")?;
         if declared_size != manifest_entry.size {
             return Err(AsterError::validation_error(format!(
                 "archive entry '{}' declared size changed after preflight",

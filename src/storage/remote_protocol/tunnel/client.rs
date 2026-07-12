@@ -8,6 +8,7 @@ use super::server::{
     tunnel_response_from_reqwest,
 };
 use crate::api::api_error_code::ApiErrorCode;
+use crate::config::OUTBOUND_HTTP_USER_AGENT;
 use crate::db::repository::master_binding_repo;
 use crate::entities::master_binding;
 use crate::errors::{AsterError, Result};
@@ -17,7 +18,6 @@ use crate::storage::remote_protocol::{
     INTERNAL_AUTH_ACCESS_KEY_HEADER, INTERNAL_AUTH_NONCE_HEADER, INTERNAL_AUTH_SIGNATURE_HEADER,
     INTERNAL_AUTH_TIMESTAMP_HEADER, INTERNAL_STORAGE_BASE_PATH, sign_internal_request,
 };
-use crate::utils::OUTBOUND_HTTP_USER_AGENT;
 use bytes::Bytes;
 use futures::{SinkExt, StreamExt};
 use percent_encoding::percent_decode_str;
@@ -845,7 +845,7 @@ async fn mark_tunnel_error(
     binding: &master_binding::Model,
     error: &str,
 ) -> Result<()> {
-    let request_id = crate::utils::id::new_uuid();
+    let request_id = aster_forge_utils::id::new_uuid();
     let response = RemoteTunnelResponse {
         request_id,
         status: 502,
@@ -875,7 +875,7 @@ async fn signed_master_request(
         })
         .transpose()?;
     let timestamp = chrono::Utc::now().timestamp();
-    let nonce = crate::utils::id::new_uuid();
+    let nonce = aster_forge_utils::id::new_uuid();
     let signature = sign_internal_request(
         &binding.secret_key,
         method.as_str(),
@@ -912,7 +912,7 @@ fn signed_master_ws_request(
     url: &str,
 ) -> Result<tokio_tungstenite::tungstenite::handshake::client::Request> {
     let timestamp = chrono::Utc::now().timestamp();
-    let nonce = crate::utils::id::new_uuid();
+    let nonce = aster_forge_utils::id::new_uuid();
     let signature = sign_internal_request(
         &binding.secret_key,
         Method::GET.as_str(),

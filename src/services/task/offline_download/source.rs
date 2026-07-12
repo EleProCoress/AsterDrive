@@ -6,7 +6,7 @@ use url::Url;
 
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::services::task::types::CreateOfflineDownloadTaskParams;
-use crate::utils::numbers::{i64_to_u64, u128_to_u64};
+use aster_forge_utils::numbers::{i64_to_u64, u128_to_u64};
 
 use super::THROTTLED_DOWNLOAD_TIMEOUT_SLACK_SECS;
 

@@ -1,7 +1,10 @@
 use std::path::Path;
 
-use aster_drive::utils::{self, paths};
 use aster_drive::webdav::dav::DavPath;
+use aster_forge_utils::paths;
+use aster_forge_validation::filename::{
+    next_copy_name, normalize_validate_name, storage_path_from_blob_key,
+};
 use criterion::{Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
 
@@ -12,16 +15,16 @@ fn bench_file_name_rules(c: &mut Criterion) {
     let long_name = format!("{}.txt", "a".repeat(251));
 
     group.bench_function("normalize_validate_ascii", |b| {
-        b.iter(|| utils::normalize_validate_name(black_box(ascii_name)))
+        b.iter(|| normalize_validate_name(black_box(ascii_name)))
     });
     group.bench_function("normalize_validate_unicode_nfd", |b| {
-        b.iter(|| utils::normalize_validate_name(black_box(unicode_name)))
+        b.iter(|| normalize_validate_name(black_box(unicode_name)))
     });
     group.bench_function("next_copy_name_existing_suffix", |b| {
-        b.iter(|| utils::next_copy_name(black_box(ascii_name)))
+        b.iter(|| next_copy_name(black_box(ascii_name)))
     });
     group.bench_function("next_copy_name_truncate_long", |b| {
-        b.iter(|| utils::next_copy_name(black_box(long_name.as_str())))
+        b.iter(|| next_copy_name(black_box(long_name.as_str())))
     });
     group.finish();
 }
@@ -35,7 +38,7 @@ fn bench_storage_path_helpers(c: &mut Criterion) {
     let sqlite_url = "sqlite://../db/./asterdrive.db?mode=rwc";
 
     group.bench_function("storage_path_from_blob_key", |b| {
-        b.iter(|| utils::storage_path_from_blob_key(black_box(blob_key)))
+        b.iter(|| storage_path_from_blob_key(black_box(blob_key)))
     });
     group.bench_function("resolve_config_relative_path", |b| {
         b.iter(|| {

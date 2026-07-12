@@ -18,7 +18,7 @@ use crate::services::files::{
     direct_link,
     file::{self as file_ops, ResolvedDownloadRange},
 };
-use crate::utils::numbers::u64_to_i64;
+use aster_forge_utils::numbers::u64_to_i64;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -181,17 +181,17 @@ pub(crate) async fn stream_file(
 }
 
 fn share_stream_session_ttl_secs_i64(state: &impl SharedRuntimeState) -> Result<i64> {
-    u64_to_i64(
+    Ok(u64_to_i64(
         operations::share_stream_session_ttl_secs(state.runtime_config()),
         operations::SHARE_STREAM_SESSION_TTL_SECS_KEY,
-    )
+    )?)
 }
 
 fn build_payload(subject: ShareStreamSubject, ttl_secs: i64) -> ShareStreamSessionPayload {
     ShareStreamSessionPayload {
         subject,
         exp: (Utc::now() + Duration::seconds(ttl_secs)).timestamp(),
-        nonce: crate::utils::id::new_short_token(),
+        nonce: aster_forge_utils::id::new_short_token(),
     }
 }
 

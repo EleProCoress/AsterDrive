@@ -1141,7 +1141,7 @@ mod tests {
     }
 
     fn image_preview_blob_hash() -> String {
-        crate::utils::hash::sha256_hex(&tiny_png())
+        aster_forge_crypto::sha256_hex(&tiny_png())
     }
 
     async fn build_share_image_preview_route_state()
@@ -1216,7 +1216,7 @@ mod tests {
         .expect("share image preview route user should insert");
 
         let source_bytes = tiny_png();
-        let source_hash = crate::utils::hash::sha256_hex(&source_bytes);
+        let source_hash = aster_forge_crypto::sha256_hex(&source_bytes);
         let driver = Arc::new(
             LocalDriver::new(&policy).expect("share image preview route local driver should build"),
         );
@@ -1229,7 +1229,7 @@ mod tests {
             &db,
             file_blob::ActiveModel {
                 hash: Set(source_hash),
-                size: Set(crate::utils::numbers::usize_to_i64(
+                size: Set(aster_forge_utils::numbers::usize_to_i64(
                     source_bytes.len(),
                     "share image preview route source size",
                 )

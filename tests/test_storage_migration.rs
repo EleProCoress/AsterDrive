@@ -31,8 +31,8 @@ use aster_drive::storage::{
 use aster_drive::types::{
     BackgroundTaskStatus, DriverType, StoredStoragePolicyAllowedTypes, StoredStoragePolicyOptions,
 };
-use aster_drive::utils::numbers::usize_to_u64;
 use aster_forge_file_classification::FileCategory;
+use aster_forge_utils::numbers::usize_to_u64;
 
 const RUSTFS_TEST_IMAGE_TAG: &str = "1.0.0-alpha.90";
 
@@ -724,7 +724,7 @@ async fn create_blob_with_object(
     bytes: &[u8],
     ref_count: i32,
 ) -> file_blob::Model {
-    let hash = aster_drive::utils::hash::sha256_hex(bytes);
+    let hash = aster_forge_crypto::sha256_hex(bytes);
     let storage_path = aster_forge_validation::filename::storage_path_from_blob_key(&hash).unwrap();
     let full_path = std::path::Path::new(&policy.base_path).join(&storage_path);
     tokio::fs::create_dir_all(full_path.parent().expect("blob path should have parent"))
@@ -2082,7 +2082,7 @@ async fn test_storage_migration_stream_upload_error_does_not_delete_referenced_t
         .put(&target_path, bytes)
         .await
         .expect("referenced target object should be seeded");
-    let referenced_hash = aster_drive::utils::hash::sha256_hex(b"separate referenced blob row");
+    let referenced_hash = aster_forge_crypto::sha256_hex(b"separate referenced blob row");
     let referenced = create_blob_record_with_storage_path(
         &state,
         &target,

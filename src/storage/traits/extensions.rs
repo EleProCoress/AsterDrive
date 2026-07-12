@@ -268,7 +268,7 @@ pub mod fallback {
     {
         // 创建临时文件
         let temp_dir = std::env::temp_dir();
-        let temp_path = crate::utils::raii::TempFileGuard::new(
+        let temp_path = aster_forge_utils::raii::TempFileGuard::new(
             temp_dir.join(format!(
                 "aster_put_reader_{}_{}",
                 std::process::id(),

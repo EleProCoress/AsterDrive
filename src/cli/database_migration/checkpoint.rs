@@ -11,7 +11,7 @@ use sea_orm::{
 
 use crate::cli::db_shared::{quote_ident, redact_database_url};
 use crate::errors::{AsterError, MapAsterErr, Result};
-use crate::utils::hash::sha256_hex;
+use aster_forge_crypto::sha256_hex;
 
 use super::helpers::now_ms;
 use super::schema::{ensure_target_empty, total_source_rows};

@@ -1097,7 +1097,7 @@ async fn test_policy_delete_rejects_upload_sessions_unless_forced() {
         .unwrap()
         .expect("registered user should exist");
     let upload_id = uuid::Uuid::new_v4().to_string();
-    let temp_dir = std::path::PathBuf::from(aster_drive::utils::paths::upload_temp_dir(
+    let temp_dir = std::path::PathBuf::from(aster_forge_utils::paths::upload_temp_dir(
         &state.config.server.upload_temp_dir,
         &upload_id,
     ));
@@ -1367,7 +1367,7 @@ async fn test_policy_force_delete_still_rejects_blob_references() {
     .await
     .unwrap();
 
-    let temp_path = aster_drive::utils::paths::temp_file_path(
+    let temp_path = aster_forge_utils::paths::temp_file_path(
         &state.config.server.temp_dir,
         &uuid::Uuid::new_v4().to_string(),
     );

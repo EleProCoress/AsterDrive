@@ -7,7 +7,7 @@ use crate::errors::Result;
 use crate::runtime::SharedRuntimeState;
 use crate::services::ops::audit::{self, AuditContext};
 use crate::types::EntityType;
-use crate::utils::numbers::usize_to_u64;
+use aster_forge_utils::numbers::usize_to_u64;
 
 /// 清理过期锁（后台任务用）
 pub async fn cleanup_expired(state: &impl SharedRuntimeState) -> Result<u64> {

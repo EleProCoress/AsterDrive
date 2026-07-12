@@ -13,9 +13,9 @@ use crate::runtime::{PrimaryAppState, SharedRuntimeState};
 use crate::services::ops::audit::{self, AuditContext};
 use crate::services::workspace::storage::{self, WorkspaceStorageScope};
 use crate::storage::StorageDriver;
-use crate::utils::numbers::{i64_to_u64, u64_to_i64, usize_to_u64};
 use crate::webdav::dav::{DavFile, DavMetaData, FsError, FsFuture};
 use crate::webdav::metadata::AsterDavMeta;
+use aster_forge_utils::numbers::{i64_to_u64, u64_to_i64, usize_to_u64};
 
 const RELAY_DIRECT_BUFFER_SIZE: usize = 64 * 1024;
 
@@ -130,7 +130,7 @@ impl AsterDavFile {
                 .map_err(|_| FsError::GeneralFailure)?;
 
             if policy.driver_type == crate::types::DriverType::Local {
-                let staging_token = format!("{}.upload", crate::utils::id::new_uuid());
+                let staging_token = format!("{}.upload", aster_forge_utils::id::new_uuid());
                 let staging_path =
                     crate::storage::drivers::local::upload_staging_path(&policy, &staging_token)
                         .map_err(|_| FsError::GeneralFailure)?;
@@ -253,7 +253,7 @@ impl AsterDavFile {
         state: &impl SharedRuntimeState,
     ) -> Result<(tokio::fs::File, String), FsError> {
         let upload_temp_dir = state.config().server.upload_temp_dir.clone();
-        let temp_path = crate::utils::paths::temp_file_path(
+        let temp_path = aster_forge_utils::paths::temp_file_path(
             &upload_temp_dir,
             &format!("webdav-{}.upload", uuid::Uuid::new_v4()),
         );
@@ -270,7 +270,7 @@ impl AsterDavFile {
     fn cleanup_temp(temp_path: &str) {
         let path = temp_path.to_string();
         tokio::spawn(async move {
-            crate::utils::cleanup_temp_file(&path).await;
+            aster_forge_utils::fs::cleanup_temp_file(&path).await;
         });
     }
 }
@@ -496,7 +496,7 @@ impl DavFile for AsterDavFile {
                     }
                     let precomputed_hash = hasher
                         .take()
-                        .map(|hasher| crate::utils::hash::sha256_digest_to_hex(&hasher.finalize()));
+                        .map(|hasher| aster_forge_crypto::sha256_digest_to_hex(&hasher.finalize()));
                     let resolved_policy_hint = resolved_policy
                         .clone()
                         .filter(|_| declared_size == &Some(written_size));

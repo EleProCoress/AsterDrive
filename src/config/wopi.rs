@@ -102,7 +102,7 @@ mod tests {
         let runtime_config = RuntimeConfig::new();
         assert_eq!(
             access_token_ttl_secs(&runtime_config),
-            crate::utils::numbers::u64_to_i64(
+            aster_forge_utils::numbers::u64_to_i64(
                 DEFAULT_WOPI_ACCESS_TOKEN_TTL_SECS,
                 WOPI_ACCESS_TOKEN_TTL_SECS_KEY,
             )
@@ -110,8 +110,11 @@ mod tests {
         );
         assert_eq!(
             lock_ttl_secs(&runtime_config),
-            crate::utils::numbers::u64_to_i64(DEFAULT_WOPI_LOCK_TTL_SECS, WOPI_LOCK_TTL_SECS_KEY,)
-                .unwrap()
+            aster_forge_utils::numbers::u64_to_i64(
+                DEFAULT_WOPI_LOCK_TTL_SECS,
+                WOPI_LOCK_TTL_SECS_KEY,
+            )
+            .unwrap()
         );
         assert_eq!(
             discovery_cache_ttl_secs(&runtime_config),
@@ -124,7 +127,7 @@ mod tests {
 
         assert_eq!(
             access_token_ttl_secs(&runtime_config),
-            crate::utils::numbers::u64_to_i64(
+            aster_forge_utils::numbers::u64_to_i64(
                 DEFAULT_WOPI_ACCESS_TOKEN_TTL_SECS,
                 WOPI_ACCESS_TOKEN_TTL_SECS_KEY,
             )
@@ -132,8 +135,11 @@ mod tests {
         );
         assert_eq!(
             lock_ttl_secs(&runtime_config),
-            crate::utils::numbers::u64_to_i64(DEFAULT_WOPI_LOCK_TTL_SECS, WOPI_LOCK_TTL_SECS_KEY,)
-                .unwrap()
+            aster_forge_utils::numbers::u64_to_i64(
+                DEFAULT_WOPI_LOCK_TTL_SECS,
+                WOPI_LOCK_TTL_SECS_KEY,
+            )
+            .unwrap()
         );
         assert_eq!(
             discovery_cache_ttl_secs(&runtime_config),

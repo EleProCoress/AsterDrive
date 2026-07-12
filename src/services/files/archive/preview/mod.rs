@@ -63,7 +63,7 @@ pub(crate) fn manifest_etag_value(manifest: &ArchivePreviewManifest) -> Result<S
         "serialize archive preview manifest etag",
         AsterError::internal_error,
     )?;
-    Ok(crate::utils::hash::sha256_hex(&bytes))
+    Ok(aster_forge_crypto::sha256_hex(&bytes))
 }
 
 #[derive(Debug, Clone)]
@@ -209,7 +209,7 @@ impl ArchivePreviewLimits {
                 runtime_config,
             ),
         };
-        let configured_max_manifest_bytes = crate::utils::numbers::u64_to_usize(
+        let configured_max_manifest_bytes = aster_forge_utils::numbers::u64_to_usize(
             operations::archive_preview_max_manifest_bytes(runtime_config),
             operations::ARCHIVE_PREVIEW_MAX_MANIFEST_BYTES_KEY,
         )?;
@@ -262,7 +262,7 @@ pub(in crate::services) async fn download_blob_to_temp(
         context,
         &mut stream,
         &mut output,
-        crate::utils::numbers::i64_to_u64(source_file.size, "source archive size")?,
+        aster_forge_utils::numbers::i64_to_u64(source_file.size, "source archive size")?,
         "source archive",
         |message| {
             archive_preview_validation_error(
@@ -314,8 +314,10 @@ where
             break;
         }
 
-        let read_u64 =
-            crate::utils::numbers::usize_to_u64(read, "archive preview source stream chunk size")?;
+        let read_u64 = aster_forge_utils::numbers::usize_to_u64(
+            read,
+            "archive preview source stream chunk size",
+        )?;
         let next_copied = copied.checked_add(read_u64).ok_or_else(|| {
             AsterError::internal_error("archive preview source byte counter overflow")
         })?;

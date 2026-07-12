@@ -16,7 +16,7 @@ use crate::storage::error::{StorageErrorKind, storage_driver_error};
 use crate::storage::traits::driver::StorageDriver;
 use crate::storage::traits::extensions::StreamUploadDriver;
 use crate::storage::traits::multipart::{MultipartStorageDriver, UploadedMultipartPart};
-use crate::utils::numbers;
+use aster_forge_utils::numbers;
 
 use super::AzureBlobDriver;
 
@@ -72,12 +72,12 @@ impl FuturesAsyncRead for AzureSizedReaderStream {
             return Poll::Ready(Ok(0));
         }
 
-        let output_len = crate::utils::numbers::usize_to_u64(
+        let output_len = aster_forge_utils::numbers::usize_to_u64(
             output.len(),
             "Azure Blob upload stream output buffer length",
         )
         .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error))?;
-        let remaining = crate::utils::numbers::u64_to_usize(
+        let remaining = aster_forge_utils::numbers::u64_to_usize(
             state.remaining.min(output_len),
             "Azure Blob upload stream remaining",
         )
@@ -105,7 +105,7 @@ impl FuturesAsyncRead for AzureSizedReaderStream {
                         ),
                     )));
                 }
-                let read_u64 = crate::utils::numbers::usize_to_u64(
+                let read_u64 = aster_forge_utils::numbers::usize_to_u64(
                     read,
                     "Azure Blob upload stream read length",
                 )
@@ -245,7 +245,7 @@ impl MultipartStorageDriver for AzureBlobDriver {
     ) -> Result<String> {
         let client = self.block_blob_client(path, "cw")?;
         let content_length =
-            crate::utils::numbers::i64_to_u64(size, "Azure Blob multipart part size")?;
+            aster_forge_utils::numbers::i64_to_u64(size, "Azure Blob multipart part size")?;
         let body: RequestContent<Bytes, azure_core::http::NoFormat> = Body::SeekableStream(
             Box::new(AzureSizedReaderStream::new(reader, content_length)),
         )
@@ -382,7 +382,7 @@ impl StreamUploadDriver for AzureBlobDriver {
             AsterError::storage_driver_error,
         )?;
         let size =
-            crate::utils::numbers::u64_to_i64(metadata.len(), "Azure Blob upload file size")?;
+            aster_forge_utils::numbers::u64_to_i64(metadata.len(), "Azure Blob upload file size")?;
         self.put_reader(storage_path, Box::new(file), size).await
     }
 }

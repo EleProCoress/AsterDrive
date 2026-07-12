@@ -228,7 +228,10 @@ pub async fn count_active_processing_by_kinds<C: ConnectionTrait>(
         .map_err(AsterError::from)?
         .unwrap_or(0);
 
-    crate::utils::numbers::i64_to_u64(count, "active processing task count")
+    Ok(aster_forge_utils::numbers::i64_to_u64(
+        count,
+        "active processing task count",
+    )?)
 }
 
 pub async fn find_latest_by_kind_and_display_name(

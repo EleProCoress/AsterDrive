@@ -228,7 +228,7 @@ async fn main() -> std::io::Result<()> {
     // 只清理短命 runtime 临时目录：
     // - 不碰 temp_dir 根，避免误删共享目录（例如 /tmp）里的其他内容；
     // - 不碰 temp_dir/tasks，保留后台任务产物给 retention/排障逻辑处理。
-    aster_drive::utils::cleanup_runtime_temp_root(&cfg.server.temp_dir).await;
+    aster_forge_utils::fs::cleanup_runtime_temp_root(&cfg.server.temp_dir).await;
 
     match runtime_mode {
         aster_drive::config::node_mode::NodeRuntimeMode::Primary => {

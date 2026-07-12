@@ -11,7 +11,7 @@ use crate::db::repository::{user_repo, webdav_account_repo};
 use crate::errors::{AsterError, MapAsterErr, auth_forbidden_with_code};
 use crate::runtime::SharedRuntimeState;
 use crate::services::workspace::storage::WorkspaceStorageScope;
-use crate::utils::hash;
+use aster_forge_crypto as hash;
 
 /// WebDAV 认证结果
 #[derive(Debug)]
@@ -204,10 +204,10 @@ mod tests {
     use crate::services::mail::sender;
     use crate::storage::{DriverRegistry, PolicySnapshot};
     use crate::types::{UserRole, UserStatus};
-    use crate::utils::hash;
     use actix_web::http::header::{self, HeaderMap, HeaderValue};
     use aster_forge_cache as cache;
     use aster_forge_cache::CacheConfig;
+    use aster_forge_crypto as hash;
     use base64::Engine;
     use chrono::Utc;
     use migration::Migrator;

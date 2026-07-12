@@ -23,7 +23,7 @@ use crate::entities::{
 };
 use crate::errors::{AsterError, Result};
 use crate::types::{TeamMemberRole, UserStatus};
-use crate::utils::numbers::i64_to_u64;
+use aster_forge_utils::numbers::i64_to_u64;
 
 const SQLITE_USERS_FTS_TABLE: &str = "users_search_fts";
 
@@ -419,7 +419,7 @@ pub async fn count_by_team(db: &DatabaseConnection, team_id: i64) -> Result<u64>
         .map_err(AsterError::from)?
         .unwrap_or(0);
 
-    i64_to_u64(count, "team member count")
+    Ok(i64_to_u64(count, "team member count")?)
 }
 
 pub async fn count_by_team_ids(
@@ -473,7 +473,7 @@ pub async fn count_by_team_and_role<C: ConnectionTrait>(
         .map_err(AsterError::from)?
         .unwrap_or(0);
 
-    i64_to_u64(count, "team member count")
+    Ok(i64_to_u64(count, "team member count")?)
 }
 
 pub async fn count_by_team_grouped_by_role(

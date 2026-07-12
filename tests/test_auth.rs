@@ -2574,7 +2574,7 @@ async fn test_password_reset_confirm_rejects_expired_token() {
             .expect("password reset email should be sent"),
     );
 
-    let token_hash = aster_drive::utils::hash::sha256_hex(token.as_bytes());
+    let token_hash = aster_forge_crypto::sha256_hex(token.as_bytes());
     let record = contact_verification_token::Entity::find()
         .filter(contact_verification_token::Column::TokenHash.eq(token_hash))
         .one(&db)

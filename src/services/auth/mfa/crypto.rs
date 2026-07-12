@@ -9,7 +9,7 @@ use hkdf::Hkdf;
 use sha2::Sha256;
 
 use crate::errors::{AsterError, MapAsterErr, Result};
-use crate::utils::hash;
+use aster_forge_crypto as hash;
 
 const SECRET_CIPHERTEXT_VERSION: &str = "v1";
 const MFA_SECRET_INFO: &[u8] = b"asterdrive:mfa-secret:v1";

@@ -9,7 +9,7 @@ pub(crate) fn validate_archive_entry_path_limits(
     relative_path: &Path,
     limits: ArchiveScanLimits,
 ) -> Result<()> {
-    let depth = crate::utils::numbers::usize_to_u64(
+    let depth = aster_forge_utils::numbers::usize_to_u64(
         relative_path.components().count(),
         "archive entry path depth",
     )?;
@@ -22,7 +22,7 @@ pub(crate) fn validate_archive_entry_path_limits(
         )));
     }
 
-    let path_bytes = crate::utils::numbers::usize_to_u64(
+    let path_bytes = aster_forge_utils::numbers::usize_to_u64(
         relative_path.to_string_lossy().len(),
         "archive entry path bytes",
     )?;
@@ -107,7 +107,7 @@ pub(crate) fn insert_directory_path_with_limit(
         if let std::path::Component::Normal(name) = component {
             current.push(name);
             if directory_paths.insert(current.clone()) {
-                let count = crate::utils::numbers::usize_to_u64(
+                let count = aster_forge_utils::numbers::usize_to_u64(
                     directory_paths.len(),
                     "archive directory count",
                 )?;
@@ -162,8 +162,10 @@ pub(crate) fn validate_total_archive_compression_ratio(
             "archive has zero compressed file bytes for non-empty contents",
         ));
     }
-    let total_uncompressed_bytes =
-        crate::utils::numbers::i64_to_u64(total_uncompressed_bytes, "archive uncompressed size")?;
+    let total_uncompressed_bytes = aster_forge_utils::numbers::i64_to_u64(
+        total_uncompressed_bytes,
+        "archive uncompressed size",
+    )?;
     if compression_ratio_exceeds(total_uncompressed_bytes, total_compressed_bytes, max_ratio)? {
         return Err(AsterError::validation_error(format!(
             "archive total compression ratio exceeds server limit {}",

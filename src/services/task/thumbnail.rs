@@ -7,7 +7,7 @@ use crate::runtime::{PrimaryAppState, SharedRuntimeState, TaskRuntimeState};
 use crate::services::media::processing;
 use crate::storage::StorageErrorKind;
 use crate::types::{BackgroundTaskKind, BackgroundTaskStatus};
-use crate::utils::numbers::usize_to_i64;
+use aster_forge_utils::numbers::usize_to_i64;
 
 use super::retry::{TaskRetryClass, TaskRetryPolicy};
 use super::spec::ImagePreviewGenerateTask;
@@ -28,10 +28,10 @@ use super::{
 pub(super) struct ThumbnailRetryPolicy;
 
 fn thumbnail_step_count() -> Result<i64> {
-    usize_to_i64(
+    Ok(usize_to_i64(
         ThumbnailGenerateTask::step_specs().len(),
         "thumbnail task step count",
-    )
+    )?)
 }
 
 impl TaskRetryPolicy for ThumbnailRetryPolicy {

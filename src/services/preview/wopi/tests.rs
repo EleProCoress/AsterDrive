@@ -437,7 +437,7 @@ fn build_discovered_apps_uses_view_when_no_editable_actions_exist() {
 fn access_token_hash_is_stable_sha256_hex() {
     assert_eq!(
         access_token_hash("wopi_abc123"),
-        crate::utils::hash::sha256_hex(b"wopi_abc123")
+        aster_forge_crypto::sha256_hex(b"wopi_abc123")
     );
 }
 

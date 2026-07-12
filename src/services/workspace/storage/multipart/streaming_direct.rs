@@ -11,7 +11,7 @@ use crate::services::workspace::storage::{
     prepare_non_dedup_blob_upload, store_preuploaded_nondedup,
 };
 use crate::storage::BlobMetadata;
-use crate::utils::numbers::u64_to_i64;
+use aster_forge_utils::numbers::u64_to_i64;
 
 use super::common::{
     DirectUploadParams, upload_direct_relay_shutdown_failed, upload_direct_relay_write_failed,

@@ -124,7 +124,7 @@ pub(in crate::services::remote::storage_target) fn normalize_update_input(
 }
 
 pub(in crate::services::remote::storage_target) fn new_target_key() -> String {
-    format!("rst_{}", crate::utils::id::new_short_token())
+    format!("rst_{}", aster_forge_utils::id::new_short_token())
 }
 
 fn normalize_target_fields(fields: StorageTargetFields) -> Result<NormalizedStorageTargetInput> {

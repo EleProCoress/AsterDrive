@@ -118,7 +118,8 @@ fn stream_count(streams: Option<&Vec<Value>>, codec_type: &str) -> u32 {
                 .count()
         })
         .unwrap_or(0);
-    crate::utils::numbers::usize_to_u32(count, "media metadata stream count").unwrap_or(u32::MAX)
+    aster_forge_utils::numbers::usize_to_u32(count, "media metadata stream count")
+        .unwrap_or(u32::MAX)
 }
 
 fn display_dimensions(
@@ -332,7 +333,7 @@ fn json_duration_ms(value: Option<&Value>) -> Option<u64> {
     if !raw.is_finite() || raw <= 0.0 {
         return None;
     }
-    crate::utils::numbers::f64_seconds_to_u64_millis(raw, "media metadata duration").ok()
+    aster_forge_utils::numbers::f64_seconds_to_u64_millis(raw, "media metadata duration").ok()
 }
 
 #[cfg(test)]

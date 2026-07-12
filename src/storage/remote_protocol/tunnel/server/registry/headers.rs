@@ -29,7 +29,7 @@ fn signed_headers(
     content_length: Option<u64>,
 ) -> Vec<(String, String)> {
     let timestamp = chrono::Utc::now().timestamp();
-    let nonce = crate::utils::id::new_uuid();
+    let nonce = aster_forge_utils::id::new_uuid();
     let signature = sign_internal_request(
         &remote_node.secret_key,
         method.as_str(),

@@ -17,7 +17,7 @@ use crate::services::{
     files::file as file_ops,
     workspace::storage::{self, WorkspaceStorageScope},
 };
-use crate::utils::numbers::u64_to_i64;
+use aster_forge_utils::numbers::u64_to_i64;
 
 use super::session::{
     WopiAccessTokenPayload, create_access_token_for_file, select_public_origin_from_preselected,
@@ -407,7 +407,7 @@ pub(crate) async fn store_relative_target_from_stream(
         )
         .await
     };
-    crate::utils::cleanup_temp_file(&temp_path).await;
+    aster_forge_utils::fs::cleanup_temp_file(&temp_path).await;
     result
 }
 

@@ -8,7 +8,7 @@ use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::{PrimaryAppState, SharedRuntimeState};
 use crate::services::files::archive::core::range_reader::StorageRangeReader;
 use crate::storage::StorageDriver;
-use crate::utils::raii::TempFileGuard;
+use aster_forge_utils::raii::TempFileGuard;
 
 pub(super) async fn prepare_media_metadata_source(
     state: &PrimaryAppState,
@@ -85,7 +85,7 @@ impl PreparedRangeMediaMetadataSource {
         Ok(Self {
             driver,
             storage_path: blob.storage_path.clone(),
-            size: crate::utils::numbers::i64_to_u64(blob.size, "media metadata source size")?,
+            size: aster_forge_utils::numbers::i64_to_u64(blob.size, "media metadata source size")?,
             source_file_name: source_file_name.to_string(),
             source_mime_type: source_mime_type.to_string(),
             handle,
@@ -113,7 +113,7 @@ async fn stream_blob_to_temp_source(
     source_file_name: &str,
     source_mime_type: &str,
 ) -> Result<TempFileGuard> {
-    let temp_dir = PathBuf::from(crate::utils::paths::runtime_temp_dir(temp_root));
+    let temp_dir = PathBuf::from(aster_forge_utils::paths::runtime_temp_dir(temp_root));
     tokio::fs::create_dir_all(&temp_dir)
         .await
         .map_aster_err_ctx(
@@ -152,7 +152,8 @@ async fn stream_blob_to_temp_source(
     )?;
     drop(file);
 
-    let expected_size = crate::utils::numbers::i64_to_u64(blob.size, "media metadata source size")?;
+    let expected_size =
+        aster_forge_utils::numbers::i64_to_u64(blob.size, "media metadata source size")?;
     if copied != expected_size {
         return Err(AsterError::storage_driver_error(format!(
             "media metadata source stream size mismatch: expected {expected_size} bytes, got {copied}"

@@ -225,7 +225,7 @@ async fn compute_dedup_target(
                 hasher.update(&buf[..n]);
             }
             operation_context.checkpoint()?;
-            crate::utils::hash::sha256_digest_to_hex(&hasher.finalize())
+            aster_forge_crypto::sha256_digest_to_hex(&hasher.finalize())
         }
     };
 

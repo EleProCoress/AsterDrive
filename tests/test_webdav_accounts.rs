@@ -85,7 +85,7 @@ async fn seed_active_user_for_webdav_account_test(
     user::ActiveModel {
         username: Set(username.to_string()),
         email: Set(format!("{username}@example.com")),
-        password_hash: Set(aster_drive::utils::hash::hash_password("password123")
+        password_hash: Set(aster_forge_crypto::hash_password("password123")
             .expect("test user password should hash")),
         role: Set(UserRole::User),
         status: Set(UserStatus::Active),
@@ -471,7 +471,7 @@ async fn test_team_webdav_accounts_are_deleted_when_archived_team_is_purged() {
         user_id: Set(owner.id),
         team_id: Set(Some(team_id)),
         username: Set("team-cleanup-webdav".to_string()),
-        password_hash: Set(aster_drive::utils::hash::hash_password("team-cleanup-pass")
+        password_hash: Set(aster_forge_crypto::hash_password("team-cleanup-pass")
             .expect("team cleanup WebDAV password should hash")),
         root_folder_id: Set(None),
         is_active: Set(true),

@@ -40,7 +40,8 @@ where
     R: Read + Seek,
     F: FnMut(i64) -> Result<()>,
 {
-    let entry_count = crate::utils::numbers::usize_to_u64(archive.len(), "archive entry count")?;
+    let entry_count =
+        aster_forge_utils::numbers::usize_to_u64(archive.len(), "archive entry count")?;
     if entry_count > limits.max_entries {
         return Err(AsterError::validation_error(format!(
             "archive contains {} entries, exceeds server limit {}",
@@ -104,7 +105,8 @@ where
             )));
         }
 
-        let entry_size = crate::utils::numbers::u64_to_i64(entry.size(), "archive entry size")?;
+        let entry_size =
+            aster_forge_utils::numbers::u64_to_i64(entry.size(), "archive entry size")?;
         ensure_file_size_allowed(entry_size)?;
         validate_archive_entry_compression_ratio(
             entry.size(),
@@ -130,7 +132,7 @@ where
             relative_path,
             ArchiveScanEntryKind::File,
             entry_size,
-            crate::utils::numbers::u64_to_i64(
+            aster_forge_utils::numbers::u64_to_i64(
                 entry.compressed_size(),
                 "archive entry compressed size",
             )?,
@@ -164,7 +166,8 @@ pub(crate) fn scan_zip_archive_raw<R>(
 where
     R: Read + Seek,
 {
-    let entry_count = crate::utils::numbers::usize_to_u64(archive.len(), "archive entry count")?;
+    let entry_count =
+        aster_forge_utils::numbers::usize_to_u64(archive.len(), "archive entry count")?;
     if entry_count > limits.max_entries {
         return Err(AsterError::validation_error(format!(
             "archive contains {} entries, exceeds server limit {}",
@@ -219,7 +222,8 @@ where
             )));
         }
 
-        let entry_size = crate::utils::numbers::u64_to_i64(entry.size(), "archive entry size")?;
+        let entry_size =
+            aster_forge_utils::numbers::u64_to_i64(entry.size(), "archive entry size")?;
         total_uncompressed_bytes = total_uncompressed_bytes
             .checked_add(entry_size)
             .ok_or_else(|| AsterError::internal_error("archive extract size overflow"))?;
@@ -245,7 +249,7 @@ where
             raw_name_utf8,
             kind: ArchiveScanEntryKind::File,
             size: entry_size,
-            compressed_size: crate::utils::numbers::u64_to_i64(
+            compressed_size: aster_forge_utils::numbers::u64_to_i64(
                 entry.compressed_size(),
                 "archive entry compressed size",
             )?,
@@ -281,7 +285,7 @@ where
     F: FnMut(i64) -> Result<()>,
 {
     let entry_count =
-        crate::utils::numbers::usize_to_u64(raw_entries.len(), "archive entry count")?;
+        aster_forge_utils::numbers::usize_to_u64(raw_entries.len(), "archive entry count")?;
     if entry_count > limits.max_entries {
         return Err(AsterError::validation_error(format!(
             "archive contains {} entries, exceeds server limit {}",
@@ -349,8 +353,8 @@ where
         }
         ensure_file_size_allowed(raw_entry.size)?;
         let entry_size_u64 =
-            crate::utils::numbers::i64_to_u64(raw_entry.size, "archive entry size")?;
-        let compressed_size_u64 = crate::utils::numbers::i64_to_u64(
+            aster_forge_utils::numbers::i64_to_u64(raw_entry.size, "archive entry size")?;
+        let compressed_size_u64 = aster_forge_utils::numbers::i64_to_u64(
             raw_entry.compressed_size,
             "archive entry compressed size",
         )?;

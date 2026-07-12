@@ -7,7 +7,7 @@ use crate::services::{
     ops::audit::{self, AuditContext, AuditEntityType},
     workspace::storage::WorkspaceStorageScope,
 };
-use crate::utils::hash;
+use aster_forge_crypto as hash;
 
 const DOWNLOAD_AUDIT_CACHE_PREFIX: &str = "webdav_download_audit:";
 

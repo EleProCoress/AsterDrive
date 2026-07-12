@@ -28,7 +28,7 @@ pub(super) async fn render_thumbnail_with_vips_cli(
     command: &str,
     max_dim: u32,
 ) -> Result<Vec<u8>> {
-    let temp_root = crate::utils::paths::runtime_temp_dir(&state.config().server.temp_dir);
+    let temp_root = aster_forge_utils::paths::runtime_temp_dir(&state.config().server.temp_dir);
     let temp_dir = PathBuf::from(temp_root).join(format!("media-vips-{}", uuid::Uuid::new_v4()));
     tokio::fs::create_dir_all(&temp_dir)
         .await
@@ -114,7 +114,7 @@ pub(super) async fn render_image_preview_with_vips_cli(
     command: &str,
     max_dim: u32,
 ) -> Result<Vec<u8>> {
-    let temp_root = crate::utils::paths::runtime_temp_dir(&state.config().server.temp_dir);
+    let temp_root = aster_forge_utils::paths::runtime_temp_dir(&state.config().server.temp_dir);
     let temp_dir =
         PathBuf::from(temp_root).join(format!("media-vips-preview-{}", uuid::Uuid::new_v4()));
     tokio::fs::create_dir_all(&temp_dir)
@@ -204,7 +204,7 @@ pub(super) async fn render_thumbnail_with_ffmpeg_cli(
     command: &str,
     max_dim: u32,
 ) -> Result<Vec<u8>> {
-    let temp_root = crate::utils::paths::runtime_temp_dir(&state.config().server.temp_dir);
+    let temp_root = aster_forge_utils::paths::runtime_temp_dir(&state.config().server.temp_dir);
     let temp_dir = PathBuf::from(temp_root).join(format!("media-ffmpeg-{}", uuid::Uuid::new_v4()));
     tokio::fs::create_dir_all(&temp_dir)
         .await

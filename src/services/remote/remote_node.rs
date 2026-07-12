@@ -590,11 +590,11 @@ fn normalize_create_input(input: CreateRemoteNodeInput) -> Result<CreateRemoteNo
 
 fn generate_managed_credentials() -> (String, String) {
     (
-        format!("rn_{}", crate::utils::id::new_short_token()),
+        format!("rn_{}", aster_forge_utils::id::new_short_token()),
         format!(
             "rns_{}{}",
-            crate::utils::id::new_short_token(),
-            crate::utils::id::new_short_token()
+            aster_forge_utils::id::new_short_token(),
+            aster_forge_utils::id::new_short_token()
         ),
     )
 }

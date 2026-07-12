@@ -9,7 +9,7 @@ use sea_orm::{ConnectionTrait, DatabaseConnection, DbBackend, Statement, Transac
 
 use crate::cli::db_shared::{quote_ident, quote_literal, scalar_i64};
 use crate::errors::{AsterError, MapAsterErr, Result};
-use crate::utils::numbers::{i64_to_usize, usize_to_i64};
+use aster_forge_utils::numbers::{i64_to_usize, usize_to_i64};
 
 use super::convert::decode_row_values;
 use crate::cli::database_migration::checkpoint::update_checkpoint;

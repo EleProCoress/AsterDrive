@@ -74,7 +74,7 @@ pub(crate) fn prepare_non_dedup_blob_upload(
 ) -> Result<PreparedNonDedupBlobUpload> {
     match crate::storage::connectors::resolve_policy_upload_transport(policy)? {
         StorageConnectorUploadTransport::Local => {
-            let blob_key = crate::utils::id::new_short_token();
+            let blob_key = aster_forge_utils::id::new_short_token();
             Ok(PreparedNonDedupBlobUpload::Local {
                 base_path: crate::storage::drivers::local::effective_base_path(policy),
                 storage_path: aster_forge_validation::filename::storage_path_from_blob_key(
@@ -86,7 +86,7 @@ pub(crate) fn prepare_non_dedup_blob_upload(
             })
         }
         transport => {
-            let upload_id = crate::utils::id::new_uuid();
+            let upload_id = aster_forge_utils::id::new_uuid();
             let hash_prefix = transport.opaque_blob_hash_prefix().ok_or_else(|| {
                 AsterError::validation_error(format!(
                     "storage policy driver '{}' cannot prepare opaque blob uploads without an opaque hash prefix",
@@ -371,7 +371,7 @@ async fn validate_local_prepared_blob(
     size: i64,
     operation_context: &StorageOperationContext,
 ) -> Result<()> {
-    let expected_size = crate::utils::numbers::i64_to_u64(size, "local upload blob size")?;
+    let expected_size = aster_forge_utils::numbers::i64_to_u64(size, "local upload blob size")?;
     let metadata = tokio::fs::metadata(full_path).await.map_aster_err_ctx(
         "inspect local upload blob",
         AsterError::storage_driver_error,

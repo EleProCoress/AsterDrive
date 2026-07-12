@@ -3,7 +3,7 @@ use tokio::io::{AsyncRead, AsyncWriteExt};
 
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::storage::traits::extensions::StreamUploadDriver;
-use crate::utils::numbers;
+use aster_forge_utils::numbers;
 
 use super::LocalDriver;
 

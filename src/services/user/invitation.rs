@@ -19,8 +19,9 @@ use crate::services::{
     mail::template::MailTemplatePayload,
 };
 use crate::types::{UserInvitationStatus, UserRole, UserStatus};
-use crate::utils::{hash, id, numbers::u64_to_i64};
 use aster_forge_api::OffsetPage;
+use aster_forge_crypto as hash;
+use aster_forge_utils::{id, numbers::u64_to_i64};
 
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]

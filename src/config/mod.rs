@@ -14,6 +14,7 @@ pub mod media_processing;
 pub mod node_mode;
 pub mod offline_download;
 pub mod operations;
+pub(crate) mod paths;
 mod runtime_config;
 mod schema;
 pub mod site_url;
@@ -31,6 +32,8 @@ use std::sync::Arc;
 use std::sync::OnceLock;
 
 static CONFIG: OnceLock<Arc<Config>> = OnceLock::new();
+
+pub const OUTBOUND_HTTP_USER_AGENT: &str = concat!("AsterDrive/", env!("CARGO_PKG_VERSION"));
 
 pub fn ensure_default_config_for_current_dir(
     default: &Config,

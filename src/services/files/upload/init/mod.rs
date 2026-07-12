@@ -22,7 +22,8 @@ use crate::services::files::upload::shared::{
 };
 use crate::services::workspace::storage::{WorkspaceStorageScope, resolve_policy_upload_transport};
 use crate::types::{UploadMode, UploadSessionStatus};
-use crate::utils::{numbers, paths};
+use aster_forge_utils::numbers;
+use aster_forge_utils::paths;
 
 use self::context::{
     InitUploadContext, UploadSessionRecordParams, direct_upload_response,

@@ -3,7 +3,7 @@
 use crate::entities::file;
 use crate::errors::Result;
 use crate::services::workspace::storage;
-use crate::utils::http_validators;
+use aster_forge_utils::http_validators;
 
 const INLINE_SANDBOX_CSP: &str = "sandbox";
 

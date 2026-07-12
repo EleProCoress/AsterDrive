@@ -10,7 +10,7 @@ use migration::Migrator;
 use sea_orm::DatabaseConnection;
 
 use crate::errors::{AsterError, MapAsterErr, Result};
-use crate::utils::numbers::usize_to_i64;
+use aster_forge_utils::numbers::usize_to_i64;
 
 use self::copy::{copy_tables_with_resume, load_target_type_hints, reset_sequences};
 use super::checkpoint::{

@@ -3020,7 +3020,7 @@ async fn test_remote_storage_end_to_end_via_internal_api() {
     )
     .await
     .expect("remote file upload should succeed");
-    aster_drive::utils::cleanup_temp_file(&upload_path_string).await;
+    aster_forge_utils::fs::cleanup_temp_file(&upload_path_string).await;
 
     let created_file = file_repo::find_by_id(consumer_state.writer_db(), created.id)
         .await
@@ -4631,7 +4631,7 @@ async fn test_remote_presigned_download_redirects_to_follower() {
     )
     .await
     .expect("remote file upload should succeed");
-    aster_drive::utils::cleanup_temp_file(&upload_path_string).await;
+    aster_forge_utils::fs::cleanup_temp_file(&upload_path_string).await;
 
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/files/{}/download", created.id))
@@ -5374,7 +5374,7 @@ async fn test_thumbnail_endpoint_returns_precondition_failed_when_remote_node_di
     )
     .await
     .expect("remote thumbnail source upload should succeed");
-    aster_drive::utils::cleanup_temp_file(&upload_path_string).await;
+    aster_forge_utils::fs::cleanup_temp_file(&upload_path_string).await;
 
     let created_file = file_repo::find_by_id(consumer_state.writer_db(), created.id)
         .await
@@ -5545,7 +5545,7 @@ async fn test_remote_presigned_upload_writes_directly_to_provider() {
         u64::try_from(body.len()).expect("body length should fit u64")
     );
 
-    let temp_dir = aster_drive::utils::paths::upload_temp_dir(
+    let temp_dir = aster_forge_utils::paths::upload_temp_dir(
         &consumer_state.config.server.upload_temp_dir,
         &upload_id,
     );
@@ -6253,7 +6253,7 @@ async fn test_remote_presigned_download_browser_cors_allows_get() {
     )
     .await
     .expect("remote file upload should succeed");
-    aster_drive::utils::cleanup_temp_file(&upload_path_string).await;
+    aster_forge_utils::fs::cleanup_temp_file(&upload_path_string).await;
 
     let download_result = file::download(&consumer_state, created.id, user.id, None)
         .await
@@ -6556,11 +6556,11 @@ async fn test_remote_relay_stream_chunked_upload_e2e() {
     )
     .expect("total chunks should fit usize");
 
-    let temp_dir = aster_drive::utils::paths::upload_temp_dir(
+    let temp_dir = aster_forge_utils::paths::upload_temp_dir(
         &consumer_state.config.server.upload_temp_dir,
         &upload_id,
     );
-    let assembled_path = aster_drive::utils::paths::upload_assembled_path(
+    let assembled_path = aster_forge_utils::paths::upload_assembled_path(
         &consumer_state.config.server.upload_temp_dir,
         &upload_id,
     );
@@ -7442,11 +7442,11 @@ async fn test_remote_presigned_multipart_upload_composes_on_provider_without_ass
         (1..=i32::try_from(total_chunks).expect("chunk count should fit i32")).collect::<Vec<_>>()
     );
 
-    let temp_dir = aster_drive::utils::paths::upload_temp_dir(
+    let temp_dir = aster_forge_utils::paths::upload_temp_dir(
         &consumer_state.config.server.upload_temp_dir,
         &upload_id,
     );
-    let assembled_path = aster_drive::utils::paths::upload_assembled_path(
+    let assembled_path = aster_forge_utils::paths::upload_assembled_path(
         &consumer_state.config.server.upload_temp_dir,
         &upload_id,
     );

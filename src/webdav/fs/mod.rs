@@ -18,7 +18,6 @@ use crate::services::{
     workspace::storage::WorkspaceStorageScope,
 };
 use crate::types::EntityType;
-use crate::utils::numbers::i64_to_u64;
 use crate::webdav::dav::{
     DavDirEntry, DavFile, DavFileSystem, DavMetaData, DavPath, DavProp, FsError, FsFuture,
     FsStream, OpenOptions, ReadDirMeta,
@@ -31,6 +30,7 @@ use crate::webdav::file::AsterDavFile;
 use crate::webdav::metadata::AsterDavMeta;
 use crate::webdav::path_resolver::{self, ResolvedNode};
 use aster_forge_api::NullablePatch;
+use aster_forge_utils::numbers::i64_to_u64;
 
 /// AsterDrive WebDAV 文件系统，per-account workspace 实例。
 #[derive(Clone)]

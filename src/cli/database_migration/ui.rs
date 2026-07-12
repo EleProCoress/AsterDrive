@@ -9,7 +9,7 @@ use parking_lot::Mutex;
 use serde::Serialize;
 
 use crate::errors::AsterError;
-use crate::utils::numbers::{u64_to_usize, u128_to_u64, usize_to_u64};
+use aster_forge_utils::numbers::{u64_to_usize, u128_to_u64, usize_to_u64};
 
 use super::{DatabaseMigrationReport, MigrationMode, PROGRESS_ENV, TablePlan};
 use crate::cli::shared::render_serialization_error;

@@ -9,7 +9,7 @@ use crate::storage::traits::extensions::{
     ListStorageDriver, PresignedStorageDriver, StorageCapacityInfo, StreamUploadDriver,
 };
 use crate::storage::traits::multipart::MultipartStorageDriver;
-use crate::utils::numbers;
+use aster_forge_utils::numbers;
 
 use super::S3Driver;
 
@@ -150,7 +150,7 @@ impl StorageDriver for S3Driver {
             .content_length
             .map(|value| numbers::i64_to_u64(value, "S3 content_length"))
             .transpose()
-            .map_err(Self::rewrap_message_as_storage_error)?
+            .map_err(|error| Self::rewrap_message_as_storage_error(error.into()))?
             .unwrap_or(0);
 
         Ok(BlobMetadata {

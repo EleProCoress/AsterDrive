@@ -272,7 +272,7 @@ fn child_duration_ms(element: &Element, names: &[&str]) -> Option<u64> {
         if !seconds.is_finite() || seconds <= 0.0 {
             return None;
         }
-        crate::utils::numbers::f64_seconds_to_u64_millis(
+        aster_forge_utils::numbers::f64_seconds_to_u64_millis(
             seconds,
             "COS native media metadata duration",
         )

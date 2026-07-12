@@ -3,7 +3,7 @@
 use url::Url;
 
 use crate::errors::{AsterError, MapAsterErr, Result};
-use crate::utils::net::is_loopback_host;
+use aster_forge_utils::net::is_loopback_host;
 
 pub(crate) fn parse_url(
     value: &str,

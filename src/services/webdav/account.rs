@@ -19,8 +19,8 @@ use crate::services::{
     },
     workspace::storage::WorkspaceStorageScope,
 };
-use crate::utils::hash;
 use aster_forge_api::OffsetPage;
+use aster_forge_crypto as hash;
 
 fn webdav_username_exists_error() -> AsterError {
     validation_error_with_code(
@@ -317,7 +317,7 @@ pub async fn delete(state: &impl SharedRuntimeState, id: i64, user_id: i64) -> R
             "team WebDAV account must be managed from the team workspace",
         ));
     }
-    crate::utils::verify_owner(account.user_id, user_id, "account")?;
+    crate::types::ownership::verify_owner(account.user_id, user_id, "account")?;
     webdav_account_repo::delete(state.writer_db(), id).await?;
     crate::webdav::auth::invalidate_webdav_auth_for_username(state, &account.username).await;
     tracing::debug!(
@@ -373,7 +373,7 @@ pub async fn toggle_active(
             "team WebDAV account must be managed from the team workspace",
         ));
     }
-    crate::utils::verify_owner(account.user_id, user_id, "account")?;
+    crate::types::ownership::verify_owner(account.user_id, user_id, "account")?;
     let new_is_active = !account.is_active;
     let username = account.username.clone();
     let mut active: webdav_account::ActiveModel = account.into();

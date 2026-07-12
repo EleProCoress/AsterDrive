@@ -852,7 +852,7 @@ async fn test_share_download_limit() {
 #[actix_web::test]
 async fn test_share_download_limit_counter_is_atomic_under_concurrency() {
     use aster_drive::db::repository::share_repo;
-    use aster_drive::utils::raii::TempDirGuard;
+    use aster_forge_utils::raii::TempDirGuard;
 
     let temp_dir = std::env::temp_dir().join(format!(
         "asterdrive-share-download-race-{}",

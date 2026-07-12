@@ -15,9 +15,9 @@ use crate::storage::remote_protocol::{
     RemoteStorageObjectMetadata, RemoteUpdateStorageTargetRequest,
 };
 use crate::storage::{BlobMetadata, StorageDriver};
-use crate::utils::numbers;
 use actix_web::http::{StatusCode, header::HeaderMap};
 use actix_web::{HttpRequest, HttpResponse, dev::HttpServiceFactory, web};
+use aster_forge_utils::numbers;
 use futures::StreamExt;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};

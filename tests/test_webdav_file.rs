@@ -296,7 +296,7 @@ async fn test_aster_dav_fs_open_read_is_rejected_without_temp_files() {
     .unwrap();
 
     let runtime_temp_dir =
-        aster_drive::utils::paths::runtime_temp_dir(&state.config.server.temp_dir);
+        aster_forge_utils::paths::runtime_temp_dir(&state.config.server.temp_dir);
     let runtime_path = std::path::Path::new(&runtime_temp_dir);
     let snapshot_before = snapshot_dir_tree(runtime_path).unwrap();
 

@@ -10,7 +10,7 @@ use crate::services::files::file::{
 };
 use crate::services::workspace::storage::WorkspaceStorageScope;
 use crate::storage::PresignedDownloadOptions;
-use crate::utils::numbers;
+use aster_forge_utils::numbers;
 
 use super::range::ResolvedDownloadRange;
 use super::types::{DownloadOutcome, StreamedFile};

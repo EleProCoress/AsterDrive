@@ -11,7 +11,7 @@ use tokio_util::io::ReaderStream;
 
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::storage::traits::extensions::StreamUploadDriver;
-use crate::utils::numbers;
+use aster_forge_utils::numbers;
 
 use super::S3Driver;
 

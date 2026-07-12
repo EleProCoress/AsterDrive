@@ -16,7 +16,7 @@ use crate::errors::{AsterError, Result, auth_forbidden_with_code, auth_mfa_faile
 use crate::runtime::SharedRuntimeState;
 use crate::services::{auth::local, ops::audit};
 use crate::types::MfaPersistentFactorMethod;
-use crate::utils::numbers::u64_to_i64;
+use aster_forge_utils::numbers::u64_to_i64;
 
 use super::{
     MFA_SETUP_FLOW_TTL_SECS, crypto, now_utc, persistent_factor_method_label, recovery_codes, totp,
@@ -108,7 +108,7 @@ pub async fn start_totp_setup(
 
     let secret = totp::generate_secret();
     let secret_base32 = totp::encode_secret(&secret);
-    let flow_token = format!("mfs_{}", crate::utils::id::new_short_token());
+    let flow_token = format!("mfs_{}", aster_forge_utils::id::new_short_token());
     let aad = crypto::setup_flow_aad(user_id);
     let encrypted =
         crypto::encrypt_secret(&state.config().auth.mfa_secret_key, aad.as_bytes(), &secret)?;

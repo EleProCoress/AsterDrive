@@ -14,8 +14,8 @@ use crate::errors::{AsterError, MapAsterErr, Result, validation_error_with_code}
 use crate::runtime::SharedRuntimeState;
 use crate::services::mail::sender;
 use crate::types::{UserRole, UserStatus, VerificationChannel, VerificationPurpose};
-use crate::utils::hash;
-use crate::utils::numbers::u64_to_i64;
+use aster_forge_crypto as hash;
+use aster_forge_utils::numbers::u64_to_i64;
 
 use super::validation::{normalize_email, normalize_username, validate_password};
 use super::{ACTIVE_VERIFICATION_REQUEST_MESSAGE, INITIAL_SESSION_VERSION};

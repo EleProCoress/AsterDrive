@@ -10,7 +10,7 @@ use crate::services::workspace::storage::{
     StoreFromTempHints, StoreFromTempParams, create_empty, local_content_dedup_enabled,
     store_from_temp_with_hints,
 };
-use crate::utils::numbers::usize_to_i64;
+use aster_forge_utils::numbers::usize_to_i64;
 
 use super::common::{
     DirectUploadParams, upload_body_size_overflow_error, upload_empty_file_error,
@@ -50,7 +50,7 @@ pub(super) async fn upload_local_direct(
             };
             let filename = aster_forge_validation::filename::normalize_validate_name(&filename)?;
 
-            let staging_token = format!("{}.upload", crate::utils::id::new_uuid());
+            let staging_token = format!("{}.upload", aster_forge_utils::id::new_uuid());
             let staging_path =
                 crate::storage::drivers::local::upload_staging_path(policy, &staging_token)
                     .map_aster_err_ctx(
@@ -100,22 +100,22 @@ pub(super) async fn upload_local_direct(
             drop(staging_file);
 
             if let Err(err) = write_result {
-                crate::utils::cleanup_temp_file(&staging_path).await;
+                aster_forge_utils::fs::cleanup_temp_file(&staging_path).await;
                 return Err(err);
             }
 
             if size != declared_size {
-                crate::utils::cleanup_temp_file(&staging_path).await;
+                aster_forge_utils::fs::cleanup_temp_file(&staging_path).await;
                 return Err(upload_size_mismatch_error(declared_size, size));
             }
 
             if size == 0 {
-                crate::utils::cleanup_temp_file(&staging_path).await;
+                aster_forge_utils::fs::cleanup_temp_file(&staging_path).await;
                 return create_empty(state, scope, folder_id, &filename).await;
             }
 
             let precomputed_hash =
-                hasher.map(|hasher| crate::utils::hash::sha256_digest_to_hex(&hasher.finalize()));
+                hasher.map(|hasher| aster_forge_crypto::sha256_digest_to_hex(&hasher.finalize()));
             let resolved_policy = Some(policy.clone());
             let result = store_from_temp_with_hints(
                 state,
@@ -129,7 +129,7 @@ pub(super) async fn upload_local_direct(
             )
             .await;
 
-            crate::utils::cleanup_temp_file(&staging_path).await;
+            aster_forge_utils::fs::cleanup_temp_file(&staging_path).await;
             return result;
         }
     }

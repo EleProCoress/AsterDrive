@@ -24,9 +24,9 @@ use crate::storage::{DriverRegistry, PolicySnapshot, StorageDriver};
 use crate::types::{
     DriverType, StoredStoragePolicyAllowedTypes, StoredStoragePolicyOptions, UserRole, UserStatus,
 };
-use crate::utils::numbers::usize_to_i64;
 use aster_forge_cache as cache;
 use aster_forge_cache::CacheConfig;
+use aster_forge_utils::numbers::usize_to_i64;
 
 use super::build::build_download_outcome_with_disposition_and_range;
 use super::response::outcome_to_response;

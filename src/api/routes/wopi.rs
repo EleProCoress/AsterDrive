@@ -437,7 +437,7 @@ fn request_content_length(req: &HttpRequest) -> Option<i64> {
         .get(actix_web::http::header::CONTENT_LENGTH)
         .and_then(|value| value.to_str().ok())
         .and_then(|value| value.parse::<u64>().ok())
-        .and_then(|value| crate::utils::numbers::u64_to_i64(value, "content length").ok())
+        .and_then(|value| aster_forge_utils::numbers::u64_to_i64(value, "content length").ok())
 }
 
 #[cfg(test)]

@@ -403,7 +403,7 @@ fn copy_reader_to_writer_internal<R: Read, W: Write>(
         if read == 0 {
             break;
         }
-        let read_u64 = crate::utils::numbers::usize_to_u64(read, "archive stream chunk size")?;
+        let read_u64 = aster_forge_utils::numbers::usize_to_u64(read, "archive stream chunk size")?;
         let next_copied = copied
             .checked_add(read_u64)
             .ok_or_else(|| AsterError::internal_error("archive stream byte counter overflow"))?;

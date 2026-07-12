@@ -14,7 +14,7 @@ use crate::services::{
     files::file::{self as file_ops, ResolvedDownloadRange},
     workspace::storage::{self, WorkspaceStorageScope},
 };
-use crate::utils::numbers::{u64_to_usize, usize_to_u64};
+use aster_forge_utils::numbers::{u64_to_usize, usize_to_u64};
 
 const BASE62: &[u8] = b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 const DIRECT_LINK_SIG_LEN: usize = 6;

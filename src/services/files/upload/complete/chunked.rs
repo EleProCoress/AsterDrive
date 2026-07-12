@@ -16,8 +16,8 @@ use crate::storage::connectors::{
     StorageConnectorChunkedCompletion, resolve_policy_upload_transport,
 };
 use crate::types::UploadSessionStatus;
-use crate::utils::numbers::usize_to_i64;
-use crate::utils::paths;
+use aster_forge_utils::numbers::usize_to_i64;
+use aster_forge_utils::paths;
 use tokio::io::AsyncReadExt;
 use tokio::io::AsyncWriteExt;
 
@@ -301,7 +301,7 @@ async fn assemble_local_chunks_to_temp_file(
         path: assembled_path,
         size,
         file_hash: hasher
-            .map(|hasher| crate::utils::hash::sha256_digest_to_hex(&hasher.finalize())),
+            .map(|hasher| aster_forge_crypto::sha256_digest_to_hex(&hasher.finalize())),
     })
 }
 

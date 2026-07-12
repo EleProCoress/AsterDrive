@@ -12,7 +12,7 @@ use crate::services::{
     share,
     workspace::storage::{self, WorkspaceResourceScope, WorkspaceStorageScope},
 };
-use crate::utils::numbers::usize_to_u64;
+use aster_forge_utils::numbers::usize_to_u64;
 
 use super::{
     FileCursor, FolderContents, build_file_list_items_with_tags, build_folder_list_items_with_tags,

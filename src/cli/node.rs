@@ -181,7 +181,7 @@ fn build_connectivity_hint(server_host: &str, server_port: u16) -> String {
 }
 
 fn host_is_loopback(server_host: &str) -> bool {
-    crate::utils::net::is_loopback_host(server_host)
+    aster_forge_utils::net::is_loopback_host(server_host)
 }
 
 #[cfg(test)]

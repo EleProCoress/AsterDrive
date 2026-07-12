@@ -246,7 +246,7 @@ pub(crate) fn ensure_file_resource_scope(
     match scope {
         WorkspaceResourceScope::Personal { user_id } => {
             ensure_personal_file_scope(file)?;
-            crate::utils::verify_owner(
+            crate::types::ownership::verify_owner(
                 file.owner_user_id.ok_or_else(|| {
                     auth_forbidden_with_code(
                         ApiErrorCode::WorkspaceScopeDenied,
@@ -300,7 +300,7 @@ pub(crate) fn ensure_folder_resource_scope(
     match scope {
         WorkspaceResourceScope::Personal { user_id } => {
             ensure_personal_folder_scope(folder)?;
-            crate::utils::verify_owner(
+            crate::types::ownership::verify_owner(
                 folder.owner_user_id.ok_or_else(|| {
                     auth_forbidden_with_code(
                         ApiErrorCode::WorkspaceScopeDenied,

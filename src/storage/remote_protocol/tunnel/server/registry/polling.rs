@@ -73,7 +73,7 @@ impl RemoteTunnelRegistry {
         // Poll registrations are single-dispatch: request_sender consumes the
         // oneshot request_tx, so concurrent senders wait for later polls.
         let (request_tx, request_rx) = oneshot::channel();
-        let connection_id = crate::utils::id::new_uuid();
+        let connection_id = aster_forge_utils::id::new_uuid();
         self.connections.insert(
             remote_node.access_key.clone(),
             RemoteTunnelConnection {
@@ -135,7 +135,7 @@ impl RemoteTunnelRegistry {
             }
         };
 
-        let request_id = crate::utils::id::new_uuid();
+        let request_id = aster_forge_utils::id::new_uuid();
         let (response_tx, response_rx) = oneshot::channel();
         self.pending.insert(
             request_id.clone(),

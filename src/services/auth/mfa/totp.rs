@@ -6,7 +6,7 @@ use rand::RngExt;
 use sha1::Sha1;
 
 use crate::errors::{AsterError, MapAsterErr, Result};
-use crate::utils::numbers::{i64_to_u64, u64_to_usize};
+use aster_forge_utils::numbers::{i64_to_u64, u64_to_usize};
 
 const TOTP_SECRET_BYTES: usize = 20;
 const TOTP_STEP_SECS: u64 = 30;

@@ -7,7 +7,7 @@ use crate::storage::traits::extensions::{
     ListStorageDriver, LocalPathStorageDriver, StorageCapacityInfo, StorageCapacityStatus,
     StreamUploadDriver,
 };
-use crate::utils::numbers::u64_to_i64;
+use aster_forge_utils::numbers::u64_to_i64;
 
 use super::LocalDriver;
 

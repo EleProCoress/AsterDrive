@@ -6,10 +6,10 @@ use std::collections::HashSet;
 use crate::api::pagination::AdminShareSortBy;
 use crate::entities::share::{self, Entity as Share};
 use crate::errors::{AsterError, Result};
-use crate::utils::numbers::u64_to_i64;
 use aster_forge_api::SortOrder;
 use aster_forge_db::pagination::fetch_offset_page;
 use aster_forge_db::sort::{order_by_column_with_id, order_by_id};
+use aster_forge_utils::numbers::u64_to_i64;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, DatabaseConnection, EntityTrait,
     ExprTrait, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, Select, sea_query::Expr,
