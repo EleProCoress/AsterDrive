@@ -14,11 +14,6 @@ pub use super::auth::{
     MfaPersistentFactorMethod, TokenType, VerificationChannel, VerificationPurpose,
 };
 pub use super::entity::EntityType;
-pub use super::external_auth_provider::{
-    ExternalAuthProviderOptions, MicrosoftExternalAuthProviderOptions,
-    StoredExternalAuthProviderOptions, parse_external_auth_provider_options,
-    serialize_external_auth_provider_options,
-};
 pub use super::media_metadata::{
     AudioMediaMetadata, ImageMediaMetadata, MediaMetadataKind, MediaMetadataPayload,
     MediaMetadataStatus, StoredMediaMetadataPayload, VideoMediaMetadata,

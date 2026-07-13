@@ -2,41 +2,38 @@ use chrono::Utc;
 use sea_orm::{ActiveValue::Set, IntoActiveModel};
 
 use crate::api::pagination::load_offset_page;
+use crate::config::OUTBOUND_HTTP_USER_AGENT;
 use crate::db::repository::external_auth_provider_repo;
 use crate::entities::external_auth_provider;
 use crate::errors::{AsterError, Result};
-use crate::external_auth::providers::microsoft::{
-    normalize_microsoft_tenant_input, normalize_microsoft_tenant_or_issuer_url,
-};
-use crate::external_auth::{ExternalAuthProviderConfig, registry};
 use crate::runtime::SharedRuntimeState;
-use crate::types::{
-    ExternalAuthProviderKind, ExternalAuthProviderOptions, MicrosoftExternalAuthProviderOptions,
-    serialize_external_auth_provider_options,
-};
+use crate::types::ExternalAuthProviderKind;
+use crate::types::external_auth_provider::StoredExternalAuthProviderOptions;
 use aster_forge_api::NullablePatch;
 use aster_forge_api::OffsetPage;
+use aster_forge_external_auth::providers::microsoft::{
+    normalize_microsoft_tenant_input, normalize_microsoft_tenant_or_issuer_url,
+};
+use aster_forge_external_auth::{
+    ExternalAuthProviderConfig, ExternalAuthProviderDescriptor, ExternalAuthProviderOptions,
+    ExternalAuthProviderTestResult, MicrosoftExternalAuthProviderOptions, default_registry,
+    normalize as external_auth_normalize, parse_external_auth_provider_options,
+    serialize_external_auth_provider_options,
+};
 use aster_forge_utils::id;
 
 use super::REDACTED_SECRET;
-use super::normalize::{
-    normalize_allowed_domains, normalize_icon_url_input, normalize_issuer_url_input,
-    normalize_manual_endpoint_input, normalize_optional_claim, normalize_required,
-    normalize_scopes, normalize_scopes_with_default, normalize_secret_create,
-    normalize_secret_update, parse_allowed_domains,
-};
+use super::normalize::{normalize_secret_create, normalize_secret_update};
 use super::{
     AdminExternalAuthProviderInfo, CreateExternalAuthProviderInput, ExternalAuthProviderKindInfo,
-    ExternalAuthProviderTestCheck, ExternalAuthProviderTestParamsInput,
-    ExternalAuthProviderTestResult, ExternalAuthPublicProvider, UpdateExternalAuthProviderInput,
+    ExternalAuthProviderTestParamsInput, ExternalAuthPublicProvider,
+    UpdateExternalAuthProviderInput,
 };
 
-fn descriptor_to_info(
-    descriptor: crate::external_auth::ExternalAuthProviderDescriptor,
-) -> ExternalAuthProviderKindInfo {
+fn descriptor_to_info(descriptor: ExternalAuthProviderDescriptor) -> ExternalAuthProviderKindInfo {
     ExternalAuthProviderKindInfo {
-        kind: descriptor.kind,
-        protocol: descriptor.protocol,
+        kind: descriptor.kind.into(),
+        protocol: descriptor.protocol.into(),
         display_name: descriptor.display_name.to_string(),
         description: descriptor.description.to_string(),
         default_scopes: descriptor.default_scopes.to_string(),
@@ -73,7 +70,8 @@ fn nullable_patch_to_update<T>(value: NullablePatch<T>) -> Option<Option<T>> {
 fn provider_to_admin(
     model: external_auth_provider::Model,
 ) -> Result<AdminExternalAuthProviderInfo> {
-    let allowed_domains = parse_allowed_domains(model.allowed_domains.as_deref())?;
+    let allowed_domains =
+        external_auth_normalize::parse_allowed_domains(model.allowed_domains.as_deref())?;
     let options = admin_provider_options(
         model.provider_kind,
         model.options.as_ref(),
@@ -128,7 +126,7 @@ fn admin_provider_options(
     raw_options: &str,
     legacy_issuer_url: Option<&str>,
 ) -> Result<ExternalAuthProviderOptions> {
-    let mut options = crate::types::parse_external_auth_provider_options(raw_options);
+    let mut options = parse_external_auth_provider_options(raw_options);
     if provider_kind == ExternalAuthProviderKind::Microsoft && options.microsoft.is_none() {
         let Some(legacy_issuer_url) = legacy_issuer_url else {
             return normalize_provider_options(provider_kind, options);
@@ -177,21 +175,34 @@ fn admin_manual_endpoint(
 pub(super) fn external_auth_provider_config(
     provider: &external_auth_provider::Model,
 ) -> ExternalAuthProviderConfig {
-    ExternalAuthProviderConfig::from_provider(provider)
+    ExternalAuthProviderConfig {
+        id: provider.id,
+        key: provider.key.clone(),
+        provider_kind: provider.provider_kind.into(),
+        protocol: provider.protocol.into(),
+        options: parse_external_auth_provider_options(provider.options.as_ref()),
+        issuer_url: provider.issuer_url.clone(),
+        authorization_url: provider.authorization_url.clone(),
+        token_url: provider.token_url.clone(),
+        userinfo_url: provider.userinfo_url.clone(),
+        client_id: provider.client_id.clone(),
+        client_secret: provider.client_secret.clone(),
+        scopes: provider.scopes.clone(),
+        subject_claim: provider.subject_claim.clone(),
+        username_claim: provider.username_claim.clone(),
+        display_name_claim: provider.display_name_claim.clone(),
+        email_claim: provider.email_claim.clone(),
+        email_verified_claim: provider.email_verified_claim.clone(),
+        groups_claim: provider.groups_claim.clone(),
+        avatar_url_claim: provider.avatar_url_claim.clone(),
+        outbound_http_user_agent: Some(OUTBOUND_HTTP_USER_AGENT.to_string()),
+    }
 }
 
 fn external_auth_provider_config_from_test_params(
     input: ExternalAuthProviderTestParamsInput,
 ) -> Result<ExternalAuthProviderConfig> {
-    let driver = registry::default_registry().get_driver(input.provider_kind)?;
-    let descriptor = driver.descriptor();
-    if descriptor.kind != input.provider_kind {
-        return Err(AsterError::config_error(format!(
-            "external auth provider driver '{}' returned descriptor for '{}'",
-            input.provider_kind.as_str(),
-            descriptor.kind.as_str()
-        )));
-    }
+    let descriptor = default_registry().descriptor_for(input.provider_kind.into())?;
     let options = normalize_provider_options_from_test_params(
         input.provider_kind,
         input.options,
@@ -200,7 +211,7 @@ fn external_auth_provider_config_from_test_params(
     Ok(ExternalAuthProviderConfig {
         id: 0,
         key: "draft".to_string(),
-        provider_kind: input.provider_kind,
+        provider_kind: input.provider_kind.into(),
         protocol: descriptor.protocol,
         options,
         issuer_url: normalize_provider_issuer_url_input(
@@ -209,27 +220,34 @@ fn external_auth_provider_config_from_test_params(
             descriptor.issuer_url_required,
             true,
         )?,
-        authorization_url: normalize_manual_endpoint_input(
+        authorization_url: external_auth_normalize::normalize_manual_endpoint_input(
             input.authorization_url,
             "authorization_url",
             descriptor.authorization_url_required,
             descriptor.manual_endpoint_configuration_supported,
+            super::EXTERNAL_AUTH_URL_MAX_LEN,
         )?,
-        token_url: normalize_manual_endpoint_input(
+        token_url: external_auth_normalize::normalize_manual_endpoint_input(
             input.token_url,
             "token_url",
             descriptor.token_url_required,
             descriptor.manual_endpoint_configuration_supported,
+            super::EXTERNAL_AUTH_URL_MAX_LEN,
         )?,
-        userinfo_url: normalize_manual_endpoint_input(
+        userinfo_url: external_auth_normalize::normalize_manual_endpoint_input(
             input.userinfo_url,
             "userinfo_url",
             descriptor.userinfo_url_required,
             descriptor.manual_endpoint_configuration_supported,
+            super::EXTERNAL_AUTH_URL_MAX_LEN,
         )?,
-        client_id: normalize_required(&input.client_id, "client_id", 512)?,
+        client_id: external_auth_normalize::normalize_required_field(
+            &input.client_id,
+            "client_id",
+            512,
+        )?,
         client_secret: normalize_secret_create(input.client_secret),
-        scopes: normalize_scopes_with_default(
+        scopes: external_auth_normalize::normalize_scopes_with_default(
             input.scopes.as_deref(),
             descriptor.default_scopes,
             descriptor.protocol,
@@ -241,29 +259,8 @@ fn external_auth_provider_config_from_test_params(
         email_verified_claim: None,
         groups_claim: None,
         avatar_url_claim: None,
+        outbound_http_user_agent: Some(OUTBOUND_HTTP_USER_AGENT.to_string()),
     })
-}
-
-fn map_driver_test_result(
-    result: crate::external_auth::ExternalAuthProviderTestResult,
-) -> ExternalAuthProviderTestResult {
-    ExternalAuthProviderTestResult {
-        provider: result.provider,
-        issuer: result.issuer,
-        authorization_endpoint: result.authorization_endpoint,
-        token_endpoint: result.token_endpoint,
-        userinfo_endpoint: result.userinfo_endpoint,
-        jwks_key_count: result.jwks_key_count,
-        checks: result
-            .checks
-            .into_iter()
-            .map(|check| ExternalAuthProviderTestCheck {
-                name: check.name,
-                success: check.success,
-                message: check.message,
-            })
-            .collect(),
-    }
 }
 
 fn normalize_provider_issuer_url_input(
@@ -274,10 +271,14 @@ fn normalize_provider_issuer_url_input(
 ) -> Result<Option<String>> {
     match provider_kind {
         ExternalAuthProviderKind::Oidc | ExternalAuthProviderKind::GenericOAuth2 => {
-            normalize_issuer_url_input(value, required)
+            Ok(external_auth_normalize::normalize_issuer_url_input(
+                value,
+                required,
+                super::EXTERNAL_AUTH_IDENTITY_NAMESPACE_MAX_LEN,
+            )?)
         }
         ExternalAuthProviderKind::Microsoft if allow_test_override => {
-            normalize_microsoft_tenant_or_issuer_url(value)
+            Ok(normalize_microsoft_tenant_or_issuer_url(value)?)
         }
         ExternalAuthProviderKind::Microsoft => normalize_specialized_issuer_url_input(
             provider_kind,
@@ -285,7 +286,11 @@ fn normalize_provider_issuer_url_input(
             "Use options.microsoft.tenant for Microsoft providers",
         ),
         ExternalAuthProviderKind::Google if allow_test_override => {
-            normalize_issuer_url_input(value, false)
+            Ok(external_auth_normalize::normalize_issuer_url_input(
+                value,
+                false,
+                super::EXTERNAL_AUTH_IDENTITY_NAMESPACE_MAX_LEN,
+            )?)
         }
         ExternalAuthProviderKind::GitHub
         | ExternalAuthProviderKind::Google
@@ -366,10 +371,12 @@ fn microsoft_tenant_from_legacy_issuer_url(value: &str) -> Option<String> {
 
 fn serialize_options(
     options: &ExternalAuthProviderOptions,
-) -> Result<crate::types::StoredExternalAuthProviderOptions> {
-    serialize_external_auth_provider_options(options).map_err(|error| {
-        AsterError::internal_error(format!("serialize external auth provider options: {error}"))
-    })
+) -> Result<StoredExternalAuthProviderOptions> {
+    serialize_external_auth_provider_options(options)
+        .map(StoredExternalAuthProviderOptions)
+        .map_err(|error| {
+            AsterError::internal_error(format!("serialize external auth provider options: {error}"))
+        })
 }
 
 fn default_require_email_verified(provider_kind: ExternalAuthProviderKind) -> bool {
@@ -385,7 +392,7 @@ pub async fn list_public_providers(
     Ok(external_auth_provider_repo::find_enabled(state.writer_db())
         .await?
         .into_iter()
-        .filter(|provider| registry::default_registry().contains(provider.provider_kind))
+        .filter(|provider| default_registry().contains(provider.provider_kind.into()))
         .map(provider_to_public)
         .collect())
 }
@@ -398,7 +405,7 @@ pub async fn list_public_providers_by_kind(
         external_auth_provider_repo::find_enabled_by_kind(state.writer_db(), provider_kind)
             .await?
             .into_iter()
-            .filter(|provider| registry::default_registry().contains(provider.provider_kind))
+            .filter(|provider| default_registry().contains(provider.provider_kind.into()))
             .map(provider_to_public)
             .collect(),
     )
@@ -414,7 +421,7 @@ pub async fn list_admin_providers(
             state.writer_db(),
             limit,
             offset,
-            registry::default_registry().supported_kinds(),
+            default_registry().supported_kinds().map(Into::into),
         )
         .await
     })
@@ -428,7 +435,7 @@ pub async fn list_admin_providers(
 }
 
 pub fn list_provider_kinds() -> Vec<ExternalAuthProviderKindInfo> {
-    registry::default_registry()
+    default_registry()
         .descriptors()
         .into_iter()
         .map(descriptor_to_info)
@@ -440,7 +447,7 @@ pub async fn get_admin_provider(
     id: i64,
 ) -> Result<AdminExternalAuthProviderInfo> {
     let provider = external_auth_provider_repo::find_by_id(state.writer_db(), id).await?;
-    if !registry::default_registry().contains(provider.provider_kind) {
+    if !default_registry().contains(provider.provider_kind.into()) {
         return Err(AsterError::record_not_found(format!(
             "external auth provider #{id}"
         )));
@@ -452,15 +459,7 @@ pub async fn create_provider(
     state: &impl SharedRuntimeState,
     input: CreateExternalAuthProviderInput,
 ) -> Result<AdminExternalAuthProviderInfo> {
-    let driver = registry::default_registry().get_driver(input.provider_kind)?;
-    let descriptor = driver.descriptor();
-    if descriptor.kind != input.provider_kind {
-        return Err(AsterError::config_error(format!(
-            "external auth provider driver '{}' returned descriptor for '{}'",
-            input.provider_kind.as_str(),
-            descriptor.kind.as_str()
-        )));
-    }
+    let descriptor = default_registry().descriptor_for(input.provider_kind.into())?;
     let key = id::new_best_effort_uuid("external auth provider key", |candidate| {
         let db = state.writer_db();
         let provider_kind = input.provider_kind;
@@ -475,8 +474,15 @@ pub async fn create_provider(
     .to_string();
     let provider_kind = input.provider_kind;
     let legacy_issuer_url = input.issuer_url.clone();
-    let display_name = normalize_required(&input.display_name, "display_name", 128)?;
-    let icon_url = normalize_icon_url_input(input.icon_url)?;
+    let display_name = external_auth_normalize::normalize_required_field(
+        &input.display_name,
+        "display_name",
+        128,
+    )?;
+    let icon_url = external_auth_normalize::normalize_icon_url_input(
+        input.icon_url,
+        super::EXTERNAL_AUTH_URL_MAX_LEN,
+    )?;
     let options = normalize_provider_options_from_create(provider_kind, input.options)?;
     let issuer_url = normalize_provider_issuer_url_input(
         provider_kind,
@@ -484,38 +490,43 @@ pub async fn create_provider(
         descriptor.issuer_url_required,
         false,
     )?;
-    let authorization_url = normalize_manual_endpoint_input(
+    let authorization_url = external_auth_normalize::normalize_manual_endpoint_input(
         input.authorization_url,
         "authorization_url",
         descriptor.authorization_url_required,
         descriptor.manual_endpoint_configuration_supported,
+        super::EXTERNAL_AUTH_URL_MAX_LEN,
     )?;
-    let token_url = normalize_manual_endpoint_input(
+    let token_url = external_auth_normalize::normalize_manual_endpoint_input(
         input.token_url,
         "token_url",
         descriptor.token_url_required,
         descriptor.manual_endpoint_configuration_supported,
+        super::EXTERNAL_AUTH_URL_MAX_LEN,
     )?;
-    let userinfo_url = normalize_manual_endpoint_input(
+    let userinfo_url = external_auth_normalize::normalize_manual_endpoint_input(
         input.userinfo_url,
         "userinfo_url",
         descriptor.userinfo_url_required,
         descriptor.manual_endpoint_configuration_supported,
+        super::EXTERNAL_AUTH_URL_MAX_LEN,
     )?;
-    let client_id = normalize_required(&input.client_id, "client_id", 512)?;
-    let scopes = normalize_scopes_with_default(
+    let client_id =
+        external_auth_normalize::normalize_required_field(&input.client_id, "client_id", 512)?;
+    let scopes = external_auth_normalize::normalize_scopes_with_default(
         input.scopes.as_deref(),
         descriptor.default_scopes,
         descriptor.protocol,
     )?;
-    let allowed_domains = normalize_allowed_domains(input.allowed_domains)?;
+    let allowed_domains =
+        external_auth_normalize::normalize_allowed_domains(input.allowed_domains)?;
     let now = Utc::now();
     let model = external_auth_provider::ActiveModel {
         key: Set(key),
         display_name: Set(display_name),
         icon_url: Set(icon_url),
         provider_kind: Set(provider_kind),
-        protocol: Set(descriptor.protocol),
+        protocol: Set(descriptor.protocol.into()),
         options: Set(serialize_options(&options)?),
         issuer_url: Set(issuer_url),
         authorization_url: Set(authorization_url),
@@ -532,28 +543,31 @@ pub async fn create_provider(
         require_email_verified: Set(input
             .require_email_verified
             .unwrap_or_else(|| default_require_email_verified(provider_kind))),
-        subject_claim: Set(normalize_optional_claim(
+        subject_claim: Set(external_auth_normalize::normalize_optional_claim(
             input.subject_claim,
             "subject_claim",
         )?),
-        username_claim: Set(normalize_optional_claim(
+        username_claim: Set(external_auth_normalize::normalize_optional_claim(
             input.username_claim,
             "username_claim",
         )?),
-        display_name_claim: Set(normalize_optional_claim(
+        display_name_claim: Set(external_auth_normalize::normalize_optional_claim(
             input.display_name_claim,
             "display_name_claim",
         )?),
-        email_claim: Set(normalize_optional_claim(input.email_claim, "email_claim")?),
-        email_verified_claim: Set(normalize_optional_claim(
+        email_claim: Set(external_auth_normalize::normalize_optional_claim(
+            input.email_claim,
+            "email_claim",
+        )?),
+        email_verified_claim: Set(external_auth_normalize::normalize_optional_claim(
             input.email_verified_claim,
             "email_verified_claim",
         )?),
-        groups_claim: Set(normalize_optional_claim(
+        groups_claim: Set(external_auth_normalize::normalize_optional_claim(
             input.groups_claim,
             "groups_claim",
         )?),
-        avatar_url_claim: Set(normalize_optional_claim(
+        avatar_url_claim: Set(external_auth_normalize::normalize_optional_claim(
             input.avatar_url_claim,
             "avatar_url_claim",
         )?),
@@ -572,20 +586,25 @@ pub async fn update_provider(
     input: UpdateExternalAuthProviderInput,
 ) -> Result<AdminExternalAuthProviderInfo> {
     let existing = external_auth_provider_repo::find_by_id(state.writer_db(), id).await?;
-    if !registry::default_registry().contains(existing.provider_kind) {
+    if !default_registry().contains(existing.provider_kind.into()) {
         return Err(AsterError::record_not_found(format!(
             "external auth provider #{id}"
         )));
     }
-    let descriptor = registry::default_registry()
-        .get_driver(existing.provider_kind)?
-        .descriptor();
+    let descriptor = default_registry().descriptor_for(existing.provider_kind.into())?;
     let mut active = existing.clone().into_active_model();
     if let Some(display_name) = input.display_name {
-        active.display_name = Set(normalize_required(&display_name, "display_name", 128)?);
+        active.display_name = Set(external_auth_normalize::normalize_required_field(
+            &display_name,
+            "display_name",
+            128,
+        )?);
     }
     if let Some(icon_url) = input.icon_url.and_then(nullable_patch_to_update) {
-        active.icon_url = Set(normalize_icon_url_input(icon_url)?);
+        active.icon_url = Set(external_auth_normalize::normalize_icon_url_input(
+            icon_url,
+            super::EXTERNAL_AUTH_URL_MAX_LEN,
+        )?);
     }
     if let Some(issuer_url) = input.issuer_url.and_then(nullable_patch_to_update) {
         active.issuer_url = Set(normalize_provider_issuer_url_input(
@@ -603,31 +622,38 @@ pub async fn update_provider(
         }
     }
     if let Some(authorization_url) = input.authorization_url.and_then(nullable_patch_to_update) {
-        active.authorization_url = Set(normalize_manual_endpoint_input(
+        active.authorization_url = Set(external_auth_normalize::normalize_manual_endpoint_input(
             authorization_url,
             "authorization_url",
             descriptor.authorization_url_required,
             descriptor.manual_endpoint_configuration_supported,
+            super::EXTERNAL_AUTH_URL_MAX_LEN,
         )?);
     }
     if let Some(token_url) = input.token_url.and_then(nullable_patch_to_update) {
-        active.token_url = Set(normalize_manual_endpoint_input(
+        active.token_url = Set(external_auth_normalize::normalize_manual_endpoint_input(
             token_url,
             "token_url",
             descriptor.token_url_required,
             descriptor.manual_endpoint_configuration_supported,
+            super::EXTERNAL_AUTH_URL_MAX_LEN,
         )?);
     }
     if let Some(userinfo_url) = input.userinfo_url.and_then(nullable_patch_to_update) {
-        active.userinfo_url = Set(normalize_manual_endpoint_input(
+        active.userinfo_url = Set(external_auth_normalize::normalize_manual_endpoint_input(
             userinfo_url,
             "userinfo_url",
             descriptor.userinfo_url_required,
             descriptor.manual_endpoint_configuration_supported,
+            super::EXTERNAL_AUTH_URL_MAX_LEN,
         )?);
     }
     if let Some(client_id) = input.client_id {
-        active.client_id = Set(normalize_required(&client_id, "client_id", 512)?);
+        active.client_id = Set(external_auth_normalize::normalize_required_field(
+            &client_id,
+            "client_id",
+            512,
+        )?);
     }
     if let Some(client_secret) = input.client_secret {
         active.client_secret = Set(normalize_secret_update(
@@ -636,7 +662,10 @@ pub async fn update_provider(
         ));
     }
     if let Some(scopes) = input.scopes {
-        active.scopes = Set(normalize_scopes(Some(&scopes), existing.protocol)?);
+        active.scopes = Set(external_auth_normalize::normalize_scopes(
+            Some(&scopes),
+            existing.protocol.into(),
+        )?);
     }
     if let Some(enabled) = input.enabled {
         active.enabled = Set(enabled);
@@ -651,31 +680,52 @@ pub async fn update_provider(
         active.require_email_verified = Set(value);
     }
     if let Some(value) = input.subject_claim.and_then(nullable_patch_to_update) {
-        active.subject_claim = Set(normalize_optional_claim(value, "subject_claim")?);
+        active.subject_claim = Set(external_auth_normalize::normalize_optional_claim(
+            value,
+            "subject_claim",
+        )?);
     }
     if let Some(value) = input.username_claim.and_then(nullable_patch_to_update) {
-        active.username_claim = Set(normalize_optional_claim(value, "username_claim")?);
+        active.username_claim = Set(external_auth_normalize::normalize_optional_claim(
+            value,
+            "username_claim",
+        )?);
     }
     if let Some(value) = input.display_name_claim.and_then(nullable_patch_to_update) {
-        active.display_name_claim = Set(normalize_optional_claim(value, "display_name_claim")?);
+        active.display_name_claim = Set(external_auth_normalize::normalize_optional_claim(
+            value,
+            "display_name_claim",
+        )?);
     }
     if let Some(value) = input.email_claim.and_then(nullable_patch_to_update) {
-        active.email_claim = Set(normalize_optional_claim(value, "email_claim")?);
+        active.email_claim = Set(external_auth_normalize::normalize_optional_claim(
+            value,
+            "email_claim",
+        )?);
     }
     if let Some(value) = input
         .email_verified_claim
         .and_then(nullable_patch_to_update)
     {
-        active.email_verified_claim = Set(normalize_optional_claim(value, "email_verified_claim")?);
+        active.email_verified_claim = Set(external_auth_normalize::normalize_optional_claim(
+            value,
+            "email_verified_claim",
+        )?);
     }
     if let Some(value) = input.groups_claim.and_then(nullable_patch_to_update) {
-        active.groups_claim = Set(normalize_optional_claim(value, "groups_claim")?);
+        active.groups_claim = Set(external_auth_normalize::normalize_optional_claim(
+            value,
+            "groups_claim",
+        )?);
     }
     if let Some(value) = input.avatar_url_claim.and_then(nullable_patch_to_update) {
-        active.avatar_url_claim = Set(normalize_optional_claim(value, "avatar_url_claim")?);
+        active.avatar_url_claim = Set(external_auth_normalize::normalize_optional_claim(
+            value,
+            "avatar_url_claim",
+        )?);
     }
     if let Some(value) = input.allowed_domains.and_then(nullable_patch_to_update) {
-        active.allowed_domains = Set(normalize_allowed_domains(value)?);
+        active.allowed_domains = Set(external_auth_normalize::normalize_allowed_domains(value)?);
     }
     active.updated_at = Set(Utc::now());
 
@@ -685,7 +735,7 @@ pub async fn update_provider(
 
 pub async fn delete_provider(state: &impl SharedRuntimeState, id: i64) -> Result<()> {
     let provider = external_auth_provider_repo::find_by_id(state.writer_db(), id).await?;
-    if !registry::default_registry().contains(provider.provider_kind) {
+    if !default_registry().contains(provider.provider_kind.into()) {
         return Err(AsterError::record_not_found(format!(
             "external auth provider #{id}"
         )));
@@ -698,12 +748,13 @@ pub async fn test_provider(
     id: i64,
 ) -> Result<ExternalAuthProviderTestResult> {
     let provider = external_auth_provider_repo::find_by_id(state.writer_db(), id).await?;
-    let result = registry::default_registry()
-        .get_driver(provider.provider_kind)?
-        .test_provider(&external_auth_provider_config(&provider))
+    let runtime_provider = external_auth_provider_config(&provider);
+    let result = default_registry()
+        .driver_for_provider(&runtime_provider)?
+        .test_provider(&runtime_provider)
         .await?;
     external_auth_provider_repo::touch_updated_at(state.writer_db(), id, Utc::now()).await?;
-    Ok(map_driver_test_result(result))
+    Ok(result)
 }
 
 pub async fn test_provider_params(
@@ -711,9 +762,8 @@ pub async fn test_provider_params(
     input: ExternalAuthProviderTestParamsInput,
 ) -> Result<ExternalAuthProviderTestResult> {
     let provider = external_auth_provider_config_from_test_params(input)?;
-    let result = registry::default_registry()
-        .get_driver(provider.provider_kind)?
+    Ok(default_registry()
+        .driver_for_provider(&provider)?
         .test_provider(&provider)
-        .await?;
-    Ok(map_driver_test_result(result))
+        .await?)
 }

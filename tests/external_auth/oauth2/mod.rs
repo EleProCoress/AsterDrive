@@ -324,7 +324,9 @@ pub fn external_auth_provider_model(
         icon_url: Set(None),
         provider_kind: Set(aster_drive::types::ExternalAuthProviderKind::GenericOAuth2),
         protocol: Set(aster_drive::types::ExternalAuthProtocol::OAuth2),
-        options: Set(aster_drive::types::StoredExternalAuthProviderOptions::empty()),
+        options: Set(
+            aster_drive::types::external_auth_provider::StoredExternalAuthProviderOptions::empty(),
+        ),
         issuer_url: Set(None),
         authorization_url: Set(Some(format!("{base_url}/authorize"))),
         token_url: Set(Some(format!("{base_url}/token"))),
@@ -362,7 +364,9 @@ pub fn github_external_auth_provider_model(
         icon_url: Set(None),
         provider_kind: Set(aster_drive::types::ExternalAuthProviderKind::GitHub),
         protocol: Set(aster_drive::types::ExternalAuthProtocol::OAuth2),
-        options: Set(aster_drive::types::StoredExternalAuthProviderOptions::empty()),
+        options: Set(
+            aster_drive::types::external_auth_provider::StoredExternalAuthProviderOptions::empty(),
+        ),
         issuer_url: Set(None),
         authorization_url: Set(Some(format!("{base_url}/authorize"))),
         token_url: Set(Some(format!("{base_url}/token"))),
@@ -401,7 +405,9 @@ pub fn qq_external_auth_provider_model(
         icon_url: Set(None),
         provider_kind: Set(aster_drive::types::ExternalAuthProviderKind::Qq),
         protocol: Set(aster_drive::types::ExternalAuthProtocol::OAuth2),
-        options: Set(aster_drive::types::StoredExternalAuthProviderOptions::empty()),
+        options: Set(
+            aster_drive::types::external_auth_provider::StoredExternalAuthProviderOptions::empty(),
+        ),
         issuer_url: Set(None),
         authorization_url: Set(Some(format!("{base_url}/authorize"))),
         token_url: Set(Some(format!("{base_url}/qq/token"))),

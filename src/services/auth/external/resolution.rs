@@ -9,13 +9,12 @@ use crate::entities::{
     external_auth_email_verification_flow, external_auth_identity, external_auth_provider, user,
 };
 use crate::errors::{AsterError, Result, auth_forbidden_with_code};
-use crate::external_auth::ExternalAuthProfile;
 use crate::runtime::SharedRuntimeState;
 use crate::services::auth::local;
 use crate::types::{UserRole, UserStatus};
 use aster_forge_crypto as hash;
+use aster_forge_external_auth::{ExternalAuthProfile, normalize as external_auth_normalize};
 
-use super::normalize::email_domain_allowed;
 use super::{EXTERNAL_AUTH_USER_PASSWORD_BYTES, USERNAME_MAX_LEN, USERNAME_MIN_LEN};
 
 pub(super) type ExternalAuthUserClaims = ExternalAuthProfile;
@@ -255,7 +254,7 @@ async fn create_external_auth_user_and_identity(
             "external auth auto provisioning requires verified email",
         ));
     }
-    if !email_domain_allowed(provider, email)? {
+    if !external_auth_normalize::email_domain_allowed(provider.allowed_domains.as_deref(), email)? {
         return Err(AsterError::auth_forbidden(
             "external auth email domain is not allowed for this provider",
         ));
@@ -340,7 +339,7 @@ async fn create_external_auth_user_and_identity_in_connection<C: sea_orm::Connec
     let email = claims.email.as_deref().ok_or_else(|| {
         AsterError::auth_forbidden("external auth auto provisioning requires an email claim")
     })?;
-    if !email_domain_allowed(provider, email)? {
+    if !external_auth_normalize::email_domain_allowed(provider.allowed_domains.as_deref(), email)? {
         return Err(AsterError::auth_forbidden(
             "external auth email domain is not allowed for this provider",
         ));
@@ -400,7 +399,7 @@ pub(super) async fn resolve_external_auth_user_with_verified_email<C: sea_orm::C
     let email = claims.email.as_deref().ok_or_else(|| {
         AsterError::auth_forbidden("external auth email verification requires an email")
     })?;
-    if !email_domain_allowed(provider, email)? {
+    if !external_auth_normalize::email_domain_allowed(provider.allowed_domains.as_deref(), email)? {
         return Err(AsterError::auth_forbidden(
             "external auth email domain is not allowed for this provider",
         ));
@@ -493,7 +492,10 @@ pub(super) async fn resolve_external_auth_user(
 
     require_email_if_configured(provider, claims)?;
     if let Some(email) = claims.email.as_deref()
-        && !email_domain_allowed(provider, email)?
+        && !external_auth_normalize::email_domain_allowed(
+            provider.allowed_domains.as_deref(),
+            email,
+        )?
     {
         return Err(AsterError::auth_forbidden(
             "external auth email domain is not allowed for this provider",

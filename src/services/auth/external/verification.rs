@@ -11,11 +11,10 @@ use crate::entities::{external_auth_email_verification_flow, external_auth_provi
 use crate::errors::{AsterError, Result, auth_forbidden_with_code};
 use crate::runtime::SharedRuntimeState;
 use crate::services::{mail::outbox, mail::sender, mail::template::MailTemplatePayload};
+use aster_forge_external_auth::normalize as external_auth_normalize;
 use aster_forge_utils::numbers::u64_to_i64;
 
-use super::normalize::{
-    email_domain_allowed, normalize_email_for_external_auth, normalize_flow_token, token_hash,
-};
+use super::normalize::normalize_email_for_external_auth;
 use super::resolution::{
     ExternalAuthUserClaims, claims_with_verified_local_email,
     resolve_external_auth_user_with_verified_email,
@@ -63,7 +62,7 @@ pub(super) async fn create_pending_email_verification_flow(
             display_name_snapshot: Set(claims.display_name.clone()),
             preferred_username_snapshot: Set(claims.preferred_username.clone()),
             return_path: Set(return_path.clone()),
-            flow_token_hash: Set(token_hash(&flow_token)),
+            flow_token_hash: Set(external_auth_normalize::token_hash(&flow_token)),
             verification_token_hash: Set(None),
             email_requested_at: Set(None),
             created_at: Set(now),
@@ -84,12 +83,12 @@ pub async fn start_email_verification(
     state: &impl SharedRuntimeState,
     input: ExternalAuthEmailVerificationStartRequest,
 ) -> Result<ExternalAuthEmailVerificationStartResponse> {
-    let flow_token = normalize_flow_token(&input.flow_token)?;
+    let flow_token = external_auth_normalize::normalize_flow_token(&input.flow_token, 128)?;
     let email = normalize_email_for_external_auth(&input.email)?;
     let now = Utc::now();
     let flow = external_auth_email_verification_flow_repo::find_active_by_flow_token_hash(
         state.writer_db(),
-        &token_hash(&flow_token),
+        &external_auth_normalize::token_hash(&flow_token),
         now,
     )
     .await?
@@ -109,7 +108,8 @@ pub async fn start_email_verification(
             "external auth provider is disabled",
         ));
     }
-    if !email_domain_allowed(&provider, &email)? {
+    if !external_auth_normalize::email_domain_allowed(provider.allowed_domains.as_deref(), &email)?
+    {
         return Err(AsterError::auth_forbidden(
             "external auth email domain is not allowed for this provider",
         ));
@@ -138,7 +138,7 @@ pub async fn start_email_verification(
     }
 
     let verification_token = sender::build_verification_token();
-    let verification_token_hash = token_hash(&verification_token);
+    let verification_token_hash = external_auth_normalize::token_hash(&verification_token);
     let provider_name = provider.display_name.clone();
     let site_name = branding::title_or_default(state.runtime_config());
     let expires_in = format_mail_duration_seconds((flow.expires_at - now).num_seconds());
@@ -201,7 +201,7 @@ pub async fn confirm_email_verification(
     let now = Utc::now();
     let flow = external_auth_email_verification_flow_repo::find_active_by_verification_token_hash(
         state.writer_db(),
-        &token_hash(token),
+        &external_auth_normalize::token_hash(token),
         now,
     )
     .await?

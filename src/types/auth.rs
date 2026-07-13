@@ -95,6 +95,34 @@ impl AsRef<str> for ExternalAuthProviderKind {
     }
 }
 
+impl From<ExternalAuthProviderKind> for aster_forge_external_auth::ExternalAuthProviderKind {
+    fn from(value: ExternalAuthProviderKind) -> Self {
+        match value {
+            ExternalAuthProviderKind::Oidc => Self::Oidc,
+            ExternalAuthProviderKind::GenericOAuth2 => Self::GenericOAuth2,
+            ExternalAuthProviderKind::GitHub => Self::GitHub,
+            ExternalAuthProviderKind::Google => Self::Google,
+            ExternalAuthProviderKind::Microsoft => Self::Microsoft,
+            ExternalAuthProviderKind::Qq => Self::Qq,
+        }
+    }
+}
+
+impl From<aster_forge_external_auth::ExternalAuthProviderKind> for ExternalAuthProviderKind {
+    fn from(value: aster_forge_external_auth::ExternalAuthProviderKind) -> Self {
+        match value {
+            aster_forge_external_auth::ExternalAuthProviderKind::Oidc => Self::Oidc,
+            aster_forge_external_auth::ExternalAuthProviderKind::GenericOAuth2 => {
+                Self::GenericOAuth2
+            }
+            aster_forge_external_auth::ExternalAuthProviderKind::GitHub => Self::GitHub,
+            aster_forge_external_auth::ExternalAuthProviderKind::Google => Self::Google,
+            aster_forge_external_auth::ExternalAuthProviderKind::Microsoft => Self::Microsoft,
+            aster_forge_external_auth::ExternalAuthProviderKind::Qq => Self::Qq,
+        }
+    }
+}
+
 /// 外部认证协议族。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, EnumIter, DeriveActiveEnum, Serialize, Deserialize)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
@@ -113,6 +141,24 @@ impl ExternalAuthProtocol {
         match self {
             Self::Oidc => "oidc",
             Self::OAuth2 => "oauth2",
+        }
+    }
+}
+
+impl From<ExternalAuthProtocol> for aster_forge_external_auth::ExternalAuthProtocol {
+    fn from(value: ExternalAuthProtocol) -> Self {
+        match value {
+            ExternalAuthProtocol::Oidc => Self::Oidc,
+            ExternalAuthProtocol::OAuth2 => Self::OAuth2,
+        }
+    }
+}
+
+impl From<aster_forge_external_auth::ExternalAuthProtocol> for ExternalAuthProtocol {
+    fn from(value: aster_forge_external_auth::ExternalAuthProtocol) -> Self {
+        match value {
+            aster_forge_external_auth::ExternalAuthProtocol::Oidc => Self::Oidc,
+            aster_forge_external_auth::ExternalAuthProtocol::OAuth2 => Self::OAuth2,
         }
     }
 }
@@ -224,6 +270,50 @@ impl TokenType {
         match self {
             Self::Access => "access",
             Self::Refresh => "refresh",
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ExternalAuthProtocol, ExternalAuthProviderKind};
+
+    #[test]
+    fn external_auth_provider_kinds_round_trip_through_forge() {
+        let kinds = [
+            ExternalAuthProviderKind::Oidc,
+            ExternalAuthProviderKind::GenericOAuth2,
+            ExternalAuthProviderKind::GitHub,
+            ExternalAuthProviderKind::Google,
+            ExternalAuthProviderKind::Microsoft,
+            ExternalAuthProviderKind::Qq,
+        ];
+
+        for kind in kinds {
+            let forge_kind: aster_forge_external_auth::ExternalAuthProviderKind = kind.into();
+            assert_eq!(forge_kind.as_str(), kind.as_str());
+            assert_eq!(ExternalAuthProviderKind::from(forge_kind), kind);
+        }
+    }
+
+    #[test]
+    fn external_auth_protocols_round_trip_through_forge() {
+        for protocol in [ExternalAuthProtocol::Oidc, ExternalAuthProtocol::OAuth2] {
+            let forge_protocol: aster_forge_external_auth::ExternalAuthProtocol = protocol.into();
+            assert_eq!(forge_protocol.as_str(), protocol.as_str());
+            assert_eq!(ExternalAuthProtocol::from(forge_protocol), protocol);
+        }
+    }
+
+    #[test]
+    fn external_auth_default_protocols_match_forge_contract() {
+        for forge_kind in aster_forge_external_auth::ExternalAuthProviderKind::ALL {
+            let product_kind = ExternalAuthProviderKind::from(forge_kind);
+            let product_protocol = product_kind.default_protocol();
+            let forge_protocol: aster_forge_external_auth::ExternalAuthProtocol =
+                product_protocol.into();
+
+            assert_eq!(forge_kind.default_protocol(), forge_protocol);
         }
     }
 }

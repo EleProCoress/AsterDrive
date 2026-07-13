@@ -14,6 +14,7 @@ use actix_web::{HttpRequest, HttpResponse, web};
 use aster_forge_api::LimitOffsetQuery;
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use aster_forge_api::OffsetPage;
+use aster_forge_external_auth::ExternalAuthProviderTestResult;
 use serde::Serialize;
 
 fn external_auth_provider_audit_details(
@@ -214,7 +215,7 @@ pub async fn delete_external_auth_provider(
     operation_id = "admin_test_external_auth_provider_params",
     request_body = ExternalAuthProviderTestParamsInput,
     responses(
-        (status = 200, description = "External auth provider parameters tested", body = inline(ApiResponse<external::ExternalAuthProviderTestResult>)),
+        (status = 200, description = "External auth provider parameters tested", body = inline(ApiResponse<ExternalAuthProviderTestResult>)),
         (status = 400, description = "Discovery failed"),
         (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "Forbidden"),
@@ -259,7 +260,7 @@ pub async fn test_external_auth_provider_params(
     operation_id = "admin_test_external_auth_provider",
     params(("id" = i64, Path, description = "External auth provider ID")),
     responses(
-        (status = 200, description = "External auth provider tested", body = inline(ApiResponse<external::ExternalAuthProviderTestResult>)),
+        (status = 200, description = "External auth provider tested", body = inline(ApiResponse<ExternalAuthProviderTestResult>)),
         (status = 400, description = "Discovery failed"),
         (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "Forbidden"),

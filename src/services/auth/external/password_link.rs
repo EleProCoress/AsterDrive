@@ -8,8 +8,8 @@ use crate::runtime::SharedRuntimeState;
 use crate::services::auth::local;
 use aster_forge_crypto as hash;
 use aster_forge_db::transaction;
+use aster_forge_external_auth::normalize as external_auth_normalize;
 
-use super::normalize::{normalize_flow_token, token_hash};
 use super::resolution::{
     claims_without_provider_email, link_external_auth_identity_to_authenticated_user,
 };
@@ -25,7 +25,7 @@ pub async fn link_with_password(
     _ip_address: Option<&str>,
     _user_agent: Option<&str>,
 ) -> Result<ExternalAuthPasswordLinkResult> {
-    let flow_token = normalize_flow_token(&input.flow_token)?;
+    let flow_token = external_auth_normalize::normalize_flow_token(&input.flow_token, 128)?;
     let identifier = input.identifier.trim();
     if identifier.is_empty() {
         return Err(AsterError::validation_error("identifier is required"));
@@ -37,7 +37,7 @@ pub async fn link_with_password(
     let now = Utc::now();
     let flow = external_auth_email_verification_flow_repo::find_active_by_flow_token_hash(
         state.writer_db(),
-        &token_hash(&flow_token),
+        &external_auth_normalize::token_hash(&flow_token),
         now,
     )
     .await?

@@ -4,12 +4,14 @@ use sea_orm::ActiveValue::Set;
 use crate::db::repository::{external_auth_login_flow_repo, external_auth_provider_repo};
 use crate::entities::external_auth_login_flow;
 use crate::errors::{AsterError, Result};
-use crate::external_auth::{ExternalAuthCallback, registry};
 use crate::runtime::SharedRuntimeState;
 use crate::types::ExternalAuthProviderKind;
+use aster_forge_external_auth::{
+    ExternalAuthCallback, default_registry, normalize as external_auth_normalize,
+};
 use aster_forge_utils::numbers::u64_to_i64;
 
-use super::normalize::{callback_redirect_uri, normalize_key, normalize_return_path, state_hash};
+use super::normalize::callback_redirect_uri;
 use super::providers::external_auth_provider_config;
 use super::resolution::{
     external_auth_claims_missing_email, resolve_existing_external_auth_identity,
@@ -28,7 +30,7 @@ pub async fn start_login(
     provider_key: &str,
     return_path: Option<&str>,
 ) -> Result<ExternalAuthStartLoginResponse> {
-    let provider_key = normalize_key(provider_key)?;
+    let provider_key = external_auth_normalize::normalize_provider_key(provider_key)?;
     let provider = external_auth_provider_repo::find_by_kind_key(
         state.writer_db(),
         provider_kind,
@@ -47,17 +49,21 @@ pub async fn start_login(
         ));
     }
 
-    let return_path = normalize_return_path(return_path)?;
+    let return_path = external_auth_normalize::normalize_return_path(
+        return_path,
+        super::EXTERNAL_AUTH_URL_MAX_LEN,
+    )?;
     let redirect_uri = callback_redirect_uri(state, req, provider.provider_kind, &provider.key)?;
-    let auth_start = registry::default_registry()
-        .get_driver(provider.provider_kind)?
-        .start_authorization(&external_auth_provider_config(&provider), &redirect_uri)
+    let runtime_provider = external_auth_provider_config(&provider);
+    let auth_start = default_registry()
+        .driver_for_provider(&runtime_provider)?
+        .start_authorization(&runtime_provider, &redirect_uri)
         .await?;
     let now = Utc::now();
     let ttl = u64_to_i64(FLOW_TTL_SECS, "external auth login flow ttl")?;
     let flow = external_auth_login_flow::ActiveModel {
         provider_id: Set(provider.id),
-        state_hash: Set(state_hash(&auth_start.state)),
+        state_hash: Set(external_auth_normalize::state_hash(&auth_start.state)),
         nonce: Set(auth_start.nonce),
         pkce_verifier: Set(auth_start.pkce_verifier),
         redirect_uri: Set(redirect_uri),
@@ -101,7 +107,7 @@ pub async fn finish_callback(
 
     let flow = external_auth_login_flow_repo::consume_by_state_hash(
         state.writer_db(),
-        &state_hash(state_value),
+        &external_auth_normalize::state_hash(state_value),
         Utc::now(),
     )
     .await?
@@ -115,7 +121,7 @@ pub async fn finish_callback(
             "external auth callback provider kind does not match login flow",
         ));
     }
-    let expected_key = normalize_key(provider_key)?;
+    let expected_key = external_auth_normalize::normalize_provider_key(provider_key)?;
     if provider.key != expected_key {
         return Err(AsterError::auth_invalid_credentials(
             "external auth callback provider does not match login flow",
@@ -127,10 +133,11 @@ pub async fn finish_callback(
         ));
     }
 
-    let user_claims = registry::default_registry()
-        .get_driver(provider.provider_kind)?
+    let runtime_provider = external_auth_provider_config(&provider);
+    let user_claims = default_registry()
+        .driver_for_provider(&runtime_provider)?
         .exchange_callback(
-            &external_auth_provider_config(&provider),
+            &runtime_provider,
             ExternalAuthCallback {
                 code: code.to_string(),
                 nonce: flow.nonce,

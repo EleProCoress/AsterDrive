@@ -19,7 +19,6 @@ pub mod config;
 pub mod db;
 pub mod entities;
 pub mod errors;
-pub mod external_auth;
 pub mod metrics;
 pub mod runtime;
 pub mod services;

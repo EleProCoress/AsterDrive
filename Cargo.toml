@@ -67,6 +67,7 @@ openapi = [
     "aster_forge_api/openapi",
     "aster_forge_api_docs_macros/openapi",
     "aster_forge_config/openapi",
+    "aster_forge_external_auth/openapi",
     "aster_forge_file_classification/openapi",
 ]
 full = ["server", "cli", "metrics", "openapi"]
@@ -95,6 +96,7 @@ aster_forge_cache = { git = "https://github.com/AsterCommunity/AsterForge", pack
 aster_forge_config = { git = "https://github.com/AsterCommunity/AsterForge", package = "aster_forge_config", features = ["redis-pubsub", "sea-orm"] }
 aster_forge_crypto = { git = "https://github.com/AsterCommunity/AsterForge", package = "aster_forge_crypto" }
 aster_forge_db = { git = "https://github.com/AsterCommunity/AsterForge", package = "aster_forge_db", features = ["audit-log", "mail-outbox", "runtime-component", "runtime-lease", "scheduled-task", "system-config"] }
+aster_forge_external_auth = { git = "https://github.com/AsterCommunity/AsterForge", package = "aster_forge_external_auth", features = ["github", "google", "microsoft", "qq"] }
 aster_forge_file_classification = { git = "https://github.com/AsterCommunity/AsterForge", package = "aster_forge_file_classification", features = ["sea-orm"] }
 aster_forge_logging = { git = "https://github.com/AsterCommunity/AsterForge", package = "aster_forge_logging" }
 aster_forge_mail = { git = "https://github.com/AsterCommunity/AsterForge", package = "aster_forge_mail", features = ["persistence", "runtime-component"] }
@@ -141,7 +143,6 @@ nom-exif = "3.6.1"
 parking_lot = "0.12"
 paste = "1.0.15"
 percent-encoding = "2.3"
-openidconnect = "4.0.1"
 rand = { version = "0.10.2", default-features = false, features = ["std", "std_rng", "thread_rng"] }
 reqwest = { version = "0.13", features = ["stream", "json"] }
 ring = "0.17"
@@ -156,7 +157,7 @@ sha2 = "0.11"
 russh = "0.62.2"
 russh-sftp = "2.3.0"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "fs", "io-util"] }
-tokio-tungstenite = { version = "0.29", features = ["rustls-tls-native-roots"] }
+tokio-tungstenite = { version = "0.30", features = ["rustls-tls-native-roots"] }
 tokio-util = { version = "0.7", features = ["io", "io-util"] }
 toml = "1.1"
 toml_edit = "0.25"

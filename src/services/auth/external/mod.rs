@@ -15,8 +15,9 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 
 use crate::entities::user;
-use crate::types::{ExternalAuthProtocol, ExternalAuthProviderKind, ExternalAuthProviderOptions};
+use crate::types::{ExternalAuthProtocol, ExternalAuthProviderKind};
 use aster_forge_api::NullablePatch;
+use aster_forge_external_auth::ExternalAuthProviderOptions;
 
 pub use links::{cleanup_expired_flows, delete_link, list_links};
 pub use login::{finish_callback, start_login};
@@ -29,7 +30,6 @@ pub use providers::{
 };
 pub use verification::{confirm_email_verification, start_email_verification};
 
-const DEFAULT_SCOPES: &str = "openid email profile";
 const FLOW_TTL_SECS: u64 = 300;
 const EMAIL_VERIFICATION_FLOW_TTL_SECS: u64 = 1_800;
 const REDACTED_SECRET: &str = "***REDACTED***";
@@ -368,26 +368,6 @@ pub struct ExternalAuthProviderTestParamsInput {
     pub client_id: String,
     pub client_secret: Option<String>,
     pub scopes: Option<String>,
-}
-
-#[derive(Clone, Debug, Serialize)]
-#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(utoipa::ToSchema))]
-pub struct ExternalAuthProviderTestCheck {
-    pub name: String,
-    pub success: bool,
-    pub message: String,
-}
-
-#[derive(Clone, Debug, Serialize)]
-#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(utoipa::ToSchema))]
-pub struct ExternalAuthProviderTestResult {
-    pub provider: String,
-    pub issuer: Option<String>,
-    pub authorization_endpoint: Option<String>,
-    pub token_endpoint: Option<String>,
-    pub userinfo_endpoint: Option<String>,
-    pub jwks_key_count: Option<usize>,
-    pub checks: Vec<ExternalAuthProviderTestCheck>,
 }
 
 #[derive(Clone, Debug, Serialize)]

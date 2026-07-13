@@ -474,6 +474,28 @@ impl From<aster_forge_file_classification::FileClassificationError> for AsterErr
     }
 }
 
+impl From<aster_forge_external_auth::ExternalAuthError> for AsterError {
+    fn from(error: aster_forge_external_auth::ExternalAuthError) -> Self {
+        match error {
+            aster_forge_external_auth::ExternalAuthError::Validation(message) => {
+                Self::validation_error(message)
+            }
+            aster_forge_external_auth::ExternalAuthError::Config(message) => {
+                Self::config_error(message)
+            }
+            aster_forge_external_auth::ExternalAuthError::InvalidCredentials(message) => {
+                Self::auth_invalid_credentials(message)
+            }
+            aster_forge_external_auth::ExternalAuthError::State(message) => {
+                Self::database_operation(message)
+            }
+            aster_forge_external_auth::ExternalAuthError::Internal(message) => {
+                Self::internal_error(message)
+            }
+        }
+    }
+}
+
 impl From<aster_forge_validation::ValidationError> for AsterError {
     fn from(error: aster_forge_validation::ValidationError) -> Self {
         Self::validation_error(error.message())
@@ -910,6 +932,39 @@ mod tests {
         let err = AsterError::internal_error("db pool poisoned");
         assert_eq!(err.response_log_level(), ResponseLogLevel::Error);
         assert_eq!(err.client_message(), "Internal Server Error");
+    }
+
+    #[test]
+    fn forge_external_auth_errors_preserve_product_error_categories() {
+        let cases = [
+            (
+                aster_forge_external_auth::ExternalAuthError::validation_error("validation"),
+                "E005",
+            ),
+            (
+                aster_forge_external_auth::ExternalAuthError::config_error("config"),
+                "E003",
+            ),
+            (
+                aster_forge_external_auth::ExternalAuthError::auth_invalid_credentials(
+                    "credentials",
+                ),
+                "E010",
+            ),
+            (
+                aster_forge_external_auth::ExternalAuthError::state_error("state"),
+                "E002",
+            ),
+            (
+                aster_forge_external_auth::ExternalAuthError::internal_error("internal"),
+                "E004",
+            ),
+        ];
+
+        for (forge_error, expected_code) in cases {
+            let error = AsterError::from(forge_error);
+            assert_eq!(error.code(), expected_code);
+        }
     }
 
     #[test]
