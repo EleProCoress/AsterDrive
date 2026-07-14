@@ -241,8 +241,11 @@ If we ever introduce “immutable sharing” or “version-pinned public snapsho
 Main code paths:
 
 - `src/services/task/mod.rs`
-- `src/services/task/dispatch.rs` and `src/services/task/dispatch/`
+- `src/services/task/spec/`
+- `src/services/task/registry.rs`
+- `src/services/task/dispatch/`
 - `src/services/task/runtime.rs`
+- `src/services/task/offline_download/`
 - `src/services/task/storage_policy_cleanup.rs`
 - `src/services/task/storage_migration.rs`
 - `src/db/repository/background_task_repo/`
@@ -255,13 +258,26 @@ The background-task system currently handles two classes of work:
 - user-visible and potentially slow business tasks, such as archive compression, extraction, and thumbnail generation
 - execution records for system periodic tasks, such as cleanup, dispatch, and health checks
 
-It is not an independent task service or an external queue. It is a persistent task subsystem inside the monolithic process.
+It is not an independent task service or an external queue. It is a persistent product task subsystem. Generic execution primitives come from `aster_forge_tasks`, including the typed spec contract, execution context, lane configuration, leases, and scheduled-task coordination.
 
 The core goals are:
 
 - provide recoverable asynchronous execution inside one process
 - let the API and admin UI query task state directly
 - avoid letting worker restarts or concurrent execution write stale results back into fresh state
+
+### Task type contract
+
+Each business task first implements `BackgroundTaskSpec` under `src/services/task/spec/` and is then registered in `src/services/task/registry.rs`. The spec is the single type contract for:
+
+- `BackgroundTaskKind`
+- strongly typed payload / result codecs
+- initial steps
+- lane assignment
+- max attempts and retry class
+- process entry point
+
+Task creation must use the typed create helpers instead of constructing `background_task::ActiveModel` or hand-writing `payload_json` / `result_json`. Otherwise the dispatcher, presentation layer, retry policy, and creation path can drift into separate `kind` match tables.
 
 ### Why `background_tasks` is both a queue and a history table
 
@@ -362,12 +378,13 @@ The dispatcher does not use one global pool for everything. It schedules by lane
 
 - `Archive`: `archive_compress`, `archive_extract`, `archive_preview_generate`, limited by `background_task_archive_max_concurrency`
 - `Thumbnail`: `thumbnail_generate`, `image_preview_generate`, `media_metadata_extract`, limited by `background_task_thumbnail_max_concurrency`
+- `OfflineDownload`: `offline_download`, limited by `offline_download_max_concurrency`
 - `StorageMigration`: `storage_policy_migration`, limited by `background_task_storage_migration_max_concurrency`
 - `Fallback`: `storage_policy_temp_cleanup`, `trash_purge_all`, `blob_maintenance`, and system runtime records, limited by `background_task_max_concurrency`
 
 Archive preview is read-only, but it still touches object storage and ZIP parsing, so it shares the archive lane. Image preview generation and media metadata parsing also read raw objects and spend CPU time, so they share the thumbnail lane.
 
-Archive and thumbnail lanes keep pulling the next batch within one dispatch round so large clusters of the same kind do not have to wait for the next periodic tick. StorageMigration is isolated to avoid occupying archive, thumbnail, or maintenance budget. Fallback is intentionally conservative so maintenance work does not starve other lanes.
+Archive and thumbnail lanes keep pulling the next batch within one dispatch round so large clusters of the same kind do not have to wait for the next periodic tick. OfflineDownload is isolated so slow external transfers do not consume archive, thumbnail, or maintenance capacity. StorageMigration is isolated to avoid occupying the other business lanes. Fallback is intentionally conservative so maintenance work does not starve other lanes.
 
 `storage_policy_temp_cleanup` is the backstop cleanup task after force-deleting a storage policy. If temporary objects or multipart uploads still need to wait for presigned URLs to expire, the server schedules this task.
 
@@ -446,7 +463,7 @@ The first version does not support `delete_source_after_success = true`. The fie
 Main code paths:
 
 - `src/api/routes/admin/files.rs`
-- `src/services/admin.rs`
+- `src/services/files/admin.rs`
 - `src/db/repository/file_repo/`
 
 This surface is for admin debugging and migration validation, not ordinary file business flows.
@@ -469,10 +486,11 @@ These use reader connections only and do not cause business side effects. Typica
 
 Main code paths:
 
-- `src/cli/doctor.rs`
+- `src/cli/doctor/mod.rs`
 - `src/cli/doctor/execute.rs`
+- `src/cli/doctor/storage_scan.rs`
 - `src/services/ops/integrity.rs`
-- `src/storage/driver.rs`
+- `src/storage/traits/driver.rs`
 
 ### Design goal
 
@@ -491,7 +509,7 @@ Those questions should not be buried inside online requests or hidden behind bac
 
 `doctor` is split into two layers:
 
-1. `src/cli/doctor.rs`
+1. `src/cli/doctor/mod.rs`
    handles argument parsing, mode selection, report aggregation, human-readable output, and JSON output
 2. `src/services/ops/integrity.rs`
    handles the real deep audit and some repair logic
@@ -577,8 +595,10 @@ It is not meant to replace monitoring, logs, or alerts.
 
 Main code paths:
 
-- `src/cli/database_migration.rs`
-- `src/cli/database_migration/apply.rs`
+- `src/cli/database_migration/mod.rs`
+- `src/cli/database_migration/apply/mod.rs`
+- `src/cli/database_migration/apply/copy.rs`
+- `src/cli/database_migration/apply/convert.rs`
 - `src/cli/database_migration/checkpoint.rs`
 - `src/cli/database_migration/schema.rs`
 - `src/cli/database_migration/verify.rs`
@@ -612,11 +632,15 @@ Migration is not alphabetical dump order. `COPY_TABLE_ORDER` fixes the sequence 
 
 - `managed_followers`
 - `storage_policies`
+- `storage_connector_application_configs`
+- `storage_policy_credentials`
 - `storage_policy_groups`
 - `storage_policy_group_items`
 - `follower_enrollment_sessions`
 - `users`
+- `storage_policy_authorization_flows`
 - `user_profiles`
+- `user_invitations`
 - `auth_sessions`
 - `passkeys`
 - `mfa_factors`
@@ -626,6 +650,7 @@ Migration is not alphabetical dump order. `COPY_TABLE_ORDER` fixes the sequence 
 - `mfa_totp_setup_flows`
 - `teams`
 - `team_members`
+- `tags`
 - `folders`
 - `webdav_accounts`
 - `file_blobs`
@@ -646,6 +671,8 @@ Migration is not alphabetical dump order. `COPY_TABLE_ORDER` fixes the sequence 
 - `audit_logs`
 - `mail_outbox`
 - `background_tasks`
+- `runtime_leases`
+- `scheduled_tasks`
 - `storage_migration_checkpoints`
 - `entity_properties`
 - `resource_locks`

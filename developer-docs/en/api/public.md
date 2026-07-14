@@ -2,56 +2,19 @@
 
 These paths are relative to `/api/v1` and do not require authentication.
 
-Frontend bootstrap config, branding, preview-app registry, thumbnail support, and media-data support are used by anonymous pages at startup. The remote-enrollment endpoints are used by the enrollment handshake between primary and follower nodes. These endpoints are registered only on `primary` nodes.
+Frontend bootstrap config, preview-app registry, thumbnail support, and media-data support are used by anonymous pages at startup. The remote-enrollment endpoints are used by the enrollment handshake between primary and follower nodes. These endpoints are registered only on `primary` nodes.
 
 Public configuration endpoints include `Vary: Authorization, Cookie`. Anonymous responses usually use `Cache-Control: public, max-age=60`; `GET /public/custom-config` uses `Cache-Control: private, max-age=60` when the request carries a valid access token and authenticated-visible entries are included. Thumbnail-support and media-data-support responses are also cached in-process for 60 seconds and invalidated when media-processing config or storage policies change.
 
 | Method | Path | Description |
 | --- | --- | --- |
 | `GET` | `/public/frontend-config` | Read public frontend bootstrap config |
-| `GET` | `/public/branding` | Read legacy branding config for old clients |
 | `GET` | `/public/preview-apps` | Read the anonymous-visible preview-app registry |
 | `GET` | `/public/custom-config` | Read custom config entries visible to the current identity |
 | `GET` | `/public/thumbnail-support` | Read public thumbnail extension support |
 | `GET` | `/public/media-data-support` | Read public media metadata support |
 | `POST` | `/public/remote-enrollment/redeem` | Follower redeems an enrollment token for remote-node binding information |
 | `POST` | `/public/remote-enrollment/ack` | Follower confirms enrollment completion |
-
-## `GET /public/branding`
-
-This is the legacy compatibility endpoint. The current frontend prefers `GET /public/frontend-config`, which bundles branding and other public runtime parameters into a single bootstrap response.
-
-Response:
-
-```json
-{
-  "code": "success",
-  "msg": "",
-  "data": {
-    "title": "AsterDrive",
-    "description": "Self-hosted cloud storage",
-    "favicon_url": "/favicon.svg",
-    "wordmark_dark_url": "/static/asterdrive/asterdrive-dark.svg",
-    "wordmark_light_url": "/static/asterdrive/asterdrive-light.svg",
-    "site_urls": ["https://drive.example.com", "https://panel.example.com"],
-    "allow_user_registration": true,
-    "passkey_login_enabled": true
-  }
-}
-```
-
-Fields:
-
-- `title` / `description`: public display text
-- `favicon_url`: site icon
-- `wordmark_dark_url` / `wordmark_light_url`: brand wordmarks for dark / light backgrounds
-- `site_urls`: configured public HTTP(S) origins; empty when unset
-- `allow_user_registration`: whether anonymous pages should show registration entry points
-- `passkey_login_enabled`: whether the anonymous login page should show Passkey login
-
-These values come from runtime config keys such as `branding_title`, `branding_description`, `branding_*_url`, `auth_allow_user_registration`, `auth_passkey_login_enabled`, and `public_site_url`.
-
-`site_urls` still maps to the runtime key `public_site_url`. The admin API exposes it as `string_array`; writes must pass a JSON string array. Each value must be an exact HTTP(S) origin without paths, wildcards, or non-HTTP(S) schemes.
 
 ## `GET /public/frontend-config`
 
@@ -83,7 +46,7 @@ This endpoint is the current anonymous bootstrap entry for the frontend applicat
 Key points:
 
 - `version` is currently `1`
-- `branding` matches the `data` shape returned by `GET /public/branding`
+- `branding` is the only current public structure for brand and login-entry configuration; the old `/public/branding` route has been removed
 - `media.image_preview_preference` comes from runtime config `frontend_image_preview_preference`
 - supported `image_preview_preference` values are `original_first` and `preview_first`
 - the frontend caches this bootstrap config and refreshes it after related runtime config changes

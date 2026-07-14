@@ -147,7 +147,7 @@ k6 run tests/performance/k6/mixed-background-storage-migration-upload.js
 - `data/.uploads`：chunked 上传分片、组装前临时状态
 - `data/.tmp`：归档、预览、转换、下载等运行时临时文件
 - 离线下载工具自己的临时目录
-- follower 受管 ingress profile 对应目录
+- follower 的本地远程存储目标目录
 
 默认限制里有几个要记住：
 

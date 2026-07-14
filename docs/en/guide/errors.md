@@ -162,7 +162,7 @@ Users can retry once. If it repeats, administrators should check:
 - Whether `data/.uploads`, `data/.tmp`, or custom temp directories are on a full partition
 - Whether user / team / policy quota is exhausted
 - Whether the object-storage multipart or remote presigned browser-direct URL is reachable
-- Whether the remote follower is healthy and has an applied default ingress target
+- Whether the remote follower is healthy and has an applied default remote storage target
 
 ### Storage Policies, S3, And Remote Nodes
 
@@ -192,9 +192,9 @@ Remote-node codes:
 - `remote_node.disabled`: remote node is disabled.
 - `remote_node.enrollment_required`: follower has not completed enrollment.
 - `remote_node.unique_conflict`: remote-node binding or unique field conflict.
-- `managed_ingress.required`, `managed_ingress.default_missing`, `managed_ingress.default_not_applied`: follower has no usable default ingress target.
-- `managed_ingress.local_path_invalid`: follower local ingress path is invalid, commonly because it escapes the allowed root.
-- `managed_ingress.driver_unsupported`: current ingress target driver is unsupported.
+- `managed_ingress.required`, `managed_ingress.default_missing`, `managed_ingress.default_not_applied`: follower has no usable default remote storage target. The legacy prefix remains a stable compatibility code for existing clients and log searches.
+- `managed_ingress.local_path_invalid`: the follower's local remote-storage-target path is invalid, commonly because it escapes the allowed root.
+- `managed_ingress.driver_unsupported`: the current remote storage target driver is unsupported.
 - `managed_ingress.single_primary_required`: this follower must be bound to only one primary.
 - `master_binding.disabled`: master / follower binding is disabled.
 
@@ -378,7 +378,7 @@ The following table groups current public `ApiErrorCode` values by handling path
 | `storage.precondition_failed` / `storage.precondition` | Storage precondition failed. |
 | `storage.operation_unsupported` | Storage operation is unsupported. |
 | `remote_node.disabled` / `remote_node.enrollment_required` / `remote_node.unique_conflict` | Remote node is disabled, not enrolled, or conflicts with a unique field. |
-| `managed_ingress.*` | Follower ingress target is missing, not applied, invalid, unsupported, or inconsistent. |
+| `managed_ingress.*` | A follower remote storage target is missing, not applied, invalid, unsupported, or inconsistent; the prefix is retained for compatibility. |
 | `master_binding.disabled` | Master / follower binding is disabled. |
 
 ### Shares, Teams, And Workspaces

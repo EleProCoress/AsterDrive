@@ -126,7 +126,7 @@ Temporary directories usually include:
 - `data/.uploads`: chunked upload pieces and pre-assembly state
 - `data/.tmp`: runtime temporary files for archives, previews, conversions, downloads, and similar tasks
 - temporary directories used by offline download tooling
-- follower managed ingress profile directories
+- follower local remote-storage-target directories
 
 Remember these default limits:
 

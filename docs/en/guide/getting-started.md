@@ -156,7 +156,7 @@ Focus on confirming:
 - If image / video thumbnails will be used, the processors in `File Processing -> Media Processing` fit the current server environment
 - Trash retention days, version count, and team archive retention days match expectations
 - Whether WebDAV should stay enabled
-- Whether files should continue using the default local policy or move to another storage policy backend; if using follower nodes, whether the follower already has a default ingress target
+- Whether files should continue using the default local policy or move to S3 / MinIO / Azure Blob / Tencent COS / OneDrive / SFTP / a follower node; if using follower nodes, whether the follower already has an applied default remote storage target
 - If you plan to migrate existing files to a new policy, run `Admin -> Storage Policies -> Migrate Data` and check the plan first, then watch progress under `Admin -> Tasks`; use `Admin -> Files` and `Admin -> File Blob` to spot-check results when needed
 - Whether the Gravatar avatar URL is reachable from the current network
 

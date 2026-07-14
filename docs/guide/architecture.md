@@ -40,12 +40,14 @@ flowchart TB
 
   subgraph Data["元数据与缓存"]
     Database["数据库<br/>SQLite / PostgreSQL / MySQL"]
-    Cache["缓存<br/>Memory / Redis / Noop"]
+    Cache["缓存<br/>Memory / Redis"]
   end
 
-  subgraph Storage["对象存储落点"]
+  subgraph Storage["存储策略后端"]
     Local["本地磁盘"]
-    S3["S3 兼容存储<br/>MinIO / R2 / B2 / OSS"]
+    ObjectStorage["对象存储<br/>S3 / Azure Blob / 腾讯云 COS"]
+    Graph["Microsoft Graph<br/>OneDrive / SharePoint"]
+    Sftp["SFTP 文件服务器"]
     RemoteDriver["远程节点驱动"]
   end
 
@@ -75,7 +77,9 @@ flowchart TB
   Tasks --> Database
   Services --> DriverRegistry
   DriverRegistry --> Local
-  DriverRegistry --> S3
+  DriverRegistry --> ObjectStorage
+  DriverRegistry --> Graph
+  DriverRegistry --> Sftp
   DriverRegistry --> RemoteDriver
   RemoteDriver --> InternalStorage
   InternalStorage --> FollowerStore
@@ -111,7 +115,7 @@ follower 是远程存储节点，负责：
 
 - 暴露 `/health*` 健康检查
 - 暴露 `/api/v1/internal/storage/*` 内部对象存储协议
-- 按主节点绑定关系接受对象写入、读取、拼接、列举和 ingress profile 控制
+- 按主节点绑定关系接受对象写入、读取、拼接、列举和远程存储目标管理
 - 在 `reverse_tunnel` 模式下主动连回 primary，取走需要执行的内部存储请求
 
 follower 不处理普通登录、分享页、WebDAV 或管理后台。查远程节点问题时，别先去普通文件路由里翻，先确认 primary 的远程节点配置、绑定状态、网络拓扑和 follower 的内部存储协议是否正常。
@@ -128,7 +132,7 @@ flowchart LR
   Repo --> DB["数据库元数据"]
   Service --> StorageDecision["存储策略选择"]
   StorageDecision --> Driver["StorageDriver"]
-  Driver --> ObjectStore["本地 / S3 / follower"]
+  Driver --> ObjectStore["本地 / S3 / Azure Blob / COS / OneDrive / SFTP / follower"]
   Service --> Response["统一 JSON / 文件流 / SSE / Prometheus / WebDAV 响应"]
   Response --> Client
 ```
@@ -154,17 +158,20 @@ flowchart TB
 
   Policy --> Direct["direct<br/>小文件经 primary 写入"]
   Policy --> Chunked["chunked<br/>分片上传到 primary"]
-  Policy --> Presigned["presigned<br/>浏览器直传 S3"]
-  Policy --> Multipart["presigned_multipart<br/>浏览器分片直传 S3"]
+  Policy --> Presigned["presigned<br/>浏览器直传对象存储"]
+  Policy --> Multipart["presigned_multipart<br/>浏览器分片直传对象存储"]
+  Policy --> Provider["provider_resumable<br/>OneDrive 上传会话"]
 
   Direct --> DriverWrite["StorageDriver 写对象"]
   Chunked --> Assemble["primary 收齐分片并组装"]
   Assemble --> DriverWrite
-  Presigned --> S3Put["客户端 PUT 到 S3"]
-  Multipart --> S3Parts["客户端上传 parts 到 S3"]
-  S3Parts --> CompleteMultipart["primary complete multipart"]
-  S3Put --> Complete["完成上传"]
+  Presigned --> ObjectPut["客户端 PUT 到对象存储"]
+  Multipart --> ObjectParts["客户端上传 parts / blocks"]
+  Provider --> ProviderParts["客户端上传 Graph ranges"]
+  ObjectParts --> CompleteMultipart["primary complete multipart"]
+  ObjectPut --> Complete["完成上传"]
   CompleteMultipart --> Complete
+  ProviderParts --> Complete
   DriverWrite --> Complete
 
   Complete --> Finalize["事务内 finalize<br/>blob / files / versions / quota / session 状态"]
@@ -201,7 +208,7 @@ flowchart LR
 
 - **权限失败**：登录态、团队角色、分享密码、分享过期或下载次数。
 - **元数据失败**：文件记录被删除、Blob 关联异常、版本或回收站状态不符合预期。
-- **对象失败**：本地文件缺失、S3 凭证 / endpoint / bucket 错误、远程 follower 不通。
+- **对象失败**：本地文件缺失、对象存储 / OneDrive / SFTP 凭据或目标配置错误、远程 follower 不通。
 - **网络失败**：反向代理 buffering、超时、Range 请求、WebDAV 客户端兼容性。
 
 ## 远程节点数据流
@@ -219,7 +226,7 @@ flowchart TB
   Mode --> Reverse["reverse_tunnel"]
 
   Direct --> InternalApi["follower<br/>/api/v1/internal/storage"]
-  InternalApi --> FollowerDisk["follower 存储落点"]
+  InternalApi --> FollowerDisk["follower 远程存储目标"]
 
   Reverse --> Registry["primary tunnel registry"]
   FollowerWorker["follower tunnel worker"] --> Registry
@@ -261,7 +268,7 @@ primary 会运行两类后台工作：
 | 页面打不开 | 反向代理、primary 监听地址、前端资源、HTTPS 和浏览器控制台 |
 | 登录失败 | 认证配置、Cookie secure / site URL、外部认证回调、数据库用户状态 |
 | 上传失败 | 上传模式、反向代理 body 限制、S3 CORS / 预签名、上传会话、配额、临时目录 |
-| 下载失败 | 分享状态、权限、Blob 元数据、本地 / S3 / follower 对象可读性、Range 请求 |
+| 下载失败 | 分享状态、权限、Blob 元数据、当前存储策略后端的对象可读性、Range 请求 |
 | WebDAV 异常 | WebDAV 开关、prefix、Basic / Bearer 认证、反向代理头部、客户端兼容性 |
 | 远程节点异常 | 节点绑定、direct / reverse tunnel 模式、follower 健康检查、内部存储 API |
 | 后台任务堆积 | `background_tasks` 状态、dispatcher 间隔、并发配置、任务错误日志 |

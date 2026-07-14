@@ -11,4 +11,4 @@ The `docs/` tree is reserved for deployment-facing and end-user documentation, s
 
 ## Current Status
 
-These documents track the current codebase implementation. Files prefixed with `dev-plan-` are historical development plans or refactor references and should not be treated as the current implemented directory structure or acceptance state.
+These documents track the current codebase implementation by default. Documents with an explicit draft or historical-plan status record decision context or follow-up work and must not be treated as the current implemented directory structure, API surface, or acceptance state.

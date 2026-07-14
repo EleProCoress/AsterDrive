@@ -147,7 +147,7 @@ Here you can:
 - When conditions are safe, promote a Tencent COS policy that was originally created as generic `s3` to `tencent_cos`
 - Create a storage policy data migration task that copies existing objects from a source policy to a target policy
 
-When editing an existing policy, the left side shows the current capacity observation. `local` policies read total, available, and used bytes from the underlying filesystem; `one_drive` policies read Microsoft Graph drive quota; `remote` policies ask the follower for the real ingress target capacity; `s3` / `tencent_cos` / `azure_blob` do not expose a standardized, reliable free-capacity API, so they are shown as unsupported instead of using guessed values.
+When editing an existing policy, the left side shows the current capacity observation. `local` policies read total, available, and used bytes from the underlying filesystem; `one_drive` policies read Microsoft Graph drive quota; `remote` policies ask the follower for the capacity of the remote storage target bound to the policy; `s3` / `tencent_cos` / `azure_blob` do not expose a standardized, reliable free-capacity API, so they are shown as unsupported instead of using guessed values.
 
 `Path-style access` on a generic `s3` policy controls the request URL shape. Compatible services such as MinIO and RustFS usually need it enabled; services that support virtual-hosted style, such as AWS S3, can usually leave it disabled. Test the connection before saving instead of guessing only from the provider name.
 
@@ -172,15 +172,15 @@ You can:
 - Generate the enroll command the follower needs to run after saving
 - View last test time, capability summary, and errors
 - Enable, disable, edit, or delete nodes
-- Create and maintain follower ingress targets in node details
+- Create and maintain follower remote storage targets in node details
 
 Notes:
 
 - Direct mode needs `base_url`; reverse tunnel can leave it empty; in auto mode, empty means reverse tunnel
 - Reverse tunnel is still under test and is suitable for `relay_stream`; remote `presigned` still needs direct transport and a follower `base_url` reachable by browsers
-- Ingress targets are pushed from the primary node to the follower; currently `local` and `s3` are supported
-- A `local` ingress target only accepts a relative path, and it ultimately lands under the follower's `server.follower.remote_storage_target_local_root`
-- Without an applied default ingress target, remote writes are rejected
+- Remote storage targets are pushed from the primary node to the follower; currently `local` and `s3` are supported
+- A `local` remote storage target only accepts a relative path, and it ultimately lands under the follower's `server.follower.remote_storage_target_local_root`
+- Without an applied default remote storage target, remote writes are rejected
 - Before deleting a node, rebind any remote storage policies that reference it
 - For the detailed flow, see [Follower Nodes](./remote-nodes)
 

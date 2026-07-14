@@ -147,7 +147,7 @@ AsterDrive 的管理后台**故意做得不"全功能"**。
 - 在符合条件时，把误建成通用 `s3` 的腾讯云 COS 策略提升为 `tencent_cos`
 - 创建存储策略数据迁移任务，把已有对象从源策略复制到目标策略
 
-编辑已有策略时，左侧会显示当前容量观测结果。`local` 策略会读取底层文件系统总量、可用量和已用量；`one_drive` 策略会读取 Microsoft Graph drive quota；`remote` 策略会向 follower 查询它实际接收落点的能力；`s3` / `tencent_cos` / `azure_blob` 没有统一可靠的剩余容量接口，所以会显示为“不支持”，不会伪造容量数值。
+编辑已有策略时，左侧会显示当前容量观测结果。`local` 策略会读取底层文件系统总量、可用量和已用量；`one_drive` 策略会读取 Microsoft Graph drive quota；`remote` 策略会向 follower 查询策略绑定的远程存储目标能力；`s3` / `tencent_cos` / `azure_blob` 没有统一可靠的剩余容量接口，所以会显示为“不支持”，不会伪造容量数值。
 
 通用 `s3` 策略里的 `Path-style 访问` 控制请求地址形态。MinIO、RustFS 这类兼容服务通常开启；AWS S3 这类支持虚拟托管风格的服务通常可以关闭。保存前先测试连接，比按厂商名字猜更可靠。
 
@@ -172,15 +172,15 @@ OneDrive 策略的授权按钮只使用已经保存的 Microsoft Graph 应用配
 - 在保存后生成从节点要执行的 enroll 命令
 - 查看最近一次测试时间、能力摘要和错误
 - 启用、停用、编辑或删除节点
-- 在节点详情里创建和维护 follower 的接收落点
+- 在节点详情里创建和维护 follower 的远程存储目标
 
 要注意：
 
 - 直连模式需要 `base_url`；反向通道可以留空；自动模式下留空即走反向通道
 - 反向通道仍处于测试阶段，适合 `relay_stream`；远程 `presigned` 仍然需要直连和浏览器可访问的 follower `base_url`
-- 接收落点由主控节点下发到 follower，当前支持 `local` 和 `s3`
-- `local` 接收落点只能填相对路径，最终会落在 follower 的 `server.follower.remote_storage_target_local_root` 下面
-- 没有已应用的默认接收落点时，远程写入会被拒绝
+- 远程存储目标由主控节点下发到 follower，当前支持 `local` 和 `s3`
+- `local` 远程存储目标只能填相对路径，最终会落在 follower 的 `server.follower.remote_storage_target_local_root` 下面
+- 没有已应用的默认远程存储目标时，远程写入会被拒绝
 - 删除节点前，先把引用它的远程存储策略改绑掉
 - 具体接入流程看 [远程节点](./remote-nodes)
 

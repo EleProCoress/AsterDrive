@@ -17,11 +17,9 @@
 - [标签 API](./api/tags.md)
 - [测试与数据库后端](./testing.md)
 - [Jemalloc 堆画像](./jemalloc-profiling.md)
-- [AsterDrive 功能文档草稿](./asterdrive-feature-document.md)
-- [前端 UI/UX 规范](./frontend-uiux-guidelines.md)
 - [静态配置密钥处理备忘](./static-config-secret-handling.md)
-- [安全审计报告 - 2026-06](./security-audit-2026-06.md)
+- [服务层模块化重构历史方案与当前目录映射](./service-modularization-refactor-plan.md)
 
 ## 当前状态说明
 
-这些文档按当前代码实现维护。名字里带 `dev-plan-` 的文件是历史开发计划或重构参考，不应当直接当成“当前已经落地的目录结构 / 验收状态”。
+这些文档默认按当前代码实现维护。带有明确“草稿”“历史方案”状态的文档只用于记录决策背景或后续计划，不应直接当成当前已经落地的目录结构、接口或验收状态。

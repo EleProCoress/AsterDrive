@@ -28,7 +28,7 @@ flowchart LR
 
 | 链路 | 什么时候需要 | 不通时会怎样 |
 | --- | --- | --- |
-| 主控节点 -> follower `base_url` | 直连测试、下发接收落点、`relay_stream` 转发、生成远程签名 | 主控测试连接失败，远程策略不可用 |
+| 主控节点 -> follower `base_url` | 直连测试、下发远程存储目标、`relay_stream` 转发、生成远程签名 | 主控测试连接失败，远程策略不可用 |
 | 用户浏览器 -> follower `base_url` | 远程 `presigned` 上传/下载 | `relay_stream` 正常，但 `presigned` 在浏览器里失败 |
 | follower -> 主控 `public_site_url` | enroll、反向通道、状态回报 | enroll 失败，或反向通道不上线 |
 
@@ -44,7 +44,7 @@ flowchart LR
 | 反向通道 | follower 不需要被主控回连 | 当前适合 `relay_stream` | follower 在 NAT / CGNAT / 内网后方，不想暴露入口 |
 | 主控统一中继 | 浏览器只访问主控 | `relay_stream` | 想让所有公网访问都收敛到主控节点 |
 
-第一次接入建议先用 `relay_stream`。等主控、follower、接收落点和真实上传下载都跑通，再决定是否切到 `presigned`。
+第一次接入建议先用 `relay_stream`。等主控、follower、远程存储目标和真实上传下载都跑通，再决定是否切到 `presigned`。
 
 ## 方式一：公网 HTTPS 直连
 
@@ -185,6 +185,6 @@ follower -> 主控 public_site_url
 | 公网用户也要下载 follower 文件 | 公网 HTTPS 直连，或继续用 `relay_stream` |
 | follower 绝不暴露入口 | 反向通道 + `relay_stream` |
 | 主控是 Docker，follower 是 tailnet 内 NAS | 先确认容器内 DNS 和路由；不想折腾就填 Tailscale IP 或改 `relay_stream` |
-| 不确定网络拓扑是否正确 | 用 `relay_stream` 验证接收落点，再单独测试浏览器访问 follower `base_url` |
+| 不确定网络拓扑是否正确 | 用 `relay_stream` 验证远程存储目标，再单独测试浏览器访问 follower `base_url` |
 
 最容易踩的坑是：主控测试连接通过，只代表“主控能访问 follower”。这不代表浏览器也能访问 follower。远程 `presigned` 失败但 `relay_stream` 正常时，优先查浏览器到 follower `base_url` 的 DNS、证书、路由、CORS 和代理响应头。

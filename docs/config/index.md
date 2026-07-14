@@ -16,7 +16,7 @@ AsterDrive 的配置分得很清楚。先把这些层分开，后续就能更容
 - **`管理 -> 外部认证`** —— 外部身份提供商：OIDC / 通用 OAuth2 / SSO 登录入口、重定向 URI、账号绑定和自动创建策略
 - **`管理 -> 存储策略`** —— 文件真正存到哪里、用哪种上传方式
 - **`管理 -> 策略组`** —— 不同用户、团队、文件大小走哪条存储路线
-- **`管理 -> 远程节点`** —— 主控怎么接 follower，以及 follower 的默认接收落点在哪里
+- **`管理 -> 远程节点`** —— 主控怎么接 follower，以及 follower 的默认远程存储目标在哪里
 - **反向代理 / 对象存储自己的配置** —— HTTPS、大文件上传、WebDAV 透传、S3 / Azure Blob / COS 直传
 
 前面几层是 AsterDrive 自己管的；最后一层属于反向代理、对象存储和外部网络环境。
@@ -49,7 +49,7 @@ flowchart TD
 | 文件存哪里、上传/下载怎么走 | [存储策略](/config/storage) |
 | 按教程接新的存储策略后端 | [存储策略后端](/storage/) |
 | 不同用户/团队走哪条存储路线 | [存储策略](/config/storage) |
-| 接远程 follower，配置默认接收落点 | [远程节点](/guide/remote-nodes) |
+| 接远程 follower，配置默认远程存储目标 | [远程节点](/guide/remote-nodes) |
 | 改 WebDAV 路径或 WebDAV 上传硬上限 | [WebDAV](/config/webdav) |
 | 给公网入口加访问限流 | [访问限流](/config/rate-limit) |
 | 改缓存或日志输出方式 | [缓存](/config/cache) / [日志](/config/logging) |
@@ -135,7 +135,7 @@ ASTER__WEBDAV__PREFIX=/dav
 - 缩略图不符合预期时，检查 `文件处理 -> 媒体处理`
 - 需要压缩包清单预览时，检查 `文件处理 -> 压缩包预览`
 - 需要 OnlyOffice 一类在线预览时，去 `站点配置 -> 预览应用` 调整
-- 接远程节点时，enroll 成功后还要在远程节点详情里创建默认接收落点
+- 接远程节点时，enroll 成功后还要在远程节点详情里创建默认远程存储目标
 :::
 
 详情见 [系统设置](/config/runtime) 和 [邮件](/config/mail)。

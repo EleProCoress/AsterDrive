@@ -29,7 +29,7 @@ Uploads and storage turn a file sent by a browser or client into a database file
 | `storage_policy::policy` | Storage policies, policy groups, rules |
 | `storage::traits`, `storage::drivers`, `storage::connectors` | `StorageDriver` and `StorageConnector` abstractions, local, S3-compatible, SFTP, Azure Blob, Tencent COS, OneDrive, and remote drivers |
 | `storage::remote_protocol` | Primary/follower internal remote storage protocol |
-| `remote::remote_node`, `remote::storage_target` | Follower nodes and ingress targets |
+| `remote::remote_node`, `remote::storage_target` | Follower nodes and remote storage targets |
 | `task::storage_migration` | Storage migration tasks |
 
 ## Key Boundaries
@@ -46,5 +46,5 @@ Uploads and storage turn a file sent by a browser or client into a database file
 - Small files upload but large files fail: check reverse proxy body size, timeout, temporary directories, and chunk size.
 - `relay_stream` works but `presigned` fails: check CORS, browser network, and endpoint reachability.
 - Connection test fails: read the backend diagnostic first. Storage diagnostics are returned in the standard error response as `error.diagnostic.message`.
-- Follower storage fails: check node enabled state, transport mode, default ingress target, and protocol capabilities.
+- Follower storage fails: check node enabled state, transport mode, the remote storage target bound to the policy, the default target, and protocol capabilities.
 - Quota or blob references drift: run a deep check with [Operations CLI](/en/deployment/ops-cli).

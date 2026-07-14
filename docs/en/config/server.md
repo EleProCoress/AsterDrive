@@ -38,7 +38,7 @@ If `data/config.toml` was generated automatically, relative paths are resolved t
 | `temp_dir` | `".tmp"` | General server-side temporary file directory |
 | `upload_temp_dir` | `".uploads"` | Temporary directory for chunked uploads and upload recovery |
 | `start_mode` | `"primary"` | Node startup role. `primary` is the normal controller; `follower` is a remote storage follower node. |
-| `follower.remote_storage_target_local_root` | `"remote-storage-targets"` | Root directory for local ingress targets managed by the primary on the follower |
+| `follower.remote_storage_target_local_root` | `"remote-storage-targets"` | Root directory for `local` remote storage targets managed by the primary on the follower |
 
 ## Where Temporary Directories Are Used
 
@@ -71,7 +71,7 @@ A follower is not a second login site. It only provides health checks and intern
 
 `[server.follower].remote_storage_target_local_root` only matters in follower mode.
 
-When the primary creates a `local` ingress target in the follower node details, it can only enter a relative path. The follower joins that relative path under `remote_storage_target_local_root`, so the primary cannot write arbitrary host directories directly.
+When the primary creates a `local` remote storage target in the follower node details, it can only enter a relative path. The follower joins that relative path under `remote_storage_target_local_root`, so the primary cannot write arbitrary host directories directly.
 
 For example:
 
@@ -80,7 +80,7 @@ For example:
 remote_storage_target_local_root = "/data/remote-storage-targets"
 ```
 
-When the primary creates the ingress target, enter:
+When the primary creates the remote storage target, enter:
 
 ```text
 base_path = "default"

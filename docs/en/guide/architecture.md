@@ -40,12 +40,14 @@ flowchart TB
 
   subgraph Data["Metadata and Cache"]
     Database["Database<br/>SQLite / PostgreSQL / MySQL"]
-    Cache["Cache<br/>Memory / Redis / Noop"]
+    Cache["Cache<br/>Memory / Redis"]
   end
 
-  subgraph Storage["Object Storage Targets"]
+  subgraph Storage["Storage Policy Backends"]
     Local["Local Disk"]
-    S3["S3-Compatible Storage<br/>MinIO / R2 / B2 / OSS"]
+    ObjectStorage["Object Storage<br/>S3 / Azure Blob / Tencent COS"]
+    Graph["Microsoft Graph<br/>OneDrive / SharePoint"]
+    Sftp["SFTP File Server"]
     RemoteDriver["Remote Node Driver"]
   end
 
@@ -75,7 +77,9 @@ flowchart TB
   Tasks --> Database
   Services --> DriverRegistry
   DriverRegistry --> Local
-  DriverRegistry --> S3
+  DriverRegistry --> ObjectStorage
+  DriverRegistry --> Graph
+  DriverRegistry --> Sftp
   DriverRegistry --> RemoteDriver
   RemoteDriver --> InternalStorage
   InternalStorage --> FollowerStore
@@ -111,7 +115,7 @@ A follower is a remote storage node. It is responsible for:
 
 - exposing `/health*` health checks
 - exposing the `/api/v1/internal/storage/*` internal object storage protocol
-- accepting object writes, reads, assembly, listing, and ingress profile control according to its primary binding
+- accepting object writes, reads, assembly, listing, and remote storage target management according to its primary binding
 - actively connecting back to the primary in `reverse_tunnel` mode to pull internal storage requests
 
 A follower does not handle normal login, share pages, WebDAV, or the admin console. When debugging follower-node issues, do not start from normal file routes. Check the primary remote-node configuration, binding state, network topology, and the follower internal storage protocol first.
@@ -128,7 +132,7 @@ flowchart LR
   Repo --> DB["Database Metadata"]
   Service --> StorageDecision["Storage Policy Selection"]
   StorageDecision --> Driver["StorageDriver"]
-  Driver --> ObjectStore["Local / S3 / Follower"]
+  Driver --> ObjectStore["Local / S3 / Azure Blob / COS / OneDrive / SFTP / Follower"]
   Service --> Response["Unified JSON / File Stream / SSE / Prometheus / WebDAV Response"]
   Response --> Client
 ```
@@ -154,17 +158,20 @@ flowchart TB
 
   Policy --> Direct["direct<br/>Small File Through Primary"]
   Policy --> Chunked["chunked<br/>Chunks Uploaded to Primary"]
-  Policy --> Presigned["presigned<br/>Browser Uploads Directly to S3"]
-  Policy --> Multipart["presigned_multipart<br/>Browser Uploads S3 Parts"]
+  Policy --> Presigned["presigned<br/>Browser Uploads Directly to Object Storage"]
+  Policy --> Multipart["presigned_multipart<br/>Browser Uploads Object Parts"]
+  Policy --> Provider["provider_resumable<br/>OneDrive Upload Session"]
 
   Direct --> DriverWrite["StorageDriver Writes Object"]
   Chunked --> Assemble["Primary Receives and Assembles Chunks"]
   Assemble --> DriverWrite
-  Presigned --> S3Put["Client PUT to S3"]
-  Multipart --> S3Parts["Client Uploads Parts to S3"]
-  S3Parts --> CompleteMultipart["Primary Completes Multipart Upload"]
-  S3Put --> Complete["Complete Upload"]
+  Presigned --> ObjectPut["Client PUT to Object Storage"]
+  Multipart --> ObjectParts["Client Uploads Parts / Blocks"]
+  Provider --> ProviderParts["Client Uploads Graph Ranges"]
+  ObjectParts --> CompleteMultipart["Primary Completes Multipart Upload"]
+  ObjectPut --> Complete["Complete Upload"]
   CompleteMultipart --> Complete
+  ProviderParts --> Complete
   DriverWrite --> Complete
 
   Complete --> Finalize["Transactional Finalize<br/>blob / files / versions / quota / session status"]
@@ -201,7 +208,7 @@ For operations, download failures usually fall into separate categories:
 
 - **Permission failure**: login state, team role, share password, expiration, or download limit.
 - **Metadata failure**: deleted file record, broken Blob relation, version mismatch, or trash state.
-- **Object failure**: missing local file, invalid S3 credential / endpoint / bucket, or unreachable follower.
+- **Object failure**: missing local file, invalid object-storage / OneDrive / SFTP credentials or target configuration, or an unreachable follower.
 - **Network failure**: reverse-proxy buffering, timeout, Range requests, or WebDAV client compatibility.
 
 ## Follower Node Data Flow
@@ -219,7 +226,7 @@ flowchart TB
   Mode --> Reverse["reverse_tunnel"]
 
   Direct --> InternalApi["follower<br/>/api/v1/internal/storage"]
-  InternalApi --> FollowerDisk["Follower Storage Target"]
+  InternalApi --> FollowerDisk["Follower Remote Storage Target"]
 
   Reverse --> Registry["Primary Tunnel Registry"]
   FollowerWorker["Follower Tunnel Worker"] --> Registry
@@ -261,7 +268,7 @@ The operations CLI and the HTTP service use the same binary. Common entry points
 | Page cannot open | Reverse proxy, primary listen address, frontend assets, HTTPS, browser console |
 | Login fails | Auth config, Cookie secure / site URL, external-auth callback, database user state |
 | Upload fails | Upload mode, reverse-proxy body limit, S3 CORS / presigned URL, upload session, quota, temporary directory |
-| Download fails | Share state, permissions, Blob metadata, local / S3 / follower object readability, Range requests |
+| Download fails | Share state, permissions, Blob metadata, object readability on the current storage policy backend, Range requests |
 | WebDAV behaves incorrectly | WebDAV switch, prefix, Basic / Bearer auth, reverse-proxy headers, client compatibility |
 | Follower node fails | Node binding, direct / reverse tunnel mode, follower health check, internal storage API |
 | Background tasks pile up | `background_tasks` status, dispatcher interval, concurrency config, task error logs |

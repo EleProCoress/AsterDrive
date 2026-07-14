@@ -28,12 +28,12 @@ Confirm these contents will not be lost when containers are recreated, the syste
 - default local storage directory
 - additional local `local` storage policy directories
 - avatar directory, usually `data/avatar` by default
-- the follower node's `remote_storage_target_local_root`, if you use follower local receiving targets
+- the follower node's `remote_storage_target_local_root`, if you use local remote storage targets
 
 If you use Docker bind mounts, also confirm the host directory owner and permissions match the container runtime user. The official image uses UID/GID `10001:10001` by default.
 
 ::: warning Do not back up only the database
-The database only stores metadata. File objects, avatars, local receiving targets, and object storage state must also be included in the backup boundary. If you only back up the database, restored file records may still exist while the objects no longer do.
+The database only stores metadata. File objects, avatars, local remote storage targets, and object storage state must also be included in the backup boundary. If you only back up the database, restored file records may still exist while the objects no longer do.
 :::
 
 ## 2. HTTPS and Public Entry
@@ -93,7 +93,7 @@ At minimum, confirm:
 - existing user and team policy group bindings do not point to deprecated policies
 - single-file size limits, chunk size, user quota, and team quota match real usage scenarios
 - S3 / MinIO / R2 CORS, endpoint, bucket, and secrets have been tested
-- follower nodes are enrolled, enabled, and have applied default receiving targets
+- follower nodes are enrolled, enabled, and have applied default remote storage targets
 
 If you plan to move production traffic to a new storage backend, do not directly change an existing policy's `base_path`, `bucket`, `endpoint`, or bound follower node. A safer path is to create a new policy, migrate data, then switch policy groups.
 

@@ -17,7 +17,7 @@ This page is not a full troubleshooting manual. It routes symptoms to the right 
 | --- | --- | --- |
 | Small files upload, large files fail | [Uploads and Large Files](./upload-modes) | Reverse proxy size limit, timeout, chunk size, temporary directory space |
 | Direct-to-object-storage upload fails | [Storage Policies](/en/config/storage) / [Uploads and Large Files](./upload-modes) | S3 CORS, exposed `ETag`, browser origin not allowed |
-| Follower-node policy upload fails | [Follower Nodes](./remote-nodes) | Transport not reachable, wrong direct URL, default ingress target not applied |
+| Follower-node policy upload fails | [Follower Nodes](./remote-nodes) | Transport not reachable, wrong direct URL, default remote storage target not applied |
 | Capacity looks wrong | [Operations CLI: doctor](/en/deployment/ops-cli#deployment-checks-doctor) | Storage usage counters drifted and need a deep check |
 
 ## Sharing, WebDAV, and Online Editing
@@ -36,7 +36,7 @@ This page is not a full troubleshooting manual. It routes symptoms to the right 
 | You do not know whether to use the admin UI or edit files | [Configuration Overview](/en/config/) | Startup configuration, system settings, storage policies, and reverse proxy settings are mixed together |
 | You cannot enter the admin UI but need to change configuration | [Operations CLI: config](/en/deployment/ops-cli#offline-system-settings-config) | You need to view, validate, or write system settings offline |
 | You are preparing to upgrade and worry about rollback | [Upgrades and Version Migration](/en/deployment/upgrade) / [Backup and Restore](/en/deployment/backup) | Old binary/image, configuration, database, and upload-directory backups are not prepared |
-| Terminology is unclear | [Glossary](./glossary) | First separate primary node, follower node, storage policy, policy group, and ingress target |
+| Terminology is unclear | [Glossary](./glossary) | First separate primary node, follower node, storage policy, policy group, and remote storage target |
 
 ## Still Not Solved?
 

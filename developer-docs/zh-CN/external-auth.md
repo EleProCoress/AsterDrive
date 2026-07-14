@@ -2,26 +2,24 @@
 
 外部认证把外部身份提供商的授权结果映射到 AsterDrive 本地用户。它不是独立账号系统，而是登录第一因子的一种来源；回调成功后仍会进入本地用户状态、MFA、注册开关、邮箱策略和审计流程。
 
+通用 provider driver、descriptor、registry、OIDC / OAuth2 协议实现和规范化工具已经迁到 `aster_forge_external_auth`。AsterDrive 不再维护 `src/external_auth/*` 平行实现；产品仓库只保留 provider 持久化、登录 flow、身份绑定、本地账号解析、MFA / Cookie 收口、邮件补验和审计。
+
 ## 代码结构
 
 | 层 | 主要文件 | 职责 |
 | --- | --- | --- |
 | 路由 | `src/api/routes/auth/external_auth.rs` | 匿名 provider 列表、登录发起、回调、邮箱补验、密码绑定、用户解绑 |
 | 管理路由 | `src/api/routes/admin/external_auth.rs` | provider kind、provider CRUD、草稿测试、已保存 provider 测试 |
-| 服务聚合 | `src/services/auth/external/mod.rs` | DTO、常量和服务导出 |
+| 服务聚合 | `src/services/auth/external/mod.rs` | Drive DTO、常量和产品服务导出；复用 Forge profile / provider 类型 |
 | Provider 管理 | `src/services/auth/external/providers.rs` | provider 创建、更新、列表、测试、driver descriptor 映射 |
 | 登录流程 | `src/services/auth/external/login.rs` | state flow、回调消费、driver 调用、邮箱补验分支 |
 | 账号解析 | `src/services/auth/external/resolution.rs` | 既有身份匹配、已验证邮箱自动绑定、自动创建本地用户 |
 | 邮箱补验 | `src/services/auth/external/verification.rs` | 临时 flow、邮件发送、确认后继续登录 |
 | 密码绑定 | `src/services/auth/external/password_link.rs` | 用户输入本地密码后绑定外部身份 |
-| Driver trait | `src/external_auth/driver.rs` | provider driver 统一接口和 descriptor |
-| Driver 注册表 | `src/external_auth/registry.rs` | 注册 `oidc`、`generic_oauth2`、`github`、`qq`、`google` 和 `microsoft` |
-| OIDC driver | `src/external_auth/providers/oidc.rs` | discovery、PKCE、nonce、ID Token 校验 |
-| Generic OAuth2 driver | `src/external_auth/providers/oauth2.rs` | 手动 endpoint、PKCE、token exchange、UserInfo claim 映射 |
-| GitHub driver | `src/external_auth/providers/github.rs` | 复用 OAuth2 driver，固定 GitHub endpoint，并从 `/user/emails` 读取已验证主邮箱 |
-| QQ driver | `src/external_auth/providers/qq.rs` | QQ 互联 OAuth2 专用流程：GET token、获取 openid、再调用 get_user_info |
-| Google driver | `src/external_auth/providers/google.rs` | 复用 OIDC driver，固定 Google Accounts issuer、默认 scope 和 claim 语义 |
-| Microsoft driver | `src/external_auth/providers/microsoft.rs` | 复用 OIDC driver，支持 Microsoft tenant / issuer 规范化和多租户 issuer 校验 |
+| Driver trait / descriptor / registry | `aster_forge_external_auth` | provider 统一接口、`default_registry()`、kind descriptor 和通用 normalization |
+| OIDC / Generic OAuth2 driver | `aster_forge_external_auth` | discovery、PKCE、nonce、ID Token 校验、token exchange 和 UserInfo claim 映射 |
+| GitHub / QQ / Google / Microsoft driver | `aster_forge_external_auth` | 专用 endpoint、provider-specific claim / issuer 语义和测试能力 |
+| Drive provider adapter | `src/services/auth/external/providers.rs` | DB model 与 Forge `ExternalAuthProviderConfig` 互转、options 兼容、secret redaction 和管理端响应 |
 
 持久化表来自 `migration/src/m20260517_000001_add_external_auth.rs`：
 
@@ -57,7 +55,7 @@
 
 ## Provider descriptor
 
-每个 driver 通过 `ExternalAuthProviderDescriptor` 暴露能力，管理端 `GET /admin/external-auth/provider-kinds` 直接返回这些信息。前端据此决定字段是否必填、是否显示手动 endpoint、默认 scope 和 claim 区域。
+每个 Forge driver 通过 `ExternalAuthProviderDescriptor` 暴露能力。Drive 的 `src/services/auth/external/providers.rs` 从 `default_registry()` 读取 descriptor，再由管理端 `GET /admin/external-auth/provider-kinds` 返回给前端。前端据此决定字段是否必填、是否显示手动 endpoint、默认 scope 和 claim 区域。
 
 当前内置 kind：
 
@@ -70,7 +68,7 @@
 | `google` | `oidc` | `openid profile email` | Google Accounts 固定 issuer / discovery |
 | `microsoft` | `oidc` | `openid profile email` | Microsoft tenant 派生 issuer / discovery |
 
-新增 provider kind 时，不要在前端写死能力。应先实现 driver descriptor，再让前端消费 `/admin/external-auth/provider-kinds`。
+新增通用 provider kind 时，应先在 AsterForge 实现 driver 和 descriptor，再升级 AsterDrive 依赖并补产品持久化 / UI 适配；不要在 Drive 前端写死能力。仅属于 AsterDrive 账号策略的规则应留在 `src/services/auth/external/`，不要反塞进通用 driver。
 
 ## 登录流程
 
@@ -89,7 +87,7 @@
 
 ## OIDC driver
 
-`oidc` 使用 `openidconnect` crate：
+`oidc` 由 `aster_forge_external_auth` 的 OIDC driver 实现，底层使用 `openidconnect` crate：
 
 - `issuer_url` 必填
 - authorization endpoint、token endpoint、JWKS 从 discovery 获取

@@ -1,7 +1,7 @@
 # Follower Node Storage Policy Tutorial
 
 ::: tip What this page covers
-This page explains how to use an already connected follower node as a storage policy backend: create an ingress target, create a `remote` storage policy, configure policy group rules, bind users or teams, and verify real uploads and downloads.
+This page explains how to use an already connected follower node as a storage policy backend: create a remote storage target, create a `remote` storage policy, configure policy group rules, bind users or teams, and verify real uploads and downloads.
 :::
 
 If you have not connected the follower node to the primary node yet, start with [Follower Nodes](/en/guide/remote-nodes).  
@@ -32,8 +32,8 @@ If the follower is behind NAT, CGNAT, or a private-only network and can only rea
 
 ```mermaid
 flowchart TD
-  Node["Follower node record"] --> Ingress["Ingress target"]
-  Ingress --> Policy["remote storage policy"]
+  Node["Follower node record"] --> Target["Remote storage target"]
+  Target --> Policy["remote storage policy"]
   Policy --> Rule["Policy group rule"]
   Rule --> Binding["User or team bound to the policy group"]
 ```
@@ -43,11 +43,11 @@ Each layer is responsible for something different:
 | Layer | Responsibility | Entry |
 | --- | --- | --- |
 | Follower node record | The primary node knows which follower node exists and how to access it | `Admin -> Follower Nodes` |
-| Ingress target | Whether the follower node writes received objects to local storage or S3 | `Admin -> Follower Nodes -> Node Details` |
+| Remote storage target | Whether the follower node writes received objects to local storage or S3 | `Admin -> Follower Nodes -> Node Details` |
 | remote storage policy | Which follower node is selected during upload | `Admin -> Storage Policies` |
 | Policy group | Which users / teams / file sizes match this policy | `Admin -> Policy Groups` |
 
-The primary node and follower currently use internal remote storage protocol `v4`, and the current primary requires the follower to support `v4` as well. Before creating a remote policy or switching policy groups, have the primary node test the node connection once; the test result includes the protocol version, server version, and capability summary.
+The current primary uses internal remote storage protocol `v5` and supports followers down to `v4`. Before creating a remote policy or switching policy groups, have the primary node test the connection once; the result includes both sides' supported protocol ranges, server version, and capability summary. The ranges must overlap. Followers limited to `v2` or `v3` must be upgraded first.
 
 ## 1. Confirm the Follower Node Is Ready
 
@@ -65,20 +65,20 @@ Confirm that the target node meets these conditions:
 - If using direct transport, `base_url` is an address the primary node can access
 - If using reverse tunnel, the tunnel status is online
 - "Test Connection" succeeds
-- The internal protocol version in the capability summary is compatible with the current primary node; currently `v4` is required
+- The internal protocol version range in the capability summary is compatible with the current primary; the current primary uses `v5` and supports followers down to `v4`
 - `/health/ready` returns successfully
 
 If `base_url` is empty, only `reverse_tunnel` or `auto` can carry remote traffic. A `direct` node must have an HTTP(S) address reachable by the primary. Before production, confirm that "Test Connection" passes with the current transport mode.
 
-## 2. Create the Default Ingress Target
+## 2. Create the Default Remote Storage Target
 
 Open the target follower node details and find:
 
 ```text
-Primary-managed ingress targets
+Remote Storage Targets
 ```
 
-For the first setup, create a `local` ingress target.
+For the first setup, create a `local` remote storage target.
 
 Example:
 
@@ -87,9 +87,10 @@ Example:
 | Name | `default-local` |
 | Driver | `local` |
 | Base path | `default` |
-| Default ingress target | Enabled |
+| Default remote storage target | Enabled |
 
-The base path of a `local` ingress target can only be a relative path.  
+The base path of a `local` remote storage target can only be a relative path.
+
 It is ultimately placed under the follower node's own:
 
 ```text
@@ -103,7 +104,7 @@ For example, if the follower node configuration is:
 remote_storage_target_local_root = "/data/remote-storage-targets"
 ```
 
-And the ingress target base path is:
+And the remote storage target base path is:
 
 ```text
 default
@@ -115,19 +116,19 @@ Objects are ultimately written to:
 /data/remote-storage-targets/default
 ```
 
-::: warning Without a default ingress target, a remote policy cannot actually write data
-Successful enrollment only means the primary and follower identities are bound. Before receiving real objects, the follower node also needs an applied default ingress target.
+::: warning Without a default remote storage target, a remote policy cannot actually write data
+Successful enrollment only means the primary and follower identities are bound. Before receiving real objects, the follower node also needs an applied default remote storage target.
 :::
 
-## 3. Choose local or s3 for the Ingress Target
+## 3. Choose local or s3 for the Remote Storage Target
 
-| Ingress target | Best for | Notes |
+| Remote storage target | Best for | Notes |
 | --- | --- | --- |
-| `local` | Follower node local disks or NAS-mounted directories | The base path must be relative and is restricted under the follower ingress root directory |
-| `s3` | Object storage that the follower node's network can access | Credentials and endpoint are stored in the follower node ingress target configuration |
+| `local` | Follower node local disks or NAS-mounted directories | The base path must be relative and is restricted under the follower local target root directory |
+| `s3` | Object storage that the follower node's network can access | Credentials and endpoint are stored in the follower node remote storage target configuration |
 
 For the first integration, use `local` to prove the path from the primary node to the follower node.  
-After confirming it is stable, switch the follower ingress target to `s3` if needed.
+After confirming it is stable, switch the follower remote storage target to `s3` if needed.
 
 ## 4. Create a remote Storage Policy
 
@@ -164,14 +165,14 @@ Upload path:
 
 ```mermaid
 flowchart LR
-  Browser["Browser"] --> Primary["Primary node"] --> Follower["Follower node"] --> Ingress["Ingress target"]
+  Browser["Browser"] --> Primary["Primary node"] --> Follower["Follower node"] --> Target["Remote storage target"]
 ```
 
 Download path:
 
 ```mermaid
 flowchart LR
-  Ingress["Ingress target"] --> Follower["Follower node"] --> Primary["Primary node"] --> Browser["Browser"]
+  Target["Remote storage target"] --> Follower["Follower node"] --> Primary["Primary node"] --> Browser["Browser"]
 ```
 
 Advantages:
@@ -201,7 +202,7 @@ Before using it, confirm:
 - The follower node `base_url` is reachable from the browser
 - The HTTPS certificate is trusted
 - The reverse proxy does not intercept upload / download paths or required response headers
-- The follower node ingress target has been applied successfully
+- The follower node remote storage target has been applied successfully
 - The primary node connection test shows that the follower supports `browser_presigned_cors`
 
 If the primary node can access the follower node, but user browsers cannot, do not use remote `presigned`. If the remote node uses reverse tunnel, also avoid `presigned` and use `relay_stream` instead.
@@ -277,7 +278,7 @@ Log in as the test user and verify, in order:
 4. Create and open a share link
 5. Delete the file, then restore it from the trash
 6. If previews are enabled, open an image or PDF once
-7. On the follower node, check whether objects appear in the ingress target directory or object storage
+7. On the follower node, check whether objects appear in the remote storage target directory or object storage
 8. Return to `Admin -> Follower Nodes` on the primary node and test the connection again, confirming that the protocol version and capability summary are still normal
 
 If all of these pass, then consider moving real users or teams to the remote policy group.
@@ -321,14 +322,15 @@ Check regularly:
 - Whether the remote node connection test succeeds
 - If reverse tunnel is used, whether the tunnel is online and has no recent errors
 - Whether the follower node `/health/ready` is normal
-- Whether the default ingress target is still applied
-- Whether the follower ingress root directory has enough disk space
+- Whether the default remote storage target is still applied
+- Whether the follower local target root directory has enough disk space
 - If the follower writes to S3, whether the S3 credentials are still valid
 - Whether the remote policy group is still enabled
 - Whether there have been recent errors related to remote uploads / downloads
 
-The follower node's local ingress directory is formal data and must be included in the backup strategy.  
-If the ingress target is S3, handle it according to the backup and versioning strategy for object storage.
+The follower node's local remote-storage-target directory is formal data and must be included in the backup strategy.
+
+If the remote storage target is S3, handle it according to the backup and versioning strategy for object storage.
 
 ## 12. Common Issues
 
@@ -343,7 +345,7 @@ Check first:
 - Whether the follower is listening on an externally reachable address
 - Whether the reverse proxy or firewall allows the traffic
 - Whether `/health/ready` returns successfully
-- Whether the internal protocol version returned by the follower is compatible with the current primary; the current primary requires `v4`
+- Whether the protocol version range returned by the follower is compatible with the current primary; the current primary uses `v5` and supports followers down to `v4`
 
 ### remote Policy Upload Fails
 
@@ -351,8 +353,8 @@ Check in this order:
 
 1. Whether the remote node is enabled
 2. Whether enrollment is complete
-3. Whether an applied default ingress target exists
-4. Whether the follower ingress root directory is writable
+3. Whether an applied default remote storage target exists
+4. Whether the follower local target root directory is writable
 5. Whether policy group rules really match the remote policy
 6. Whether the user or team quota is already full
 7. Whether the primary and follower logs contain matching errors
@@ -376,9 +378,9 @@ Check:
 First confirm whether anyone recently changed:
 
 - the remote node bound by the remote policy
-- the follower ingress target
+- the follower remote storage target
 - `remote_storage_target_local_root`
 - the follower local directory
-- the S3 endpoint / bucket / prefix used by the follower ingress target
+- the S3 endpoint / bucket / prefix used by the follower remote storage target
 
 All of these fields decide where old objects live. Do not directly edit a real target that is already in use.

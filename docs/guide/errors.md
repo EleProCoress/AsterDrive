@@ -162,7 +162,7 @@ Passkey 相关错误：
 - `data/.uploads`、`data/.tmp` 或自定义临时目录所在分区是否满了
 - 当前用户 / 团队 / 策略配额是否满了
 - 对象存储 multipart 或 remote presigned 上传的浏览器直连地址是否可访问
-- 远程 follower 是否健康，默认接收落点是否已经应用
+- 远程 follower 是否健康，默认远程存储目标是否已经应用
 
 ### 存储策略、S3 和远程节点
 
@@ -192,9 +192,9 @@ Passkey 相关错误：
 - `remote_node.disabled`：远程节点被禁用。
 - `remote_node.enrollment_required`：follower 还没有完成接入。
 - `remote_node.unique_conflict`：远程节点绑定或唯一字段冲突。
-- `managed_ingress.required`、`managed_ingress.default_missing`、`managed_ingress.default_not_applied`：follower 缺少可用的默认接收落点。
-- `managed_ingress.local_path_invalid`：follower 本地接收路径不合法，常见于路径逃出允许根目录。
-- `managed_ingress.driver_unsupported`：当前接收落点驱动不支持。
+- `managed_ingress.required`、`managed_ingress.default_missing`、`managed_ingress.default_not_applied`：follower 缺少可用的默认远程存储目标。错误码仍保留旧前缀，用于兼容已有客户端和日志检索。
+- `managed_ingress.local_path_invalid`：follower 本地远程存储目标的路径不合法，常见于路径逃出允许根目录。
+- `managed_ingress.driver_unsupported`：当前远程存储目标驱动不支持。
 - `managed_ingress.single_primary_required`：这台 follower 需要只绑定一个 primary。
 - `master_binding.disabled`：主从绑定被禁用。
 
@@ -361,7 +361,7 @@ WebDAV：
 | `upload.temp_object_*` / `upload.final_object_size_mismatch` | 临时对象或最终对象大小不一致。 |
 | `upload.status_conflict` / `upload.previous_failure` / `upload.session_corrupted` | 上传会话状态冲突、已有失败或会话损坏。 |
 
-### 存储、远程节点和接收落点
+### 存储、远程节点和远程存储目标
 
 | 错误码 | 含义 |
 | --- | --- |
@@ -378,7 +378,7 @@ WebDAV：
 | `storage.precondition_failed` / `storage.precondition` | 存储前置条件失败。 |
 | `storage.operation_unsupported` | 当前存储操作不支持。 |
 | `remote_node.disabled` / `remote_node.enrollment_required` / `remote_node.unique_conflict` | 远程节点禁用、未接入或唯一性冲突。 |
-| `managed_ingress.*` | follower 接收落点缺失、未应用、路径不合法、驱动不支持或绑定状态不一致。 |
+| `managed_ingress.*` | follower 远程存储目标缺失、未应用、路径不合法、驱动不支持或绑定状态不一致；前缀是保留的兼容错误码。 |
 | `master_binding.disabled` | 主从绑定被禁用。 |
 
 ### 分享、团队和工作空间

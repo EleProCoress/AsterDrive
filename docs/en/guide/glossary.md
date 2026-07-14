@@ -8,8 +8,8 @@ This page explains terms that appear repeatedly in the AsterDrive documentation.
 | --- | --- | --- |
 | Primary node / primary | The default runtime mode. It handles login, frontend, admin console, shares, WebDAV, policies, and metadata. | [Server Configuration](/en/config/server) |
 | Follower node / follower | A remote storage backend. It only accepts internal object requests signed by the primary node and does not let regular users log in. | [Follower Nodes](./remote-nodes) |
-| Remote node | A follower record registered in the primary admin console, including node address, status, secrets, and ingress target. | [Follower Nodes](./remote-nodes) |
-| Ingress target | The real place where a follower writes objects, either a local directory or S3 / MinIO. | [Follower Nodes](./remote-nodes) |
+| Remote node | A follower record registered in the primary admin console, including node address, status, secrets, and remote storage targets. | [Follower Nodes](./remote-nodes) |
+| Remote storage target | The real place where a follower writes objects, either a local directory or S3 / MinIO; a remote policy can bind a specific target. | [Follower Nodes](./remote-nodes) |
 | enroll | The action that binds a follower to the primary. Usually, the admin console generates a command and you run it on the follower. | [Operations CLI](/en/deployment/ops-cli) |
 
 ## Storage and Uploads

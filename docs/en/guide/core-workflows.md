@@ -56,23 +56,24 @@ Common patterns:
 - Some teams use follower-node storage separately
 - Small files use local storage, large files use object storage
 
-If the route includes a follower node, first confirm that follower already has a default ingress target.  
-Without an ingress target, the remote storage policy itself can be saved, but actual uploads will be rejected by the follower.
+If the route includes a follower node, first confirm that follower already has a default remote storage target.
 
-## Prepare an Ingress Target for a Follower Node
+Without a remote storage target, the remote storage policy itself can be saved, but actual uploads will be rejected by the follower.
+
+## Prepare a Remote Storage Target for a Follower Node
 
 Follower nodes currently require two steps:
 
 1. Create a node in `Admin -> Follower Nodes`, generate the enroll command, and connect the follower to the primary
-2. Return to this remote node's details page and create the default ingress target
+2. Return to this remote node's details page and create the default remote storage target
 
-For the first attempt, use a `local` ingress target:
+For the first attempt, use a `local` remote storage target:
 
 - Set the base path to a relative path such as `default`
-- Check default ingress target
+- Check default remote storage target
 - After the status becomes applied, create the remote storage policy
 
-If the follower will ultimately write objects to S3 / MinIO, create an `s3` ingress target there. Do not pass it through the enroll command or Docker bootstrap ENV.
+If the follower will ultimately write objects to S3 / MinIO, create an `s3` remote storage target there. Do not pass it through the enroll command or Docker bootstrap ENV.
 
 ## Create a Team Space
 

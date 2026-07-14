@@ -6,22 +6,20 @@ This document explains the current external-authentication implementation in the
 
 External authentication lets users sign in through external identity providers such as OpenID Connect or Generic OAuth2. The module also covers account binding, email verification fallback, auto-provisioning, and admin-side provider management.
 
+Generic provider drivers, descriptors, the registry, OIDC / OAuth2 protocol implementations, and normalization helpers now live in `aster_forge_external_auth`. AsterDrive no longer maintains a parallel `src/external_auth/*` implementation. This repository owns provider persistence, login flows, identity binding, local-account resolution, MFA / cookie completion, email verification fallback, and audit behavior.
+
 ## Code locations
 
 | Area | Path | Notes |
 | --- | --- | --- |
 | Route | `src/api/routes/auth/external_auth.rs` | Anonymous provider list, login start, callback, email verification fallback, password linking, user unbinding |
 | Admin route | `src/api/routes/admin/external_auth.rs` | Provider kind list, provider CRUD, draft testing, saved provider testing |
-| Service | `src/services/auth/external/` | Provider config, login flow, identity binding, and account provisioning |
+| Service | `src/services/auth/external/` | Drive provider persistence, login flow, identity binding, account provisioning, MFA completion, and audit integration |
 | Entity / repo | `src/entities/external_auth_*`, `src/db/repository/external_auth_*` | Persistent provider and identity storage |
-| Driver trait | `src/external_auth/driver.rs` | Shared driver interface and descriptors |
-| Driver registry | `src/external_auth/registry.rs` | Registers `oidc`, `generic_oauth2`, `github`, `qq`, `google`, and `microsoft` |
-| OIDC driver | `src/external_auth/providers/oidc.rs` | Discovery, PKCE, nonce, and ID token validation |
-| Generic OAuth2 driver | `src/external_auth/providers/oauth2.rs` | Manual endpoints, PKCE, token exchange, and UserInfo claim mapping |
-| GitHub driver | `src/external_auth/providers/github.rs` | Reuses the OAuth2 driver, fixes GitHub endpoints, and fetches the verified primary email from `/user/emails` |
-| QQ driver | `src/external_auth/providers/qq.rs` | Dedicated QQ Connect OAuth2 flow: GET token, fetch openid, then call get_user_info |
-| Google driver | `src/external_auth/providers/google.rs` | Reuses the OIDC driver, fixes Google Accounts issuer, default scopes, and claim semantics |
-| Microsoft driver | `src/external_auth/providers/microsoft.rs` | Reuses the OIDC driver, normalizes Microsoft tenant / issuer input, and validates multi-tenant token issuers |
+| Driver trait / descriptor / registry | `aster_forge_external_auth` | Shared provider interfaces, `default_registry()`, kind descriptors, and normalization |
+| OIDC / Generic OAuth2 drivers | `aster_forge_external_auth` | Discovery, PKCE, nonce, ID token validation, token exchange, and UserInfo claim mapping |
+| GitHub / QQ / Google / Microsoft drivers | `aster_forge_external_auth` | Provider-specific endpoints, claim / issuer semantics, and test support |
+| Drive provider adapter | `src/services/auth/external/providers.rs` | Converts DB models to Forge provider config, handles options compatibility and secret redaction, and presents admin responses |
 
 ## Supported provider kinds
 
@@ -35,6 +33,8 @@ Current supported provider kinds are:
 - `microsoft`
 
 All provider kinds are configured by admins and shown on the login page only after being enabled.
+
+The admin provider-kind endpoint reads descriptors from Forge `default_registry()` through `src/services/auth/external/providers.rs`. Adding a reusable provider kind starts in AsterForge; AsterDrive then adds persistence and product UI integration. Drive-specific account policy must remain in the product service instead of leaking into the generic driver.
 
 | kind | protocol | default scopes | endpoint source |
 | --- | --- | --- | --- |

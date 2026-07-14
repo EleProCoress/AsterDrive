@@ -297,7 +297,7 @@ It performs these steps:
 - exchanges the token with the primary for local binding information, and writes it into the follower database
 - outputs the current listen address, config file path, and next connectivity check hints
 
-The command does not create the primary node's default receiving target for you, and it does not start the HTTP service. After it succeeds, restart the follower process, then return to the primary admin panel to create or apply the default receiving target.
+The command does not create the primary node's default remote storage target for you, and it does not start the HTTP service. After it succeeds, restart the follower process, then return to the primary admin panel to create or apply the default remote storage target.
 
 For Docker followers, using startup environment variables to auto-enroll is recommended instead of entering the container manually to run this command. See [Docker Follower Node Deployment](/en/deployment/docker-follower).
 

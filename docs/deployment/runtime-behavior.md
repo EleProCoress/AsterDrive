@@ -84,7 +84,7 @@ AsterDrive 第一次成功启动后，会自动完成一批基础准备工作。
 - `data/uploads`
 - `data/.tmp`
 - `data/.uploads`
-- `data/remote-storage-targets`（follower 使用本地接收落点时）
+- `data/remote-storage-targets`（follower 使用本地远程存储目标时）
 
 其中 `data/.tmp` 和 `data/.uploads` 是运行时临时目录，不是长期数据目录。  
 `data/remote-storage-targets` 是 follower 受主控托管的本地接收根目录，只有你把这台实例作为从节点使用时才会真的重要。
@@ -104,7 +104,7 @@ AsterDrive 第一次成功启动后，会自动完成一批基础准备工作。
 9. 如果打算用 WebDAV，挂载路径是否与配置一致
 10. 如果准备启用 WOPI，`公开站点地址` 和 `预览应用` 是否已经能正确保存
 11. 如果准备启用外部认证，`公开站点地址` 是否正确，`管理 -> 外部认证` 里生成的重定向 URI 是否已经登记到身份提供商侧
-12. 如果准备接远程节点，follower 是否已经完成 enroll，内部协议能力是否兼容，并且有已应用的默认接收落点
+12. 如果准备接远程节点，follower 是否已经完成 enroll，内部协议能力是否兼容，并且有已应用的默认远程存储目标
 
 ## 如果检查结果不对，优先回头看这几处
 

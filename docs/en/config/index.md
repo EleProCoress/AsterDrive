@@ -47,9 +47,9 @@ Anything the service must know before startup usually belongs in `config.toml`. 
 | Configure SMTP, send test mail, or edit mail templates | [Mail](/en/config/mail) |
 | Configure link import, the built-in downloader, or aria2 offline download | [Offline Download](/en/config/offline-download) |
 | Decide where files are stored and how uploads/downloads work | [Storage Policies](/en/config/storage) |
-| Follow a tutorial for S3 / MinIO / R2 / Azure Blob / Tencent COS / OneDrive backends | [Storage Policy Backends](/en/storage/) |
+| Follow a tutorial for S3 / MinIO / R2 / Azure Blob / Tencent COS / OneDrive / SFTP backends | [Storage Policy Backends](/en/storage/) |
 | Decide which storage route different users/teams use | [Storage Policies](/en/config/storage) |
-| Connect a follower node and configure the default ingress target | [Follower Nodes](/en/guide/remote-nodes) |
+| Connect a follower node and configure the default remote storage target | [Follower Nodes](/en/guide/remote-nodes) |
 | Change the WebDAV path or hard WebDAV upload limit | [WebDAV](/en/config/webdav) |
 | Add rate limiting to the public entry point | [Rate Limiting](/en/config/rate-limit) |
 | Change cache or log output behavior | [Cache](/en/config/cache) / [Logging](/en/config/logging) |
@@ -99,7 +99,7 @@ One-time bootstrap inputs such as enrollment tokens can be removed after success
 
 | Section | Purpose |
 | --- | --- |
-| [server](/en/config/server) | Listen address, port, worker count, temporary directories, node mode, follower ingress root |
+| [server](/en/config/server) | Listen address, port, worker count, temporary directories, node mode, follower local target root |
 | [database](/en/config/database) | Database connection, connection pool, startup retries |
 | [auth](/en/config/auth) | Login signing secret, MFA encryption key, first plain-HTTP bootstrap |
 | [cache](/en/config/cache) | Memory cache / Redis |
@@ -135,7 +135,7 @@ One-time bootstrap inputs such as enrollment tokens can be removed after success
 - If thumbnails do not behave as expected, check `File Processing -> Media Processing`
 - If you need archive manifest preview, check `File Processing -> Archive Preview`
 - If you need online preview such as OnlyOffice, adjust `Site Configuration -> Preview Apps`
-- When connecting follower nodes, after enrollment succeeds, create the default ingress target in the follower node details
+- When connecting follower nodes, after enrollment succeeds, create the default remote storage target in the follower node details
 :::
 
 See [runtime system settings](/en/config/runtime) and [mail](/en/config/mail) for details.

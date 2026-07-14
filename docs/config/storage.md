@@ -64,7 +64,7 @@
 - **测试已保存策略**：对数据库里已经保存的策略做读写探测。
 - **测试草稿配置**：在保存前用当前表单参数做探测；S3、Azure Blob 和 Tencent COS 这类静态凭据后端，在密钥字段留空时可以复用已保存凭据。
 
-连接测试成功时只表示 AsterDrive 服务端能访问后端，并且凭据、bucket / container / drive / follower 接收落点等基础读写路径可用。它不代表浏览器一定能直连对象存储或 follower。只要用了 `presigned`，还要继续检查浏览器网络、HTTPS 证书、CORS 和暴露响应头。
+连接测试成功时只表示 AsterDrive 服务端能访问后端，并且凭据、bucket / container / drive / follower 远程存储目标等基础读写路径可用。它不代表浏览器一定能直连对象存储或 follower。只要用了 `presigned`，还要继续检查浏览器网络、HTTPS 证书、CORS 和暴露响应头。
 
 连接测试失败时，后台会优先展示标准错误响应里的 `error.diagnostic.message`。这个诊断来自后端对存储错误的归类，会尽量保留可排查的信息，同时脱敏 SAS、account key、secret key 等敏感内容。脚本或第三方客户端也应该读：
 
@@ -138,7 +138,7 @@ SFTP 默认拒绝未知主机密钥。第一次连接测试会返回服务器实
 
 适合把控制面留在主控节点，把真实对象落点拆到另一台 AsterDrive 从节点。
 
-远程策略只绑定远程节点，不再单独填 endpoint 或 access key；follower 真正把对象写到哪里，由远程节点详情里的**默认接收落点**决定。完整配置流程见 [远程节点存储策略教程](/storage/remote-follower)。
+远程策略绑定远程节点和该节点上的远程存储目标，不再单独填 endpoint 或 access key；没有显式选择目标时，会使用远程节点详情里的**默认远程存储目标**。完整配置流程见 [远程节点存储策略教程](/storage/remote-follower)。
 
 ## 容量观测与迁移预检查
 
@@ -151,7 +151,7 @@ SFTP 默认拒绝未知主机密钥。第一次连接测试会返回服务器实
 | `azure_blob` | 返回“不支持”；Blob data API 不提供统一的 storage account 容量观测 |
 | `one_drive` | 读取 Microsoft Graph drive quota；如果 Graph 未返回 quota，则显示“不可用” |
 | `sftp` | 返回“不支持”；SFTP 协议没有统一可靠的远端文件系统容量接口 |
-| `remote` | 通过内部远程存储协议询问 follower 的实际接收落点；如果 follower 接收落点是 local，通常能看到文件系统容量；如果接收落点是 S3，则同样显示“不支持” |
+| `remote` | 通过内部远程存储协议询问策略绑定的远程存储目标；如果目标是 local，通常能看到文件系统容量；如果目标是 S3，则同样显示“不支持” |
 
 迁移数据时，预检查会用目标策略的可用容量和“预计需要复制的 blob 字节数”比较，而不是简单使用源策略总大小。目标策略已经有的 content SHA-256 blob 会被视为可复用，不再计入预计复制量。
 

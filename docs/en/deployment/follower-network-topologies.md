@@ -28,7 +28,7 @@ Each path serves a different purpose:
 
 | Path | When it is needed | What happens if it fails |
 | --- | --- | --- |
-| Primary node -> follower `base_url` | Direct connection tests, pushing ingress targets, `relay_stream` relay, generating remote signatures | Primary connection test fails; remote policy is unusable |
+| Primary node -> follower `base_url` | Direct connection tests, pushing remote storage targets, `relay_stream` relay, generating remote signatures | Primary connection test fails; remote policy is unusable |
 | User browser -> follower `base_url` | Remote `presigned` upload/download | `relay_stream` works, but `presigned` fails in the browser |
 | Follower -> primary `public_site_url` | Enrollment, reverse tunnel, status reporting | Enrollment fails, or the reverse tunnel never comes online |
 
@@ -44,7 +44,7 @@ Whatever you put in `base_url` is what browsers receive in `presigned` mode. Use
 | Reverse tunnel | The follower does not need inbound reachability from the primary | Currently suitable for `relay_stream` | The follower is behind NAT / CGNAT / private networks and should not expose an inbound endpoint |
 | Primary-only relay | Browsers only access the primary | `relay_stream` | You want all public access to converge on the primary node |
 
-For a first setup, use `relay_stream`. After the primary, follower, ingress target, and real upload/download flow work, decide whether switching to `presigned` is worth it.
+For a first setup, use `relay_stream`. After the primary, follower, remote storage target, and real upload/download flow work, decide whether switching to `presigned` is worth it.
 
 ## Mode 1: Public HTTPS Direct
 
@@ -185,6 +185,6 @@ The reason is simple: `presigned` must hand the browser a follower address it ca
 | Public users also need follower files | Public HTTPS direct, or keep using `relay_stream` |
 | The follower must expose no inbound endpoint | Reverse tunnel + `relay_stream` |
 | The primary is Docker, and the follower is a NAS inside tailnet | First confirm DNS and routing inside the container; if you do not want that complexity, use Tailscale IP directly or choose `relay_stream` |
-| You are not sure whether the topology is correct | Validate the ingress target with `relay_stream`, then separately test browser access to follower `base_url` |
+| You are not sure whether the topology is correct | Validate the remote storage target with `relay_stream`, then separately test browser access to follower `base_url` |
 
 The easiest trap is assuming a successful primary connection test means everything is ready. It only proves that the primary can reach the follower. It does not prove browsers can reach the follower. When remote `presigned` fails but `relay_stream` works, check browser-to-follower DNS, certificate, routing, CORS, and proxy response headers first.

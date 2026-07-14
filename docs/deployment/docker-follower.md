@@ -82,8 +82,8 @@
 - `master_url`
 - `token`
 
-当前版本里，follower 接收对象的落点由主控节点在远程节点详情里下发。
-也就是说，Docker bootstrap 只负责完成主从身份绑定；真正写到 follower 本地目录还是 S3，后面回主控后台创建**接收落点**。
+当前版本里，follower 接收对象的目标由主控节点在远程节点详情里下发。
+也就是说，Docker bootstrap 只负责完成主从身份绑定；真正写到 follower 本地目录还是 S3，后面回主控后台创建**远程存储目标**。
 
 ## 2. 准备 follower 的数据目录
 
@@ -133,13 +133,13 @@ services:
 | --- | --- | --- |
 | `ASTER__SERVER__HOST` | 让容器内服务监听所有网卡，方便 Docker 端口映射 | Docker 场景通常保留 |
 | `ASTER__SERVER__START_MODE` | 把实例切成 `follower` 模式 | 从节点长期保留 |
-| `ASTER__SERVER__FOLLOWER__REMOTE_STORAGE_TARGET_LOCAL_ROOT` | 限制主控下发的 `local` 接收落点根目录 | 需要本地接收落点时保留 |
+| `ASTER__SERVER__FOLLOWER__REMOTE_STORAGE_TARGET_LOCAL_ROOT` | 限制主控下发的 `local` 远程存储目标根目录 | 需要本地远程存储目标时保留 |
 | `ASTER__DATABASE__URL` | 指定 follower 自己的数据库 | Docker 场景建议显式写清楚 |
 | `ASTER_BOOTSTRAP_REMOTE_MASTER_URL` | 首次 enroll 时访问的主控地址 | 成功后移除 |
 | `ASTER_BOOTSTRAP_REMOTE_ENROLLMENT_TOKEN` | 主控生成的一次性 enrollment token | 成功后移除 |
 
-接收落点不放在 bootstrap ENV 里。
-现在的做法是：follower 先完成 enroll，主控节点再通过 follower API 下发接收落点。这个入口在 `管理 -> 远程节点`，更适合后续查看、修改和排错。
+远程存储目标不放在 bootstrap ENV 里。
+现在的做法是：follower 先完成 enroll，主控节点再通过 follower API 下发远程存储目标。这个入口在 `管理 -> 远程节点`，更适合后续查看、修改和排错。
 
 ## 4. 首次启动
 
@@ -196,20 +196,20 @@ curl http://127.0.0.1:3001/health/ready
 管理 -> 远程节点
 ```
 
-点击“测试连接”。直连节点会访问 `base_url`；反向通道节点会通过 follower 主动建立的通道访问，刚启动时可能需要等几十秒让通道变成在线。测试通过后，先打开这台 follower 的远程节点详情，创建一个**默认接收落点**。
+点击“测试连接”。直连节点会访问 `base_url`；反向通道节点会通过 follower 主动建立的通道访问，刚启动时可能需要等几十秒让通道变成在线。测试通过后，先打开这台 follower 的远程节点详情，创建一个**默认远程存储目标**。
 
-测试连接通过时，主控也会读取 follower 的内部存储协议能力。当前内部协议版本是 `v4`，并要求 follower 支持 `v4`；如果能力摘要显示协议不兼容，先升级主控或 follower，别急着创建 remote 策略。
+测试连接通过时，主控也会读取 follower 的内部存储协议能力。当前主控使用 `v5`，最低兼容 `v4`；如果双方声明的协议版本范围没有交集，先升级主控或 follower，别急着创建 remote 策略。
 
 第一次建议选：
 
 - 驱动：`local`
 - 基础路径：`default` 这类相对路径
-- 勾选“设为默认接收落点”
+- 勾选“设为默认远程存储目标”
 
-local 接收落点的路径会被限制在 follower 的 `server.follower.remote_storage_target_local_root` 下面。
-如果你要让 follower 再写到 S3 / MinIO，也是在这里创建 `s3` 接收落点，而不是在 bootstrap ENV 里传。
+`local` 远程存储目标的路径会被限制在 follower 的 `server.follower.remote_storage_target_local_root` 下面。
+如果你要让 follower 再写到 S3 / MinIO，也是在这里创建 `s3` 远程存储目标，而不是在 bootstrap ENV 里传。
 
-接收落点应用成功后，再去：
+远程存储目标应用成功后，再去：
 
 ```text
 管理 -> 存储策略
@@ -221,7 +221,7 @@ local 接收落点的路径会被限制在 follower 的 `server.follower.remote_
 
 ## 6. 首次成功后，把一次性 bootstrap ENV 移掉
 
-确认 follower 已经 ready、主控测试连接通过、默认接收落点也已应用后，把这几个 ENV 从 Compose 里删掉：
+确认 follower 已经 ready、主控测试连接通过、默认远程存储目标也已应用后，把这几个 ENV 从 Compose 里删掉：
 
 - `ASTER_BOOTSTRAP_REMOTE_MASTER_URL`
 - `ASTER_BOOTSTRAP_REMOTE_ENROLLMENT_TOKEN`

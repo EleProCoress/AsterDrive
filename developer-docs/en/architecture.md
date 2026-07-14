@@ -69,7 +69,7 @@ The follower does not serve normal user APIs, WebDAV, or frontend pages. It only
 - Health checks: `/health*`
 - Internal object storage protocol: `/api/v1/internal/storage/*`
 
-This internal protocol is currently used for object writes, object assembly, object listing, binding synchronization, and managed ingress profile control between the primary node and managed remote nodes.
+This internal protocol is currently used for object writes, object assembly, object listing, binding synchronization, and remote storage target control between the primary node and managed remote nodes. Since `0.4.0`, the control plane only exposes `/targets`; the legacy `/ingress-profiles` compatibility routes have been removed.
 
 If a remote node uses `reverse_tunnel` or `auto` and has no directly reachable `base_url`, the follower does not expose an additional direct entry for the primary. Instead, the tunnel worker inside the follower process actively connects to the primary's `/api/v1/internal/remote-tunnel/*`.
 
@@ -101,7 +101,7 @@ Things to remember:
 
 1. `src/api/follower.rs` only registers `/api/v1/internal/storage/*`
 2. `src/api/routes/internal_storage.rs` validates internal signatures or presigned access
-3. `remote::master_binding` resolves primary-node bindings and ingress policies
+3. `remote::master_binding` resolves primary-node bindings, while `remote::storage_target` resolves follower-side remote storage targets
 4. `driver_registry` returns the actual storage driver
 5. The request is handled by the local / object-storage / remote driver capability interface
 
@@ -177,8 +177,7 @@ The practical rule of thumb in this repository remains:
 | `src/runtime/startup/primary.rs` | Build the primary runtime: `RuntimeConfig`, mail sender, SSE broadcaster, share-download rollback queue, and remote protocol runtime |
 | `src/runtime/startup/follower.rs` | Build the follower runtime: keep only the shared state needed by the follower |
 | `src/runtime/tasks.rs` | Register and shut down primary periodic tasks; metrics system tasks are injected through `MetricsRecorder` |
-| `src/metrics_core.rs` | Always-compiled metrics recording trait and `NoopMetrics`; business code only depends on this layer |
-| `src/metrics.rs` | Concrete Prometheus implementation, compiled only when the `metrics` feature is enabled |
+| `src/metrics.rs` | Drive product metrics trait, `NoopMetrics`, and the `aster_forge_metrics` adapter; the Prometheus recorder is created only with the `metrics` feature |
 | `src/api/primary.rs` | Primary route registration |
 | `src/api/follower.rs` | Follower route registration |
 | `src/api/routes/auth/mod.rs` | Authentication, sessions, preferences, avatars, SSE |
@@ -210,11 +209,11 @@ The rough order in `src/main.rs` is currently:
 6. Clean runtime temp directories
 7. Choose `primary` or `follower` according to `config.server.start_mode`
 
-Prometheus metrics are not initialized directly in `main.rs`. They are created inside `prepare_common()` as `MetricsRecorder`:
+Prometheus metrics are not initialized directly in `main.rs`. `prepare_common()` creates the product `MetricsRecorder` through `src/metrics.rs`:
 
 - when the `metrics` feature is enabled, Prometheus registry initialization is performed and a Prometheus recorder is injected
 - when it is disabled, `NoopMetrics` is injected
-- business code, HTTP middleware, storage-driver wrappers, and background tasks only depend on the trait in `src/metrics_core.rs`, not on Prometheus directly
+- business code, storage-driver wrappers, and background tasks depend on `crate::metrics::MetricsRecorder`; Forge middleware and database runtime consumers receive the `aster_forge_metrics::MetricsRecorder` exposed by `forge_recorder()`
 
 ### `prepare_common()`
 
@@ -289,14 +288,15 @@ Primary background work is registered by `src/runtime/tasks.rs` and is split int
 
 Periodic tasks run according to runtime config intervals. They write `SystemRuntime` records only when there is an actual result or failure; empty polls use `RuntimeTaskRunOutcome::quiet()`. Consecutive healthy `system-health-check` successes refresh the latest success record instead of creating noisy rows every round.
 
-User-visible `background_tasks` records are dispatched by `background-task-dispatch`. The dispatcher currently uses four lanes:
+User-visible `background_tasks` records are dispatched by `background-task-dispatch`. The dispatcher currently uses five lanes:
 
 - `Archive`: `archive_compress`, `archive_extract`, `archive_preview_generate`
 - `Thumbnail`: `thumbnail_generate`, `image_preview_generate`, `media_metadata_extract`
+- `OfflineDownload`: `offline_download`
 - `StorageMigration`: `storage_policy_migration`
 - `Fallback`: `storage_policy_temp_cleanup`, `trash_purge_all`, `blob_maintenance`, `system_runtime`
 
-The first three lanes have their own runtime concurrency settings. Fallback uses the generic `background_task_max_concurrency`.
+The first four business lanes have their own runtime concurrency settings. Fallback uses the generic `background_task_max_concurrency`. Lane assignment, payload/result codecs, steps, retry behavior, and execution entry points are declared centrally in `src/services/task/spec/` and `src/services/task/registry.rs`; new task kinds must not duplicate `kind` matches across the dispatcher, presentation, and creation paths.
 
 After claiming a task, the dispatcher creates a `TaskExecutionContext` for business execution. The context carries both the processing-token lease and the graceful-shutdown token; `main.rs` injects the same token into the HTTP server, SSE, and background-task stack, so SIGINT / SIGTERM starts all of them winding down together. Task code, download polling, and blocking archive compression / extraction workers should use this context for activity checks. Only lower-level helpers that write progress, runtime metadata, or final state should receive `TaskLeaseGuard` directly. During service shutdown, the context makes execution exit cooperatively; the dispatcher then releases a still-matching processing token back to `Retry` without spending retry budget.
 
@@ -307,9 +307,9 @@ The default features in `Cargo.toml` include `cli`, so the default `aster_drive`
 | Subcommand | Code entry | Current responsibility |
 | --- | --- | --- |
 | `serve` or no subcommand | `src/main.rs` | Start primary / follower HTTP service |
-| `doctor` | `src/cli/doctor.rs`, `src/cli/doctor/**` | Database, migration, runtime config, storage policy, and deep consistency audits |
+| `doctor` | `src/cli/doctor/mod.rs`, `src/cli/doctor/**` | Database, migration, runtime config, storage policy, and deep consistency audits |
 | `config` | `src/cli/config.rs` | Offline read, set, import, export, and validation for `system_config` |
-| `database-migrate` | `src/cli/database_migration.rs`, `src/cli/database_migration/**` | Cross-database backend migration with dry-run, verify-only, and resume support |
+| `database-migrate` | `src/cli/database_migration/mod.rs`, `src/cli/database_migration/**` | Cross-database backend migration with dry-run, verify-only, and resume support |
 | `node enroll` | `src/cli/node.rs` | Follower writes local master binding using an enrollment token issued by the primary |
 
 These CLI commands usually connect directly to the database and do not go through HTTP route handlers. When changing them, start in `src/cli/**` and the corresponding service, not in `src/api/routes/**`.
@@ -399,7 +399,7 @@ Adding a category requires updating the allowed list and frontend zh/en i18n. Un
 | Change | Preferred layer |
 | --- | --- |
 | New primary REST endpoint | `src/api/routes/**` |
-| New follower internal protocol capability | `src/api/routes/internal_storage.rs`, `src/storage/remote_protocol.rs` |
+| New follower internal protocol capability | `src/api/routes/internal_storage.rs`, `src/storage/remote_protocol/` |
 | Permissions, quota, locks, versions, share scope, team semantics | `src/services/**` |
 | New query, pagination, or filter condition | `src/db/repository/**` |
 | Storage connector descriptors, connection tests, driver actions, upload strategies, and object read/write rules | `src/storage/**` |

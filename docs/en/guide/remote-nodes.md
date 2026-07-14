@@ -16,9 +16,9 @@ If you do not want to enter the container manually to run `aster_drive node enro
 AsterDrive's remote-node capability essentially lets **another AsterDrive instance** act as a storage backend.
 
 - **Primary node**: handles login, frontend, admin console, shares, WebDAV, storage policies, and remote-node management
-- **Follower node**: only provides `/health`, `/health/ready`, and the internal remote storage protocol; it accepts object requests signed by the primary node, then writes objects to a follower local directory or S3 according to the **ingress target** pushed by the primary
+- **Follower node**: only provides `/health`, `/health/ready`, and the internal remote storage protocol; it accepts object requests signed by the primary node, then writes objects to a follower local directory or S3 according to the **remote storage target** pushed by the primary
 
-The current internal remote storage protocol version is `v4`, and the current primary requires the follower to support `v4` as well. When the primary tests connectivity and binds remote policies, it reads capability information exposed by the follower, including protocol version range, server version, object read/write capabilities, Range capabilities, compose capabilities, metadata capabilities, and the CORS contract required for browser direct upload.
+The current internal remote storage protocol version is `v5`, and the current primary supports followers whose compatible range overlaps `v4` through `v5`. When the primary tests connectivity and binds remote policies, it compares the declared version ranges and reads the follower's server version, object read/write capabilities, Range capabilities, compose capabilities, metadata capabilities, and the CORS contract required for browser direct upload. Followers limited to `v2` or `v3` must be upgraded first.
 
 By default, AsterDrive runs in `primary` mode.
 It becomes a follower node only after `[server].start_mode` is changed to `follower`.
@@ -41,13 +41,13 @@ flowchart LR
   EnrollCommand --> Enroll["Follower runs node enroll"]
   Enroll --> Restart["Restart follower"]
   Restart --> Connectivity["Test connectivity from primary"]
-  Connectivity --> Ingress["Create default ingress target"]
+  Connectivity --> Target["Create default remote storage target"]
   Ingress --> Policy["Create remote storage policy"]
   Policy --> Assign["Assign to users or teams"]
 ```
 
 ::: tip The easiest step to miss
-Successful enroll does not mean uploads are ready. Before the follower can really handle remote storage, you still need to create a default ingress target for it from the primary node.
+Successful enroll does not mean uploads are ready. Before the follower can really handle remote storage, you still need to create a default remote storage target for it from the primary node.
 :::
 
 ## Confirm These Before Enrollment
@@ -95,10 +95,10 @@ Reverse tunnel lets the follower actively connect to the primary and does not re
 If your network can already make the follower reliably reachable from the primary, direct transport is still easier to operate in production.
 :::
 
-### Use a Local Ingress Target First
+### Use a Local Remote Storage Target First
 
-In the current version, where a follower receives objects is created by the primary node in `Admin -> Follower Nodes`. The name is **ingress target**.
-For the first follower, create a `local` ingress target first and use a simple relative path, for example:
+In the current version, the primary creates the follower's object destination under `Admin -> Follower Nodes`. The UI calls it a **Remote Storage Target**. It is the place where the follower finally writes objects, either to a local directory or to S3.
+For the first follower, create a `local` remote storage target first and use a simple relative path, for example:
 
 ```text
 default
@@ -131,7 +131,7 @@ At minimum, confirm:
 
 - It has its own working directory and data volume
 - Its `[server].start_mode` is `follower`
-- If you use primary-managed local ingress targets, `[server.follower].remote_storage_target_local_root` points to a directory with enough capacity
+- If you use primary-managed local remote storage targets, `[server.follower].remote_storage_target_local_root` points to a directory with enough capacity
 
 The most direct approach is editing `config.toml`:
 
@@ -207,8 +207,8 @@ This command does several things:
 - Writes the primary binding locally on the follower; the object isolation prefix is generated automatically by the follower
 - Writes the enroll receipt back to the primary node so the primary knows this enrollment has completed
 
-Note that this step **does not automatically create an ingress target**.
-Ingress targets are now pushed from the primary node in remote node details. The reason is simple: administrators need to see, change, and test them in one place later, and it avoids having to reconstruct old CLI parameters on the follower machine.
+Note that this step **does not automatically create a remote storage target**.
+Remote storage targets are pushed from the primary node in remote node details. The reason is simple: administrators need to see, change, and test them in one place later, and it avoids having to reconstruct old CLI parameters on the follower machine.
 
 If the current configuration is still `primary` mode, the CLI errors directly and asks you to change `start_mode` to `follower` first.
 This is expected protection to avoid accidentally enrolling a normal primary instance as a follower.
@@ -234,9 +234,9 @@ One easy-to-misread detail:
 Before enroll, `/health/ready` returning `503` does not mean the service is broken.
 It is not ready before enrollment by design.
 
-After the connectivity test passes, the primary shows a capability summary in remote node details. At minimum, the protocol version must be compatible with the current primary before you continue creating a remote storage policy. The current primary requires followers to support internal protocol `v4`; `v2` / `v3` followers must be upgraded first.
+After the connectivity test passes, the primary shows a capability summary in remote node details. At minimum, the protocol version range must be compatible with the current primary before you continue creating a remote storage policy. The current primary uses `v5` and supports followers down to `v4`; `v2` / `v3` followers must be upgraded first.
 
-## 6. Create an Ingress Target on the Primary
+## 6. Create a Remote Storage Target on the Primary
 
 Return to:
 
@@ -244,9 +244,9 @@ Return to:
 Admin -> Follower Nodes
 ```
 
-Open the follower you just connected and find **primary-managed ingress targets**. This decides where objects written by the primary to the follower finally land.
+Open the follower you just connected and find **Remote Storage Targets**. This decides where objects written by the primary to the follower finally land.
 
-Two ingress target types are currently supported:
+Two remote storage target types are currently supported:
 
 - `local`: write to the follower's local directory
 - `s3`: write to S3 / MinIO / R2 or similar object storage reachable by the follower
@@ -255,7 +255,7 @@ For the first attempt, create `local`:
 
 - Use an easy-to-recognize name, such as `default-local`
 - Use a relative base path, such as `default`
-- Check "Set as default ingress target"
+- Check "Set as default remote storage target"
 
 The local path here **can only be relative** and is always restricted under the follower's:
 
@@ -265,18 +265,18 @@ remote_storage_target_local_root = "remote-storage-targets"
 ```
 
 That means `base_path = "default"` ultimately lands under a directory such as `data/remote-storage-targets/default` on the follower.
-If you want the follower to write objects directly to S3, create an `s3` ingress target here and fill endpoint, bucket, credentials, and optional prefix.
+If you want the follower to write objects directly to S3, create an `s3` remote storage target here and fill endpoint, bucket, credentials, and optional prefix.
 
-::: warning Remote writes are rejected without a default ingress target
+::: warning Remote writes are rejected without a default remote storage target
 Successful enroll only means the primary-follower identity binding succeeded.
-Before actually receiving objects, the follower still needs an applied default ingress target. Otherwise, remote policy uploads return "no default ingress target yet".
+Before actually receiving objects, the follower still needs an applied default remote storage target. Otherwise, remote policy uploads return "no default remote storage target yet".
 :::
 
-Ingress targets are pushed by the primary through the follower API, so there are a few more prerequisites:
+Remote storage targets are pushed by the primary through the follower API, so there are a few more prerequisites:
 
 - Direct nodes must have a `base_url` reachable by the primary
 - Reverse tunnel nodes, and `auto` nodes with empty `base_url`, must show the tunnel as online
-- The current follower can only bind to one primary; multiple primary bindings reject this managed ingress target mode
+- The current follower can only bind to one primary; multiple primary bindings reject this primary-managed remote storage target mode
 
 ## 7. Create a Remote Storage Policy on the Primary
 
@@ -293,7 +293,7 @@ Its biggest differences from local / S3 policies are:
 - The real network transfer, access key, and signature are all handled by the "remote node" record
 - The policy itself only controls remote path prefix, upload limits, and whether it is the default
 - A remote storage policy should bind to a remote node that is **enrolled, enabled, and reachable through its current transport mode**
-- Where the follower actually writes is decided by the default ingress target from the previous step
+- Where the follower actually writes is decided by the remote storage target bound to the policy; when none is selected explicitly, the default target is used
 
 In other words, **remote storage policies no longer configure endpoint, access key, or secret key**. That layer is already managed by the remote node record.
 
@@ -329,7 +329,7 @@ The browser CORS contract declared by the default follower currently covers `con
 Yes, but it depends on the transport mode:
 
 - `direct`: you can only save the record and complete enrollment. Without `base_url`, the primary cannot test connectivity or send remote storage traffic.
-- `reverse_tunnel`: after the follower restarts, it actively connects to the primary. Once the tunnel is online, you can test connectivity, push ingress targets, and use `relay_stream` remote policies.
+- `reverse_tunnel`: after the follower restarts, it actively connects to the primary. Once the tunnel is online, you can test connectivity, push remote storage targets, and use `relay_stream` remote policies.
 - `auto`: empty `base_url` behaves like reverse tunnel; a non-empty `base_url` behaves like direct.
 
 For any mode, remote `presigned` upload/download requires direct transport and a follower `base_url` reachable from the browser.
@@ -344,7 +344,7 @@ No. In the current design, follower nodes are not regular user login entries.
 - `/health/ready`
 - Internal remote storage API
 
-### Can an Ingress Target Use Another remote Policy?
+### Can a Remote Storage Target Use Another remote Policy?
 
 No.
 When a follower receives inbound objects, the target must be directly writable on the follower side, such as `local` or `s3`; it cannot wrap another `remote` layer.

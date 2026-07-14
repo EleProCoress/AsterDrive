@@ -84,7 +84,7 @@ If you use default relative paths, after first startup you will usually see:
 - `data/uploads`
 - `data/.tmp`
 - `data/.uploads`
-- `data/remote-storage-targets` (when a follower uses a local receiving target)
+- `data/remote-storage-targets` (when a follower uses a local remote storage target)
 
 `data/.tmp` and `data/.uploads` are runtime temporary directories, not long-term data directories.  
 `data/remote-storage-targets` is the local receiving root managed by the primary for a follower. It only matters if this instance is used as a follower node.
@@ -104,7 +104,7 @@ If you use default relative paths, after first startup you will usually see:
 9. If WebDAV will be used, whether the mount path matches the configuration.
 10. If WOPI will be enabled, whether `Public Site URL` and `Preview Applications` can be saved correctly.
 11. If external authentication will be enabled, whether `Public Site URL` is correct, and whether redirect URIs generated under `Admin -> External Authentication` have been registered with the identity provider.
-12. If follower nodes will be used, whether the follower has completed enrollment, internal protocol capabilities are compatible, and an applied default receiving target exists.
+12. If follower nodes will be used, whether the follower has completed enrollment, internal protocol capabilities are compatible, and an applied default remote storage target exists.
 
 ## If Checks Fail, Look Here First
 

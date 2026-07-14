@@ -138,7 +138,7 @@ Suitable when files are stored in Tencent COS and you want to enable Tencent-nat
 
 Suitable when the control plane should stay on the primary node while real object placement is split to another AsterDrive follower node.
 
-A remote policy only binds a follower node; it no longer has a separate endpoint or access key. Where the follower actually writes objects is decided by the **default ingress target** in the follower node details. See the [follower node storage policy tutorial](/en/storage/remote-follower) for the full setup flow.
+A remote policy binds a follower node and one of that node's remote storage targets; it no longer has a separate endpoint or access key. When no target is selected explicitly, the **default remote storage target** in the follower node details is used. See the [follower node storage policy tutorial](/en/storage/remote-follower) for the full setup flow.
 
 ## Capacity Observation and Migration Preflight
 
@@ -151,7 +151,7 @@ The storage policy edit dialog shows current capacity observation:
 | `azure_blob` | Shows unsupported; the Blob data API does not expose unified storage account capacity observation |
 | `one_drive` | Reads Microsoft Graph drive quota; if Graph does not return quota data, the result is shown as unavailable |
 | `sftp` | Shows unsupported; SFTP has no unified reliable remote filesystem capacity interface |
-| `remote` | Asks the follower's real ingress target through the internal remote storage protocol. If the follower ingress target is local, filesystem capacity is usually available. If the ingress target is S3, it is also shown as unsupported. |
+| `remote` | Asks the remote storage target bound to the policy through the internal protocol. If the target is local, filesystem capacity is usually available. If the target is S3, it is shown as unsupported. |
 
 During data migration, preflight compares the target policy's available capacity with the estimated bytes that still need to be copied. It does not simply use the source policy's total size. Content SHA-256 blobs that already exist in the target policy are treated as reusable and are excluded from the estimated copy size.
 

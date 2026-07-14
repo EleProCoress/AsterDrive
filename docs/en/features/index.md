@@ -14,7 +14,7 @@ If you are a regular user, start with the [User Manual](/en/guide/user-guide) an
 | --- | --- | --- |
 | [Identity and Access](./auth-access) | Login, sessions, MFA, Passkey, external authentication, WebDAV accounts, public access boundaries | [Login and Sessions](/en/config/auth), [External Authentication](/en/config/external-auth), [WebDAV](/en/config/webdav) |
 | [Files and Workspaces](./files-workspaces) | Personal spaces, team spaces, folders, file records, trash, versions, shares | [User Manual](/en/guide/user-guide), [Teams and Permissions](/en/guide/teams-and-permissions), [Sharing and Public Access](/en/guide/sharing) |
-| [Uploads and Storage](./upload-storage) | Upload modes, blobs, quota, storage policies, policy groups, local / S3 / Azure Blob / COS / OneDrive / follower storage | [Uploads and Large Files](/en/guide/upload-modes), [Storage Policies](/en/config/storage), [Storage Backends](/en/storage/) |
+| [Uploads and Storage](./upload-storage) | Upload modes, blobs, quota, storage policies, policy groups, local / S3 / Azure Blob / COS / OneDrive / SFTP / follower storage | [Uploads and Large Files](/en/guide/upload-modes), [Storage Policies](/en/config/storage), [Storage Backends](/en/storage/) |
 | [Preview and Processing](./preview-processing) | Thumbnails, media metadata, archive preview, WOPI, editing, share streaming | [Online Preview and WOPI](/en/guide/preview-and-wopi), [File Editing](/en/guide/editing), [System Settings](/en/config/runtime) |
 | [System and Operations](./runtime-operations) | Startup config, runtime config, background tasks, mail, monitoring, audit, CLI, backup and upgrades | [Configuration Overview](/en/config/), [Deployment Overview](/en/deployment/), [Operations CLI](/en/deployment/ops-cli) |
 

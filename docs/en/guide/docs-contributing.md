@@ -70,7 +70,7 @@ Recommended wording:
 - `Follower Nodes`, and explain that they are followers when needed
 - `Primary node`, and add `primary` when needed
 - `Follower node`, and add `follower` when needed
-- `Ingress target`
+- `Remote storage target`
 - `Storage policy`
 - `Policy group`
 - `System settings`

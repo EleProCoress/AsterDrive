@@ -8,15 +8,15 @@
 | --- | --- | --- |
 | 主控节点 / primary | 默认运行模式。负责登录、前端、管理后台、分享、WebDAV、策略和元数据。 | [服务器配置](/config/server) |
 | 从节点 / follower | 远程存储后端。只接收主控签名后的内部对象请求，不给普通用户登录。 | [远程节点](./remote-nodes) |
-| 远程节点 | 主控后台里登记的一台 follower 记录，包含节点地址、状态、密钥和接收落点。 | [远程节点](./remote-nodes) |
-| 接收落点 | follower 上真正写入对象的位置，可以是本地目录或 S3 / MinIO。 | [远程节点](./remote-nodes) |
+| 远程节点 | 主控后台里登记的一台 follower 记录，包含节点地址、状态、密钥和远程存储目标。 | [远程节点](./remote-nodes) |
+| 远程存储目标 | follower 上真正写入对象的位置，可以是本地目录或 S3 / MinIO；remote 策略可以绑定具体目标。 | [远程节点](./remote-nodes) |
 | enroll | 把 follower 绑定到主控的接入动作。通常通过后台生成命令，再到 follower 执行。 | [运维 CLI](/deployment/ops-cli) |
 
 ## 存储与上传
 
 | 术语 | 解释 | 相关文档 |
 | --- | --- | --- |
-| 存储策略 | 定义文件真实落点和上传方式。比如本地目录、S3 / MinIO / 腾讯云 COS、远程节点。 | [存储策略](/config/storage) |
+| 存储策略 | 定义文件真实落点和上传方式。比如本地目录、S3 / MinIO / Azure Blob / 腾讯云 COS / OneDrive / SFTP、远程节点。 | [存储策略](/config/storage) |
 | 策略组 | 决定用户或团队上传时命中哪条存储策略，可以按文件大小分流。 | [存储策略](/config/storage) |
 | Blob | 底层文件对象。多个文件记录可以引用同一个 Blob，用于内容去重和版本引用。 | [关于 AsterDrive](./about) |
 | 分片上传 | 大文件拆成多个片段上传，失败后尽量续传。 | [上传与大文件](./upload-modes) |

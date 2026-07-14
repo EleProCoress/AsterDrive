@@ -46,7 +46,7 @@ If you are responsible for deployment, confirm these items first:
 - Whether the reverse proxy upload size and timeouts are sufficient
 - If you use direct-to-object-storage upload, whether the required browser-upload CORS rules are configured
 - If you use SFTP, whether the SSH host key fingerprint has been confirmed and saved
-- If you use follower nodes, whether the follower already has a default ingress target
+- If you use follower nodes, whether the follower already has an applied default remote storage target
 - If you use remote `presigned`, whether the remote node uses direct transport, whether the browser can reach the follower `base_url`, and whether the follower exposes the required CORS response headers
 
 ## Which Uploads Use Local Disk Heavily
@@ -98,7 +98,7 @@ Before launch, confirm:
 4. Whether the reverse proxy request body size and timeout are sufficient
 5. If direct-to-object-storage upload is used, whether CORS is correct
 6. If SFTP is used, whether Endpoint, SSH credentials, base path, and host key fingerprint are correct
-7. If a follower node is used, whether the node is enabled, the current transport mode passes connection testing, protocol capabilities are compatible, and the default ingress target has been applied
+7. If a follower node is used, whether the node is enabled, the current transport mode passes connection testing, protocol capabilities are compatible, and the default remote storage target has been applied
 8. Whether the user or team quota is already full
 
 ## When to Change Configuration
@@ -111,4 +111,4 @@ If users often upload large files, you usually only need to check these places:
 - Reverse proxy upload size and timeout
 - Browser direct-upload allow rules on object storage
 - SFTP endpoint, base path, and SSH host key fingerprint
-- Follower node transport mode, protocol capabilities, default ingress target, and network reachability; if remote `presigned` is used, also confirm browsers can reach the follower `base_url`
+- Follower node transport mode, protocol capabilities, default remote storage target, and network reachability; if remote `presigned` is used, also confirm browsers can reach the follower `base_url`
