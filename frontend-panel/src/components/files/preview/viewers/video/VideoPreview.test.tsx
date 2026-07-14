@@ -5,6 +5,7 @@ import { VideoPreview } from "@/components/files/preview/viewers/video/VideoPrev
 const mockState = vi.hoisted(() => ({
 	artplayerInstances: [] as Array<{
 		options: {
+			container: HTMLElement;
 			url: string;
 			moreVideoAttr?: Record<string, unknown>;
 		};
@@ -183,6 +184,26 @@ describe("VideoPreview", () => {
 		);
 	});
 
+	it("fills the available preview surface when requested", async () => {
+		render(
+			<VideoPreview
+				file={{ name: "clip.mp4", mime_type: "video/mp4" }}
+				fillContainer
+				resource="/files/7/download"
+			/>,
+		);
+
+		await waitFor(() => {
+			expect(mockState.artplayerInstances).toHaveLength(1);
+		});
+		const frame =
+			mockState.artplayerInstances[0].options.container.parentElement;
+
+		expect(frame).toHaveClass("h-full", "w-full");
+		expect(frame?.style.aspectRatio).toBe("");
+		expect(frame?.style.maxWidth).toBe("");
+	});
+
 	it("renders loading while creating a stream session and an error when creation fails", async () => {
 		const streamError = new Error("stream failed");
 		const createMediaStreamSession = vi.fn(async () => {
@@ -212,12 +233,16 @@ describe("VideoPreview", () => {
 		render(
 			<VideoPreview
 				file={{ name: "clip.mp4", mime_type: "video/mp4" }}
+				fillContainer
 				resource="/throw-player"
 			/>,
 		);
 
 		const nativeVideo = await screen.findByLabelText("clip.mp4");
 		expect(nativeVideo).toHaveAttribute("src", "/api/v1/throw-player");
+		expect(nativeVideo.parentElement).toHaveClass("h-full", "w-full");
+		expect(nativeVideo.parentElement?.style.aspectRatio).toBe("");
+		expect(nativeVideo.parentElement?.style.maxWidth).toBe("");
 		expect(mockState.loggerWarn).toHaveBeenCalledWith(
 			"artplayer init failed",
 			"clip.mp4",

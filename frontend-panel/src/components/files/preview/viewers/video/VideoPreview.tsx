@@ -1,5 +1,12 @@
 import Artplayer from "artplayer";
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+	type CSSProperties,
+	type ReactNode,
+	useEffect,
+	useMemo,
+	useRef,
+	useState,
+} from "react";
 import { useTranslation } from "react-i18next";
 import { resolveApiResourceUrl } from "@/lib/apiUrl";
 import { logger } from "@/lib/logger";
@@ -22,6 +29,7 @@ const VIDEO_CONTENT_CLASS = "flex items-center justify-center bg-zinc-950";
 interface VideoPreviewProps {
 	file: PreviewableFileLike;
 	createMediaStreamSession?: () => Promise<ShareStreamSessionInfo>;
+	fillContainer?: boolean;
 	resource: ResourcePath | null;
 }
 
@@ -30,6 +38,31 @@ interface VideoStatus {
 	key: string;
 	mediaFailed: boolean;
 	playerFailed: boolean;
+}
+
+interface VideoPreviewFrameProps {
+	children: ReactNode;
+	fillContainer: boolean;
+	style?: CSSProperties;
+}
+
+function VideoPreviewFrame({
+	children,
+	fillContainer,
+	style,
+}: VideoPreviewFrameProps) {
+	return (
+		<div
+			className={
+				fillContainer
+					? "h-full w-full overflow-hidden bg-zinc-950"
+					: "w-full overflow-hidden bg-zinc-950"
+			}
+			style={style}
+		>
+			{children}
+		</div>
+	);
 }
 
 function initialVideoStatus(key: string): VideoStatus {
@@ -48,6 +81,7 @@ function getPlayerLanguage(language: string) {
 export function VideoPreview({
 	file,
 	createMediaStreamSession,
+	fillContainer = false,
 	resource,
 }: VideoPreviewProps) {
 	const { i18n, t } = useTranslation("files");
@@ -82,11 +116,14 @@ export function VideoPreview({
 		[i18n.language],
 	);
 	const previewFrameStyle = useMemo(
-		() => ({
-			aspectRatio: String(aspectRatio),
-			maxWidth: `min(100%, calc((90vh - ${DIALOG_CHROME_HEIGHT_REM}rem) * ${aspectRatio}))`,
-		}),
-		[aspectRatio],
+		() =>
+			fillContainer
+				? undefined
+				: {
+						aspectRatio: String(aspectRatio),
+						maxWidth: `min(100%, calc((90vh - ${DIALOG_CHROME_HEIGHT_REM}rem) * ${aspectRatio}))`,
+					},
+		[aspectRatio, fillContainer],
 	);
 
 	useEffect(() => {
@@ -195,8 +232,8 @@ export function VideoPreview({
 		return (
 			<PreviewSurface className={VIDEO_SURFACE_CLASS}>
 				<PreviewSurfaceContent className={VIDEO_CONTENT_CLASS}>
-					<div
-						className="w-full overflow-hidden bg-zinc-950"
+					<VideoPreviewFrame
+						fillContainer={fillContainer}
 						style={previewFrameStyle}
 					>
 						{/* biome-ignore lint/a11y/useMediaCaption: user-uploaded media may not have captions available */}
@@ -213,7 +250,7 @@ export function VideoPreview({
 							}
 							className="block h-full w-full object-contain"
 						/>
-					</div>
+					</VideoPreviewFrame>
 				</PreviewSurfaceContent>
 			</PreviewSurface>
 		);
@@ -222,12 +259,12 @@ export function VideoPreview({
 	return (
 		<PreviewSurface className={VIDEO_SURFACE_CLASS}>
 			<PreviewSurfaceContent className={VIDEO_CONTENT_CLASS}>
-				<div
-					className="w-full overflow-hidden bg-zinc-950"
+				<VideoPreviewFrame
+					fillContainer={fillContainer}
 					style={previewFrameStyle}
 				>
 					<div ref={containerRef} className="h-full w-full" />
-				</div>
+				</VideoPreviewFrame>
 			</PreviewSurfaceContent>
 		</PreviewSurface>
 	);

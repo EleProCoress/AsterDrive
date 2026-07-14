@@ -347,12 +347,15 @@ vi.mock("@/components/files/preview/shared/PreviewUnavailable", () => ({
 vi.mock("@/components/files/preview/viewers/video/VideoPreview", () => ({
 	VideoPreview: ({
 		createMediaStreamSession,
+		fillContainer,
 		resource,
 	}: {
 		createMediaStreamSession?: () => Promise<unknown>;
+		fillContainer?: boolean;
 		resource: ResourcePath | null;
 	}) => (
 		<div
+			data-fill-container={String(Boolean(fillContainer))}
 			data-has-media-stream-link-factory={String(
 				Boolean(createMediaStreamSession),
 			)}
@@ -853,6 +856,19 @@ describe("FilePreviewDialog", () => {
 		const classes = screen.getByTestId("dialog-content").className.split(/\s+/);
 		expect(classes).toContain("max-h-[90vh]");
 		expect(classes).not.toContain("h-[90vh]");
+		expect(
+			screen.getByText("video:/files/7/download?disposition=inline"),
+		).toHaveAttribute("data-fill-container", "false");
+
+		fireEvent.click(
+			screen.getByRole("button", {
+				name: "files:preview_enter_fullscreen",
+			}),
+		);
+
+		expect(
+			screen.getByText("video:/files/7/download?disposition=inline"),
+		).toHaveAttribute("data-fill-container", "true");
 	});
 
 	it("does not route builtin audio previews through the dialog media preview", async () => {

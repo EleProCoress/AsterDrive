@@ -130,6 +130,7 @@ export function FilePreviewBody({
 		return (
 			<VideoPreview
 				file={file}
+				fillContainer={isExpanded}
 				resource={contentResource}
 				createMediaStreamSession={resources.actions?.createMediaStreamSession}
 			/>

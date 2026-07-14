@@ -174,6 +174,7 @@ describe("FilePreviewBody", () => {
 		renderBody({
 			activeOption: option("video"),
 			contentResource: null,
+			isExpanded: true,
 			resources: resources({
 				actions: {
 					createMediaStreamSession: createMediaStreamSession,
@@ -193,6 +194,7 @@ describe("FilePreviewBody", () => {
 		expect(mockState.videoPreview).toHaveBeenCalledWith(
 			expect.objectContaining({
 				createMediaStreamSession,
+				fillContainer: true,
 				resource: null,
 			}),
 		);
