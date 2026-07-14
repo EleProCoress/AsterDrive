@@ -7,13 +7,166 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Removed
+## [v0.4.0-beta.1] - 2026-07-14
 
-- 移除计划于 `0.4.0` 到期的远程存储目标兼容层：管理 API 不再提供 `/ingress-profile-drivers` / `/ingress-profiles`，follower 内部协议不再提供 `/ingress-profiles`，统一使用 `/storage-target-drivers` / `/storage-targets` 和 `/targets`
+### Release Highlights
+
+**AsterDrive `v0.4.0-beta.1` 是 `0.4.0` 系列的首个 beta，主线是把可复用基础能力迁移到 AsterForge 共享 crates，并补齐多实例运行所需的配置同步、运行时租约与任务调度基础设施。** API、数据库、缓存、审计、邮件、外部认证、验证、通用工具、Actix 中间件、指标和任务运行时等公共能力不再由 AsterDrive 维护平行实现；产品层继续保留文件、工作空间、分享、上传、存储策略、远端节点、WebDAV 与 WOPI 等 AsterDrive 领域编排。与此同时，本版本新增基于 Redis pub/sub 的跨实例运行时配置同步，落地 runtime lease、scheduled task 与后台任务 dedupe contract，并完成计划在 `0.4.0` 移除的旧 ingress profile API 兼容路由清理。CORS 白名单改为字符串数组，并支持 Chrome / Edge、Firefox 和 Safari Web Extension origin。
+
+- **AsterForge 共享能力迁移** — API contract、数据库、缓存、配置、审计、邮件、外部认证、验证、工具、加密、指标、运行时、任务和 Actix middleware 统一使用 `aster_forge_*` crates，删除 AsterDrive 内部重复实现
+- **跨实例运行时配置同步** — 新增 `[config_sync]`，可通过 Redis pub/sub 通知其他实例从权威数据库重新加载运行时配置；单实例默认关闭
+- **多实例任务运行基础** — 新增 runtime lease、scheduled task 与后台任务 dedupe key，运行时组件通过显式依赖图完成启动和优雅关闭
+- **CORS 扩展来源支持** — `cors_allowed_origins` 改为字符串数组，支持 HTTP(S) 与浏览器扩展 origin，旧逗号分隔配置会在启动时迁移
+- **旧远端存储兼容路由移除** — 管理 API 统一使用 `/storage-targets` / `/storage-target-drivers`，follower 内部协议统一使用 `/targets`
+
+### Added
+
+- **跨实例运行时配置同步**
+  - 新增静态配置组 `[config_sync]`，支持 `disabled` 和 `redis` 两种 backend
+  - 管理 API 与 `aster_drive config set` / `delete` / `import` 在数据库写入成功后发布 reload 通知
+  - 其他实例收到通知后从 writer database 重新加载完整运行时配置，Redis 只传递通知，不保存配置值
+  - 新增配置 reload / mutation 指标与订阅 worker 日志
+  - primary、follower 与测试 runtime state 统一接入 `ConfigSyncRuntime`
+  - 新增中英文多实例配置同步文档与生产检查项
+
+- **多实例运行时和任务调度基础**
+  - 新增 `runtime_leases` 表，用于多实例运行时能力的租约协调
+  - 新增 `scheduled_tasks` 表及 name / next-run 索引
+  - `background_tasks` 新增可选 `dedupe_key` 与唯一索引，支持任务去重查询
+  - task execution context 增加显式 lease renewal timeout
+  - runtime component graph 明确 HTTP、background task、mail outbox、audit、database 等组件的关闭依赖关系
+
+- **浏览器扩展 CORS origin**
+  - 支持 `chrome-extension://`、`moz-extension://` 和 `safari-web-extension://`
+  - 管理后台按数组逐项编辑允许的 origin
+  - 新增完整 origin、通配符与 credential 组合校验
+  - 新增旧逗号分隔值迁移、浏览器扩展 origin 和前端表单测试
+
+- **构建 fallback 资源**
+  - 自动识别并刷新包含 `Frontend Not Built` 标记的旧 fallback 目录
+  - fallback 输出补齐 CSS、service worker 与 web manifest
+  - fallback 页面结构与正常前端构建产物保持一致
 
 ### Changed
 
+- **核心基础能力迁移到 AsterForge**
+  - 本地 `api-docs-macros` workspace crate 迁移到 `aster_forge_api_docs_macros`
+  - allocator、cache、logging、panic、metrics、Actix observability 和 middleware 使用 Forge 实现
+  - `NullablePatch`、分页结构和公共 API error bridge 使用 `aster_forge_api`
+  - `DbHandles`、transaction、retry、pagination、sort、search query 和 index migration helper 使用 `aster_forge_db`
+  - audit log、system config、mail outbox 使用 Forge 共享数据库 contract 与 runtime component
+  - external OAuth2 / OIDC driver registry 使用 `aster_forge_external_auth`
+  - filename、email、display text、URL、path、number、ID、HTTP validator、hash 与 crypto helper 使用 Forge 共享实现
+  - task execution、lease、step、retry、lane 与 registry contract 使用 `aster_forge_tasks`
+  - 删除相应的产品内薄封装、重复类型和转发 facade
+
+- **运行时生命周期组件化**
+  - primary / follower startup 使用 `AsterRuntime` component graph 装配运行时能力
+  - audit 改用 Forge buffered batch writer
+  - mail outbox、background task、audit 与 database 的关闭顺序通过依赖关系表达
+  - config loader 返回结构化 `ConfigLoadReport`，由启动入口统一输出，避免 JSON 模式下混入非结构化 stderr
+
+- **CORS 配置改为数组**
+  - `cors_allowed_origins` 的运行时配置类型由 `string` 改为 `string_array`
+  - 管理 API 与前端按 JSON 字符串数组读写
+  - 旧逗号分隔 origin 列表会在启动时规范化为 JSON 数组
+  - `["*"]` 允许任意 origin，但仍禁止与跨域 credential 同时启用
+
+- **缓存配置字段统一**
+  - `[cache].redis_url` 更名为 `[cache].endpoint`
+  - 配置示例、用户文档和测试统一使用 `endpoint`
+
+- **数据库 migration 基础能力**
+  - migration crate 使用 `aster_forge_db` 提供的跨数据库 index helper
+  - runtime lease 与 scheduled task 表加入数据库复制顺序
+  - 修复 system config migration rollback 中 MySQL 不兼容的字符串默认值
+  - schema drift 测试覆盖 runtime lease 与 scheduled task 表
+
+- **系统健康与任务错误表达**
+  - admin health component 新增结构化 `details`
+  - remote node health counter 从 `usize` 改为 `u64`
+  - Forge task core error 映射到稳定的产品 API error code，不再统一退化为内部错误
+
+- **依赖升级**
+  - `aes-gcm` 0.10 → 0.11
+  - AWS SDK、`azure_core`、`rand`、`russh`、`sea-orm`、`criterion`、`tokio-tungstenite` 等依赖升级
+  - 测试 RSA key generation 迁移到 `rsa 0.10.0-rc` 与 `rand 0.10`
+
+- **文档与术语同步**
+  - “ingress target / 接收落点”统一为 “remote storage target / 远程存储目标”
+  - 外部认证开发文档改为 AsterForge shared driver / registry 边界
+  - 存储能力列表补充 SFTP
+  - 内部协议文档明确当前版本 v5、最低兼容版本 v4
+  - `/public/frontend-config` 明确为公开品牌与登录入口配置的当前接口
+
+### Removed
+
+- 移除管理 API 中已废弃的远端存储 ingress profile 兼容路由：
+  - `GET /api/v1/admin/remote-nodes/{id}/ingress-profile-drivers`
+  - `GET /api/v1/admin/remote-nodes/{id}/ingress-profiles`
+  - `POST /api/v1/admin/remote-nodes/{id}/ingress-profiles`
+  - `PATCH /api/v1/admin/remote-nodes/{id}/ingress-profiles/{target_key}`
+  - `DELETE /api/v1/admin/remote-nodes/{id}/ingress-profiles/{target_key}`
+- 移除 follower internal storage protocol 中的 `/ingress-profiles` 路由别名，统一使用 `/targets`
+- 移除对应 OpenAPI operation 与生成的前端 API client 方法
+- 移除 AsterDrive 内部重复维护的 cache、middleware、external-auth driver、mail sender、配置 contract、数据库 helper、通用 utils、allocator 和 API docs macro 实现
+
+### Fixed
+
+- 旧 fallback 前端资源存在时能够被构建脚本识别并重新生成，不再继续使用不完整的 fallback 目录
+- CORS wildcard 与 credential 的组合在管理前端和后端配置 normalization 两侧都得到校验
+- 首次生成配置文件时，JSON 日志模式不再混入非结构化配置报告
+- migration index rename / drop helper 在 MySQL 上保持幂等
+- 数据库迁移复制流程包含 `runtime_leases` 与 `scheduled_tasks`
+- system config migration rollback 不再生成 MySQL 不兼容的 `DEFAULT ""`
+
+### Database Migrations
+
+- `m20260712_000001_align_forge_audit_contract`
+  - 将现有 `audit_logs` 对齐 Forge contract，保留已有审计数据
+  - 扩展 IP address 字段并补齐 system user 默认语义
+- `m20260712_000002_add_forge_audit_query_indexes`
+  - 增加 Forge audit query indexes
+- `m20260712_000003_align_forge_system_config_contract`
+  - 将 `system_config` 对齐 Forge contract 并保留已有配置
+- `m20260712_000004_align_forge_mail_outbox_contract`
+  - 将 `mail_outbox` 对齐 Forge contract 并保留已有邮件记录
+- `m20260713_000001_runtime_leases`
+  - 新增 `runtime_leases`
+- `m20260713_000002_background_task_dedupe_key`
+  - 为 `background_tasks` 新增 `dedupe_key` 与唯一索引
+- `m20260713_000003_scheduled_tasks`
+  - 新增 `scheduled_tasks` 及调度索引
+
+### Configuration Changes
+
+- 新增 `[config_sync]`：
+  - `backend = "disabled"`：默认值，适合单实例部署
+  - `backend = "redis"`：通过 Redis pub/sub 同步运行时配置 reload 通知
+  - `endpoint = ""`：Redis URL
+  - `topic = "aster_drive.config_reload"`：同一实例组必须保持一致
+- `[cache].redis_url` 更名为 `[cache].endpoint`
+- `cors_allowed_origins` 从逗号分隔字符串改为 JSON 字符串数组；已有旧值会在启动时自动迁移
 - `server.follower.managed_ingress_local_root` 配置别名继续保留兼容；新配置仍应使用 `server.follower.remote_storage_target_local_root`
+
+### Statistics
+
+- 582 files changed, 12840 insertions(+), 23524 deletions(-)
+- 22 commits
+- 7 个数据库 migration
+- 新增静态配置组：1（`config_sync`）
+- 移除旧远端存储兼容 API：管理端 5 个路由、follower internal protocol 4 个路由
+
+### Notes
+
+- 本版本是 `0.4.0` 系列首个 beta，建议先在测试环境验证数据库迁移、外部认证、邮件发送、后台任务与远端节点链路
+- 7 个数据库 migration 会在启动时自动执行；audit、system config 与 mail outbox migration 会保留已有数据
+- 单实例部署无需 Redis，保持 `[config_sync].backend = "disabled"` 即可
+- 多实例部署启用 config sync 时，所有实例必须连接同一份权威数据库、同一 Redis 服务并使用相同 topic
+- Redis pub/sub 不补发离线期间的消息；实例启动时会从数据库全量加载配置
+- 使用旧 `/ingress-profiles` 管理 API 或 internal storage protocol 别名的客户端必须迁移到 `/storage-targets`、`/storage-target-drivers` 和 `/targets`
+- `managed_ingress.*` 错误码继续保留历史前缀，用于现有客户端与日志兼容
+- 当前 remote internal protocol 为 v5，最低兼容版本仍为 v4
 
 ## [v0.3.2] - 2026-07-08
 
@@ -5374,7 +5527,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 66 commits
 - Rust Edition 2024, MSRV 1.91.1
 
-[Unreleased]: https://github.com/AsterCommunity/AsterDrive/compare/v0.3.2...HEAD
+[Unreleased]: https://github.com/AsterCommunity/AsterDrive/compare/v0.4.0-beta.1...HEAD
+[v0.4.0-beta.1]: https://github.com/AsterCommunity/AsterDrive/compare/v0.3.2...v0.4.0-beta.1
 [v0.3.2]: https://github.com/AsterCommunity/AsterDrive/compare/v0.3.1...v0.3.2
 [v0.3.1]: https://github.com/AsterCommunity/AsterDrive/compare/v0.3.0...v0.3.1
 [v0.3.0]: https://github.com/AsterCommunity/AsterDrive/compare/v0.3.0-rc.2...v0.3.0
