@@ -1061,6 +1061,91 @@ describe("MusicPlayerHost", () => {
 		expect(order).toEqual(["prepare", "load", "play"]);
 	});
 
+	it("does not reload the same audio source when playback resumes after seeking", async () => {
+		setQueue();
+		mockState.state.playRequested = true;
+		mockState.state.playRequestVersion = 1;
+		const { rerender } = render(<MusicPlayerHost />);
+
+		await waitFor(() => {
+			expect(HTMLMediaElement.prototype.load).toHaveBeenCalledTimes(1);
+			expect(HTMLMediaElement.prototype.play).toHaveBeenCalledTimes(1);
+		});
+		const audio = document.querySelector("audio");
+		if (!audio) {
+			throw new Error("audio element not found");
+		}
+		Object.defineProperty(audio, "currentTime", {
+			configurable: true,
+			writable: true,
+			value: 60,
+		});
+
+		mockState.state.playRequestVersion = 2;
+		rerender(<MusicPlayerHost />);
+
+		await waitFor(() => {
+			expect(mockState.prepareAuthenticatedResource).toHaveBeenCalledTimes(2);
+			expect(HTMLMediaElement.prototype.play).toHaveBeenCalledTimes(2);
+		});
+		expect(HTMLMediaElement.prototype.load).toHaveBeenCalledTimes(1);
+		expect(audio.currentTime).toBe(60);
+	});
+
+	it("restores the playback position when the same track gets a refreshed source", async () => {
+		setQueue();
+		mockState.state.playRequested = true;
+		mockState.state.playRequestVersion = 1;
+		const { rerender } = render(<MusicPlayerHost />);
+
+		await waitFor(() => {
+			expect(HTMLMediaElement.prototype.load).toHaveBeenCalledTimes(1);
+			expect(HTMLMediaElement.prototype.play).toHaveBeenCalledTimes(1);
+		});
+		const audio = document.querySelector("audio");
+		if (!audio) {
+			throw new Error("audio element not found");
+		}
+		Object.defineProperty(audio, "currentTime", {
+			configurable: true,
+			writable: true,
+			value: 42,
+		});
+		Object.defineProperty(audio, "duration", {
+			configurable: true,
+			value: 120,
+		});
+		fireEvent.timeUpdate(audio);
+
+		const [firstTrack, ...remainingTracks] = mockState.state.queue;
+		if (!firstTrack) {
+			throw new Error("expected first queued track");
+		}
+		const refreshedPath = "/files/7/download?stream=refreshed";
+		mockState.state.queue = [
+			{
+				...firstTrack,
+				path: refreshedPath,
+				resource: testTrackResource(refreshedPath),
+			},
+			...remainingTracks,
+		];
+		rerender(<MusicPlayerHost />);
+
+		await waitFor(() => {
+			expect(mockState.prepareAuthenticatedResource).toHaveBeenCalledTimes(2);
+			expect(HTMLMediaElement.prototype.load).toHaveBeenCalledTimes(2);
+			expect(HTMLMediaElement.prototype.play).toHaveBeenCalledTimes(2);
+		});
+		fireEvent.loadedMetadata(audio);
+
+		expect(audio).toHaveAttribute(
+			"src",
+			"/api/v1/files/7/download?stream=refreshed",
+		);
+		expect(audio.currentTime).toBe(42);
+	});
+
 	it("keeps playback alive when the active queue track is refreshed with the same resource", async () => {
 		setQueue();
 		mockState.state.playRequested = true;

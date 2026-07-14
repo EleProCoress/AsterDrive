@@ -527,6 +527,14 @@ export function MusicPlayerHost() {
 	const errorSkipTimerRef = useRef<number | null>(null);
 	const isSeekingRef = useRef(false);
 	const parsedMetadataTrackIdsRef = useRef(new Set<string>());
+	const loadedPlaybackSourceRef = useRef<{
+		key: string;
+		trackId: string;
+	} | null>(null);
+	const pendingPlaybackPositionRef = useRef<{
+		sourceKey: string;
+		time: number;
+	} | null>(null);
 	const playbackPreparationFailedRef = useRef(false);
 	const playbackPreparationPendingRef = useRef(false);
 	const wasPlayingBeforeSeekRef = useRef(false);
@@ -721,6 +729,7 @@ export function MusicPlayerHost() {
 		playbackPreparationFailedRef.current = false;
 		currentTimeRef.current = 0;
 		durationRef.current = 0;
+		pendingPlaybackPositionRef.current = null;
 		setBufferedProgress(0);
 		setCurrentTime(0);
 		setDuration(0);
@@ -1021,6 +1030,7 @@ export function MusicPlayerHost() {
 		const trackName = trackNameRef.current;
 		const playbackResource = trackResourceRef.current;
 		if (!playbackResource) return;
+		const playbackSourceKey = `${trackId}\u0000${source}`;
 		const controller = new AbortController();
 		let prepared = false;
 		playbackPreparationFailedRef.current = false;
@@ -1033,7 +1043,23 @@ export function MusicPlayerHost() {
 				if (cancelled || latestTrackIdRef.current !== trackId) return;
 				prepared = true;
 				playbackPreparationPendingRef.current = false;
-				audio.load();
+				if (loadedPlaybackSourceRef.current?.key !== playbackSourceKey) {
+					const restoreTime =
+						loadedPlaybackSourceRef.current?.trackId === trackId &&
+						Number.isFinite(currentTimeRef.current) &&
+						currentTimeRef.current > 0
+							? currentTimeRef.current
+							: null;
+					pendingPlaybackPositionRef.current =
+						restoreTime === null
+							? null
+							: { sourceKey: playbackSourceKey, time: restoreTime };
+					audio.load();
+					loadedPlaybackSourceRef.current = {
+						key: playbackSourceKey,
+						trackId,
+					};
+				}
 				await audio.play();
 			} catch (playError) {
 				if (
@@ -1181,6 +1207,8 @@ export function MusicPlayerHost() {
 					) {
 						return;
 					}
+					loadedPlaybackSourceRef.current = null;
+					pendingPlaybackPositionRef.current = null;
 					setError(t("music_player_load_failed"));
 					setPlaybackRequested(false);
 					setPlaying(false);
@@ -1190,6 +1218,20 @@ export function MusicPlayerHost() {
 					const nextDuration = event.currentTarget.duration || 0;
 					durationRef.current = nextDuration;
 					setDuration(nextDuration);
+					const pendingPosition = pendingPlaybackPositionRef.current;
+					if (
+						pendingPosition &&
+						pendingPosition.sourceKey === loadedPlaybackSourceRef.current?.key
+					) {
+						const restoredTime =
+							Number.isFinite(nextDuration) && nextDuration > 0
+								? Math.min(pendingPosition.time, nextDuration)
+								: pendingPosition.time;
+						setAudioCurrentTime(event.currentTarget, restoredTime, false);
+						currentTimeRef.current = restoredTime;
+						setCurrentTime(restoredTime);
+						pendingPlaybackPositionRef.current = null;
+					}
 					setBufferedProgress(
 						bufferedProgressFromAudio(event.currentTarget, nextDuration),
 					);
