@@ -31,9 +31,12 @@ impl MigrationTrait for Migration {
             // SQLite accepts the Forge schema as a backwards-compatible superset in practice.
             DatabaseBackend::Sqlite => Ok(()),
             DatabaseBackend::MySql | DatabaseBackend::Postgres => {
-                manager
-                    .drop_index(aster_forge_db::drop_system_config_key_unique_index())
-                    .await?;
+                aster_forge_db::drop_index_if_exists(
+                    manager.get_connection(),
+                    aster_forge_db::SYSTEM_CONFIG_TABLE,
+                    aster_forge_db::SYSTEM_CONFIG_KEY_UNIQUE_INDEX,
+                )
+                .await?;
                 manager
                     .alter_table(
                         Table::alter()
@@ -51,12 +54,9 @@ impl MigrationTrait for Migration {
                     .alter_table(
                         Table::alter()
                             .table(SystemConfig::Table)
-                            .modify_column(
-                                ColumnDef::new(SystemConfig::Description)
-                                    .text()
-                                    .not_null()
-                                    .default(""),
-                            )
+                            .modify_column(legacy_description_column(
+                                manager.get_database_backend(),
+                            ))
                             .to_owned(),
                     )
                     .await
@@ -66,6 +66,15 @@ impl MigrationTrait for Migration {
             ))),
         }
     }
+}
+
+fn legacy_description_column(backend: DatabaseBackend) -> ColumnDef {
+    let mut description = ColumnDef::new(SystemConfig::Description);
+    description.text().not_null();
+    if backend != DatabaseBackend::MySql {
+        description.default("");
+    }
+    description
 }
 
 async fn align_variable_width_columns(manager: &SchemaManager<'_>) -> Result<(), DbErr> {

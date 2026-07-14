@@ -2,8 +2,6 @@
 
 use sea_orm_migration::prelude::*;
 
-use crate::index_helpers::drop_index_if_exists;
-
 #[derive(DeriveMigrationName)]
 pub struct Migration;
 
@@ -45,8 +43,8 @@ impl MigrationTrait for Migration {
     }
 
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
-        drop_index_if_exists(
-            manager,
+        aster_forge_db::drop_index_if_exists(
+            manager.get_connection(),
             "storage_policies",
             "idx_storage_policies_remote_target",
         )

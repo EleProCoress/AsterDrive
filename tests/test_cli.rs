@@ -44,6 +44,8 @@ const MIGRATION_TAG_NAME: &str = "Migrated Tag";
 const MIGRATION_TAG_NORMALIZED_NAME: &str = "migrated tag";
 const MIGRATION_TAG_COLOR: &str = "#2563eb";
 const MIGRATION_TAG_PROPERTY_NAMESPACE: &str = "system.tags";
+const MIGRATION_SCHEDULED_TASK_ID: &str = "aster_drive:migration_fixture";
+const MIGRATION_RUNTIME_LEASE_ID: &str = "aster_drive.migration_fixture";
 
 async fn setup_database_url() -> String {
     let db_path =
@@ -98,6 +100,19 @@ fn run_aster_drive_with_env(args: &[&str], envs: &[(&str, &str)]) -> std::proces
     Command::new(aster_drive_bin())
         .args(args)
         .envs(envs.iter().copied())
+        .output()
+        .expect("aster_drive binary should run")
+}
+
+fn run_aster_drive_with_env_in_dir(
+    args: &[&str],
+    envs: &[(&str, &str)],
+    current_dir: &std::path::Path,
+) -> std::process::Output {
+    Command::new(aster_drive_bin())
+        .args(args)
+        .envs(envs.iter().copied())
+        .current_dir(current_dir)
         .output()
         .expect("aster_drive binary should run")
 }
@@ -222,7 +237,46 @@ async fn seed_migration_fixture(database_url: &str) -> i64 {
     seed_remote_node_fixture(state.writer_db()).await;
     seed_user_invitation_fixture(state.writer_db()).await;
     seed_tag_fixture(state.writer_db(), file_id).await;
+    seed_runtime_coordination_fixture(state.writer_db()).await;
     file_id
+}
+
+async fn seed_runtime_coordination_fixture(db: &DatabaseConnection) {
+    let created_at = chrono::DateTime::parse_from_rfc3339("2026-07-13T01:00:00Z")
+        .unwrap()
+        .with_timezone(&Utc);
+    let last_claimed_at = created_at + Duration::minutes(15);
+    let last_finished_at = created_at + Duration::minutes(20);
+    let next_run_at = created_at + Duration::hours(1);
+
+    aster_forge_db::scheduled_task::ActiveModel {
+        task_id: Set(MIGRATION_SCHEDULED_TASK_ID.to_string()),
+        namespace: Set("aster_drive".to_string()),
+        task_name: Set("migration_fixture".to_string()),
+        display_name: Set("Migration fixture".to_string()),
+        next_run_at: Set(next_run_at),
+        claim_owner_id: Set(None),
+        claim_expires_at: Set(None),
+        last_claimed_at: Set(Some(last_claimed_at)),
+        last_finished_at: Set(Some(last_finished_at)),
+        created_at: Set(created_at),
+        updated_at: Set(last_finished_at),
+    }
+    .insert(db)
+    .await
+    .unwrap();
+
+    aster_forge_db::runtime_lease::ActiveModel {
+        lease_id: Set(MIGRATION_RUNTIME_LEASE_ID.to_string()),
+        owner_id: Set("old-runtime".to_string()),
+        expires_at: Set(created_at + Duration::hours(2)),
+        last_renewed_at: Set(created_at + Duration::minutes(30)),
+        created_at: Set(created_at),
+        updated_at: Set(created_at + Duration::minutes(30)),
+    }
+    .insert(db)
+    .await
+    .unwrap();
 }
 
 async fn seed_passkey_fixture(db: &DatabaseConnection) {
@@ -681,6 +735,18 @@ async fn assert_migrated_fixture(
         &format!("SELECT color FROM tags WHERE name = '{MIGRATION_TAG_NAME}'"),
     )
     .await;
+    let scheduled_task =
+        aster_forge_db::scheduled_task::Entity::find_by_id(MIGRATION_SCHEDULED_TASK_ID.to_string())
+            .one(&target_db)
+            .await
+            .unwrap()
+            .expect("scheduled task catalog row should migrate");
+    let runtime_lease =
+        aster_forge_db::runtime_lease::Entity::find_by_id(MIGRATION_RUNTIME_LEASE_ID.to_string())
+            .one(&target_db)
+            .await
+            .unwrap()
+            .expect("runtime lease row should migrate");
 
     assert_eq!(users, 1);
     assert_eq!(folders, 1);
@@ -714,6 +780,35 @@ async fn assert_migrated_fixture(
         MIGRATION_MASTER_STORAGE_NAMESPACE
     );
     assert_eq!(migrated_tag_color, MIGRATION_TAG_COLOR);
+    assert_eq!(scheduled_task.namespace, "aster_drive");
+    assert_eq!(scheduled_task.task_name, "migration_fixture");
+    assert_eq!(
+        scheduled_task.next_run_at,
+        chrono::DateTime::parse_from_rfc3339("2026-07-13T02:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc)
+    );
+    assert_eq!(
+        scheduled_task.last_finished_at,
+        Some(
+            chrono::DateTime::parse_from_rfc3339("2026-07-13T01:20:00Z")
+                .unwrap()
+                .with_timezone(&Utc)
+        )
+    );
+    assert_eq!(runtime_lease.owner_id, "old-runtime");
+    assert_eq!(
+        runtime_lease.expires_at,
+        chrono::DateTime::parse_from_rfc3339("2026-07-13T03:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc)
+    );
+    assert_eq!(
+        runtime_lease.last_renewed_at,
+        chrono::DateTime::parse_from_rfc3339("2026-07-13T01:30:00Z")
+            .unwrap()
+            .with_timezone(&Utc)
+    );
 }
 
 #[test]
@@ -808,6 +903,11 @@ async fn test_root_binary_config_set_and_get_round_trip() {
         String::from_utf8_lossy(&set_output.stderr)
     );
     let set_json: Value = serde_json::from_slice(&set_output.stdout).expect("set output json");
+    assert!(
+        set_output.stderr.is_empty(),
+        "structured config success stderr should be empty: {}",
+        String::from_utf8_lossy(&set_output.stderr)
+    );
     assert_eq!(set_json["ok"], true);
     assert_eq!(
         set_json["data"]["value"],
@@ -1598,6 +1698,88 @@ async fn test_root_binary_config_delete_rejects_system_config_key() {
 }
 
 #[tokio::test]
+async fn test_root_binary_config_json_error_stays_clean_when_default_config_is_created() {
+    let database_url = setup_database_url().await;
+    let current_dir = std::env::temp_dir().join(format!(
+        "asterdrive-cli-config-clean-json-{}",
+        uuid::Uuid::new_v4()
+    ));
+    std::fs::create_dir_all(&current_dir).unwrap();
+
+    let output = run_aster_drive_with_env_in_dir(
+        &[
+            "config",
+            "--database-url",
+            &database_url,
+            "--output-format",
+            "json",
+            "delete",
+            "--key",
+            "public_site_url",
+        ],
+        &[],
+        &current_dir,
+    );
+
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+    let err_json: Value =
+        serde_json::from_slice(&output.stderr).expect("stderr should be one JSON document");
+    assert_eq!(err_json["ok"], false);
+    assert_eq!(err_json["error"]["code"], "E013");
+    assert!(current_dir.join("data/config.toml").exists());
+
+    std::fs::remove_dir_all(current_dir).unwrap();
+}
+
+#[tokio::test]
+async fn test_root_binary_database_migrate_rejects_current_history_with_missing_runtime_lease_table()
+ {
+    let source_database_url = setup_database_url().await;
+    let target_database_url = setup_database_url().await;
+    let target_db = db::connect_with_metrics(
+        &DatabaseConfig {
+            url: target_database_url.clone(),
+            pool_size: 1,
+            retry_count: 0,
+        },
+        aster_drive::metrics::NoopMetrics::arc(),
+    )
+    .await
+    .unwrap();
+    target_db
+        .execute_raw(Statement::from_string(
+            DbBackend::Sqlite,
+            "DROP TABLE runtime_leases",
+        ))
+        .await
+        .unwrap();
+    target_db.close().await.unwrap();
+
+    let output = run_aster_drive(&[
+        "database-migrate",
+        "--verify-only",
+        "--source-database-url",
+        &source_database_url,
+        "--target-database-url",
+        &target_database_url,
+    ]);
+
+    assert!(
+        !output.status.success(),
+        "verify-only must reject migration history/schema drift"
+    );
+    let error_json: Value = serde_json::from_slice(&output.stderr)
+        .expect("schema drift failure should remain structured JSON");
+    assert!(
+        error_json["error"]["message"]
+            .as_str()
+            .is_some_and(|message| message.contains(aster_forge_db::RUNTIME_LEASES_TABLE)),
+        "schema drift error should name the missing runtime lease table: {error_json}"
+    );
+}
+
+#[tokio::test]
 async fn test_root_binary_database_migrate_sqlite_to_postgres_happy_path() {
     let source_db_path = std::env::temp_dir().join(format!(
         "asterdrive-cli-migrate-{}.db",
@@ -1629,6 +1811,19 @@ async fn test_root_binary_database_migrate_sqlite_to_postgres_happy_path() {
     assert_eq!(output_json["data"]["rolled_back"], false);
     assert_eq!(output_json["data"]["resume"]["enabled"], true);
     assert_eq!(output_json["data"]["resume"]["resumed"], false);
+    let migrated_tables = output_json["data"]["tables"]
+        .as_array()
+        .expect("database-migrate tables should be an array");
+    assert!(
+        migrated_tables
+            .iter()
+            .any(|table| table["name"] == aster_forge_db::SCHEDULED_TASKS_TABLE)
+    );
+    assert!(
+        migrated_tables
+            .iter()
+            .any(|table| table["name"] == aster_forge_db::RUNTIME_LEASES_TABLE)
+    );
     assert_eq!(
         output_json["data"]["source"]["database_url"],
         format!(

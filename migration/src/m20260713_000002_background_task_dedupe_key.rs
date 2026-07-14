@@ -34,15 +34,12 @@ impl MigrationTrait for Migration {
     }
 
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
-        manager
-            .drop_index(
-                Index::drop()
-                    .name("idx_background_tasks_dedupe_key_unique")
-                    .table(BackgroundTasks::Table)
-                    .if_exists()
-                    .to_owned(),
-            )
-            .await?;
+        aster_forge_db::drop_index_if_exists(
+            manager.get_connection(),
+            "background_tasks",
+            "idx_background_tasks_dedupe_key_unique",
+        )
+        .await?;
         manager
             .alter_table(
                 Table::alter()

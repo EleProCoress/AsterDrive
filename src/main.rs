@@ -206,7 +206,10 @@ async fn main() -> std::io::Result<()> {
             .map_err(io_other)?;
 
     // 1. 加载配置（会自动创建 data/config.toml）
-    aster_drive::config::init_config().map_err(io_other)?;
+    let config_load_report = aster_drive::config::init_config().map_err(io_other)?;
+    for message in config_load_report.messages() {
+        eprintln!("{message}");
+    }
     let cfg = aster_drive::config::get_config();
     let runtime_mode = aster_drive::config::node_mode::start_mode(cfg.as_ref());
     if let Some(config_path) = bootstrap_config_path.as_ref()

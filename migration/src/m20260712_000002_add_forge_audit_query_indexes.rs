@@ -15,14 +15,19 @@ impl MigrationTrait for Migration {
     }
 
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
-        for index in [
-            aster_forge_db::drop_audit_logs_entity_type_created_id_index(),
-            aster_forge_db::drop_audit_logs_action_created_id_index(),
-            aster_forge_db::drop_audit_logs_user_created_id_index(),
-            aster_forge_db::drop_audit_logs_created_id_index(),
-            aster_forge_db::drop_audit_logs_action_created_user_index(),
+        for index_name in [
+            aster_forge_db::AUDIT_LOG_ENTITY_TYPE_CREATED_ID_INDEX,
+            aster_forge_db::AUDIT_LOG_ACTION_CREATED_ID_INDEX,
+            aster_forge_db::AUDIT_LOG_USER_CREATED_ID_INDEX,
+            aster_forge_db::AUDIT_LOG_CREATED_ID_INDEX,
+            aster_forge_db::AUDIT_LOG_ACTION_CREATED_USER_INDEX,
         ] {
-            manager.drop_index(index).await?;
+            aster_forge_db::drop_index_if_exists(
+                manager.get_connection(),
+                aster_forge_db::AUDIT_LOGS_TABLE,
+                index_name,
+            )
+            .await?;
         }
         Ok(())
     }

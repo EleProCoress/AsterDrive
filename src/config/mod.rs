@@ -22,6 +22,7 @@ pub mod system_config;
 pub mod webdav;
 pub mod wopi;
 
+pub use loader::ConfigLoadReport;
 pub use runtime_config::RuntimeConfig;
 pub use schema::{
     AuthConfig, Config, DatabaseConfig, NetworkTrustConfig, RateLimitConfig, RateLimitTier,
@@ -41,10 +42,10 @@ pub fn ensure_default_config_for_current_dir(
     loader::ensure_default_config_for_current_dir(default)
 }
 
-pub fn init_config() -> crate::errors::Result<()> {
-    let cfg = loader::load()?;
-    CONFIG.get_or_init(|| Arc::new(cfg));
-    Ok(())
+pub fn init_config() -> crate::errors::Result<ConfigLoadReport> {
+    let loaded = loader::load()?;
+    CONFIG.get_or_init(|| Arc::new(loaded.config));
+    Ok(loaded.report)
 }
 
 #[allow(clippy::expect_used)]

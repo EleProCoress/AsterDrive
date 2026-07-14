@@ -9,7 +9,44 @@ use config::{Config as RawConfig, Environment, File, FileFormat};
 use std::path::{Path, PathBuf};
 use toml_edit::{DocumentMut, Item, Table, value};
 
-pub fn load() -> Result<Config> {
+#[derive(Debug)]
+pub struct LoadedConfig {
+    pub config: Config,
+    pub report: ConfigLoadReport,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConfigLoadReport {
+    config_path: PathBuf,
+    default_created: bool,
+    stable_defaults_added: bool,
+}
+
+impl ConfigLoadReport {
+    pub fn messages(&self) -> Vec<String> {
+        let mut messages = Vec::with_capacity(4);
+        if self.default_created {
+            messages.push(format!(
+                "[INFO] Default configuration written to: {}",
+                self.config_path.display()
+            ));
+            messages.push("[INFO] Please review and modify it as needed.".to_string());
+        }
+        if self.stable_defaults_added {
+            messages.push(format!(
+                "[INFO] Added generated stable configuration keys to: {}",
+                self.config_path.display()
+            ));
+        }
+        messages.push(format!(
+            "[INFO] Configuration loaded from: {}",
+            self.config_path.display()
+        ));
+        messages
+    }
+}
+
+pub fn load() -> Result<LoadedConfig> {
     let base_dir = std::env::current_dir()
         .map_aster_err_ctx("failed to resolve current dir", AsterError::config_error)?;
     let env_database_url = std::env::var("ASTER__DATABASE__URL").ok();
@@ -28,11 +65,12 @@ fn load_from_dir(
     base_dir: &Path,
     env_database_url: Option<&str>,
     include_env: bool,
-) -> Result<Config> {
+) -> Result<LoadedConfig> {
     let config_path = base_dir.join(DEFAULT_CONFIG_PATH);
 
-    ensure_default_config_exists(&config_path, &Config::default())?;
+    let default_created = ensure_default_config_exists(&config_path, &Config::default())?;
     let stable_defaults_config = ensure_stable_default_config_keys(&config_path, None)?;
+    let stable_defaults_added = stable_defaults_config.is_some();
 
     let mut builder = RawConfig::builder();
     builder = match stable_defaults_config {
@@ -62,19 +100,23 @@ fn load_from_dir(
 
     resolve_loaded_paths(base_dir, &config_path, &mut cfg)?;
 
-    eprintln!(
-        "[INFO] Configuration loaded from: {}",
-        config_path.display()
-    );
-    Ok(cfg)
+    Ok(LoadedConfig {
+        config: cfg,
+        report: ConfigLoadReport {
+            config_path,
+            default_created,
+            stable_defaults_added,
+        },
+    })
 }
 
-fn ensure_default_config_exists(config_path: &Path, default: &Config) -> Result<()> {
+fn ensure_default_config_exists(config_path: &Path, default: &Config) -> Result<bool> {
     if config_path.exists() {
-        return Ok(());
+        return Ok(false);
     }
 
-    create_default_config(config_path, default)
+    create_default_config(config_path, default)?;
+    Ok(true)
 }
 
 fn create_default_config(config_path: &Path, default: &Config) -> Result<()> {
@@ -100,11 +142,6 @@ fn create_default_config(config_path: &Path, default: &Config) -> Result<()> {
         AsterError::config_error,
     )?;
 
-    eprintln!(
-        "[INFO] Default configuration written to: {}",
-        config_path.display()
-    );
-    eprintln!("[INFO] Please review and modify it as needed.");
     Ok(())
 }
 
@@ -157,19 +194,10 @@ fn ensure_stable_default_config_keys(
 
     let updated = doc.to_string();
     if let Err(error) = std::fs::write(config_path, &updated) {
-        eprintln!(
-            "[ERROR] Failed to write generated stable configuration keys to {}: {error}. Fix config file permissions before starting.",
-            config_path.display()
-        );
         return Err(AsterError::config_error(format!(
-            "failed to persist generated stable configuration keys to {}: {error}",
+            "failed to persist generated stable configuration keys to {}: {error}. Fix config file permissions before starting",
             config_path.display()
         )));
-    } else {
-        eprintln!(
-            "[INFO] Added generated stable configuration keys to: {}",
-            config_path.display()
-        );
     }
     Ok(Some(updated))
 }
@@ -285,7 +313,9 @@ mod tests {
     fn load_creates_default_config_under_data_dir() {
         let dir = make_temp_dir("create-default");
 
-        let cfg = load_from_dir(&dir, None, false).unwrap();
+        let loaded = load_from_dir(&dir, None, false).unwrap();
+        let messages = loaded.report.messages();
+        let cfg = loaded.config;
         let generated = std::fs::read_to_string(dir.join(DEFAULT_CONFIG_PATH)).unwrap();
 
         assert_eq!(cfg.database.url, DEFAULT_SQLITE_DATABASE_URL);
@@ -314,6 +344,16 @@ mod tests {
         assert!(generated.contains("direct_link_secret"));
         assert!(generated.contains("mfa_secret_key"));
         assert!(generated.contains("storage_credential_secret_key"));
+        assert!(
+            messages
+                .iter()
+                .any(|message| { message.starts_with("[INFO] Default configuration written to:") })
+        );
+        assert!(
+            messages
+                .iter()
+                .any(|message| { message.starts_with("[INFO] Configuration loaded from:") })
+        );
 
         let _ = std::fs::remove_dir_all(dir);
     }
@@ -336,7 +376,7 @@ jwt_secret = "{legacy_jwt_secret}"
                 .as_bytes(),
             );
 
-            let cfg = load_from_dir(&dir, None, false).unwrap();
+            let cfg = load_from_dir(&dir, None, false).unwrap().config;
             let updated = std::fs::read_to_string(dir.join(DEFAULT_CONFIG_PATH)).unwrap();
 
             assert_eq!(cfg.auth.jwt_secret, legacy_jwt_secret);
@@ -371,7 +411,7 @@ url = "sqlite://asterdrive.db?mode=rwc"
 "#,
             );
 
-            let cfg = load_from_dir(&dir, None, false).unwrap();
+            let cfg = load_from_dir(&dir, None, false).unwrap().config;
             let updated = std::fs::read_to_string(dir.join(DEFAULT_CONFIG_PATH)).unwrap();
 
             assert!(!cfg.auth.jwt_secret.is_empty());
@@ -406,7 +446,7 @@ mfa_secret_key = "file-mfa-secret"
 "#,
                 );
 
-                let cfg = load_from_dir(&dir, None, true).unwrap();
+                let cfg = load_from_dir(&dir, None, true).unwrap().config;
                 let updated = std::fs::read_to_string(dir.join(DEFAULT_CONFIG_PATH)).unwrap();
 
                 assert_eq!(cfg.auth.direct_link_secret, "env-direct-link-secret");
@@ -442,7 +482,7 @@ url = "sqlite://custom.db?mode=rwc"
 "#,
         );
 
-        let cfg = load_from_dir(&dir, None, false).unwrap();
+        let cfg = load_from_dir(&dir, None, false).unwrap().config;
 
         assert_eq!(cfg.database.url, DEFAULT_SQLITE_DATABASE_URL);
         assert!(dir.join("config.toml").exists());
@@ -456,7 +496,7 @@ url = "sqlite://custom.db?mode=rwc"
         let dir = make_temp_dir("legacy-db");
         write(&dir.join("asterdrive.db"), b"legacy");
 
-        let cfg = load_from_dir(&dir, None, false).unwrap();
+        let cfg = load_from_dir(&dir, None, false).unwrap().config;
 
         assert_eq!(cfg.database.url, DEFAULT_SQLITE_DATABASE_URL);
         assert!(dir.join("asterdrive.db").exists());
@@ -482,7 +522,7 @@ remote_storage_target_local_root = "data/remote-storage-targets"
 "#,
         );
 
-        let cfg = load_from_dir(&dir, None, false).unwrap();
+        let cfg = load_from_dir(&dir, None, false).unwrap().config;
 
         assert_eq!(cfg.database.url, DEFAULT_SQLITE_DATABASE_URL);
         assert_eq!(cfg.server.temp_dir, DEFAULT_TEMP_DIR);
@@ -505,7 +545,7 @@ managed_ingress_local_root = "data/remote-storage-targets"
 "#,
         );
 
-        let cfg = load_from_dir(&dir, None, false).unwrap();
+        let cfg = load_from_dir(&dir, None, false).unwrap().config;
 
         assert_eq!(
             cfg.server.follower.remote_storage_target_local_root,
@@ -520,7 +560,9 @@ managed_ingress_local_root = "data/remote-storage-targets"
         let dir = make_temp_dir("env-db-url-relative");
         write(&dir.join("asterdrive.db"), b"legacy");
 
-        let cfg = load_from_dir(&dir, Some("sqlite://custom.db?mode=rwc"), false).unwrap();
+        let cfg = load_from_dir(&dir, Some("sqlite://custom.db?mode=rwc"), false)
+            .unwrap()
+            .config;
 
         assert_eq!(cfg.database.url, "sqlite://data/custom.db?mode=rwc");
         assert!(dir.join(DEFAULT_CONFIG_PATH).exists());
@@ -534,7 +576,9 @@ managed_ingress_local_root = "data/remote-storage-targets"
     fn load_keeps_data_prefixed_database_override_without_double_data() {
         let dir = make_temp_dir("env-db-url-legacy-root-relative");
 
-        let cfg = load_from_dir(&dir, Some("sqlite://data/custom.db?mode=rwc"), false).unwrap();
+        let cfg = load_from_dir(&dir, Some("sqlite://data/custom.db?mode=rwc"), false)
+            .unwrap()
+            .config;
 
         assert_eq!(cfg.database.url, "sqlite://data/custom.db?mode=rwc");
 
@@ -546,7 +590,9 @@ managed_ingress_local_root = "data/remote-storage-targets"
         let dir = make_temp_dir("env-db-url-relative-default");
         write(&dir.join("asterdrive.db"), b"legacy");
 
-        let cfg = load_from_dir(&dir, Some("sqlite://asterdrive.db?mode=rwc"), false).unwrap();
+        let cfg = load_from_dir(&dir, Some("sqlite://asterdrive.db?mode=rwc"), false)
+            .unwrap()
+            .config;
 
         assert_eq!(cfg.database.url, DEFAULT_SQLITE_DATABASE_URL);
 
@@ -558,7 +604,9 @@ managed_ingress_local_root = "data/remote-storage-targets"
         let dir = make_temp_dir("env-db-url-data-prefixed-default");
         write(&dir.join("asterdrive.db"), b"legacy");
 
-        let cfg = load_from_dir(&dir, Some("sqlite://data/asterdrive.db?mode=rwc"), false).unwrap();
+        let cfg = load_from_dir(&dir, Some("sqlite://data/asterdrive.db?mode=rwc"), false)
+            .unwrap()
+            .config;
 
         assert_eq!(cfg.database.url, DEFAULT_SQLITE_DATABASE_URL);
 
