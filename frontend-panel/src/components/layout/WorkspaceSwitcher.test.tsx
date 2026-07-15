@@ -13,6 +13,11 @@ const teamServiceMocks = vi.hoisted(() => ({
 }));
 
 const mockState = vi.hoisted(() => ({
+	location: {
+		hash: "",
+		pathname: "/",
+		search: "",
+	},
 	navigate: vi.fn(),
 	workspace: {
 		kind: "personal" as const,
@@ -36,6 +41,7 @@ vi.mock("react-i18next", () => ({
 }));
 
 vi.mock("react-router-dom", () => ({
+	useLocation: () => mockState.location,
 	useNavigate: () => mockState.navigate,
 }));
 
@@ -222,6 +228,11 @@ describe("WorkspaceSwitcher", () => {
 		vi.useRealTimers();
 		dateNowSpy = vi.spyOn(Date, "now");
 		teamServiceMocks.list.mockReset();
+		mockState.location = {
+			hash: "",
+			pathname: "/",
+			search: "",
+		};
 		mockState.navigate.mockReset();
 		mockState.workspace = { kind: "personal" };
 		mockState.teams = [];
@@ -275,6 +286,7 @@ describe("WorkspaceSwitcher", () => {
 
 	it("renders the current team and navigates to another workspace", () => {
 		mockState.workspace = { kind: "team", teamId: 3 };
+		mockState.location.pathname = "/teams/3";
 		mockState.teams = [
 			{ id: 3, name: "Core" },
 			{ id: 9, name: "Design" },
@@ -290,6 +302,46 @@ describe("WorkspaceSwitcher", () => {
 			"data-value",
 			"team:3",
 		);
+
+		fireEvent.click(screen.getByRole("button", { name: /^Design/ }));
+
+		expect(mockState.navigate).toHaveBeenCalledWith("/teams/9");
+	});
+
+	it("keeps the current team surface when switching between teams", () => {
+		mockState.workspace = { kind: "team", teamId: 3 };
+		mockState.location = {
+			hash: "#results",
+			pathname: "/teams/3/search",
+			search: "?q=report&type=file",
+		};
+		mockState.teams = [
+			{ id: 3, name: "Core" },
+			{ id: 9, name: "Design" },
+		];
+
+		render(<WorkspaceSwitcher />);
+
+		fireEvent.click(screen.getByRole("button", { name: /^Design/ }));
+
+		expect(mockState.navigate).toHaveBeenCalledWith(
+			"/teams/9/search?q=report&type=file#results",
+		);
+	});
+
+	it("returns to the target team root from a team-owned folder route", () => {
+		mockState.workspace = { kind: "team", teamId: 3 };
+		mockState.location = {
+			hash: "",
+			pathname: "/teams/3/folder/42",
+			search: "?name=Private",
+		};
+		mockState.teams = [
+			{ id: 3, name: "Core" },
+			{ id: 9, name: "Design" },
+		];
+
+		render(<WorkspaceSwitcher />);
 
 		fireEvent.click(screen.getByRole("button", { name: /^Design/ }));
 

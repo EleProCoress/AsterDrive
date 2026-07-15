@@ -282,7 +282,7 @@ describe("FolderTree", () => {
 		await renderTree();
 
 		expect(await screen.findByText("Alpha")).toBeInTheDocument();
-		const rootRow = screen.getByRole("button", { name: /root/i });
+		expect(screen.getByRole("button", { name: /root/i })).toBeInTheDocument();
 
 		const collapseButton = screen.getByRole("button", {
 			name: "collapse_tree",

@@ -260,6 +260,22 @@ describe("router", () => {
 		).toBe(true);
 	});
 
+	it("reuses one workspace route element across personal and team branches", async () => {
+		const routes = (await loadRoutes()) as TestRoute[];
+		const protectedRoute = routes.find((route) =>
+			(route.children ?? []).some((child) => child.path === "/teams/:teamId"),
+		);
+		const protectedChildren = protectedRoute?.children ?? [];
+		const personalWorkspaceRoute = protectedChildren.find(
+			(route) => route.path == null && route.children?.length,
+		);
+		const teamWorkspaceRoute = protectedChildren.find(
+			(route) => route.path === "/teams/:teamId",
+		);
+
+		expect(personalWorkspaceRoute?.element).toBe(teamWorkspaceRoute?.element);
+	});
+
 	it("registers root and canonical subfolder routes for public folder shares", async () => {
 		const routes = (await loadRoutes()) as TestRoute[];
 		const shareRoute = routes.find((route) => route.path === "/s/:token");

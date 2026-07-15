@@ -5,9 +5,8 @@ import { logger } from "@/lib/logger";
 import { AdminRoute } from "./AdminRoute";
 import { Loading } from "./Loading";
 import { LoginGuard } from "./LoginGuard";
-import { PersonalWorkspaceRoute } from "./PersonalWorkspaceRoute";
 import { ProtectedRoute } from "./ProtectedRoute";
-import { TeamWorkspaceRoute } from "./TeamWorkspaceRoute";
+import { WorkspaceRoute } from "./WorkspaceRoute";
 
 function lazyPage<TProps extends object>(
 	load: () => Promise<{ default: ComponentType<TProps> }>,
@@ -122,6 +121,8 @@ const shareViewElement = (
 	</Suspense>
 );
 
+const workspaceRouteElement = <WorkspaceRoute />;
+
 export const router = createBrowserRouter([
 	{
 		element: <LoginGuard />,
@@ -160,7 +161,7 @@ export const router = createBrowserRouter([
 		errorElement,
 		children: [
 			{
-				element: <PersonalWorkspaceRoute />,
+				element: workspaceRouteElement,
 				children: [
 					{ path: "/", element: <FileBrowserPage /> },
 					{ path: "/folder/:folderId", element: <FileBrowserPage /> },
@@ -173,7 +174,7 @@ export const router = createBrowserRouter([
 			},
 			{
 				path: "/teams/:teamId",
-				element: <TeamWorkspaceRoute />,
+				element: workspaceRouteElement,
 				children: [
 					{ index: true, element: <FileBrowserPage /> },
 					{ path: "folder/:folderId", element: <FileBrowserPage /> },

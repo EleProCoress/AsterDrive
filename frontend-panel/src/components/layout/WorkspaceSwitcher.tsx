@@ -1,7 +1,7 @@
 import type { ChangeEvent } from "react";
 import { useEffect, useMemo, useReducer, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import {
 	DropdownMenu,
@@ -24,7 +24,7 @@ import {
 	type Workspace,
 	workspaceEquals,
 	workspaceKey,
-	workspaceRootPath,
+	workspaceSwitchPath,
 } from "@/lib/workspace";
 import { teamService } from "@/services/teamService";
 import { useTeamStore } from "@/stores/teamStore";
@@ -135,6 +135,7 @@ export function WorkspaceSwitcher({
 	variant = "topbar",
 }: WorkspaceSwitcherProps) {
 	const { t } = useTranslation("core");
+	const location = useLocation();
 	const navigate = useNavigate();
 	const workspace = useWorkspaceStore((state) => state.workspace);
 	const teams = useTeamStore((state) => state.teams);
@@ -214,7 +215,7 @@ export function WorkspaceSwitcher({
 		workspaceSwitcherRestoreOpenUntil[variant] =
 			Date.now() + WORKSPACE_SWITCHER_RESTORE_OPEN_MS;
 		setMenuOpen(true);
-		navigate(workspaceRootPath(nextWorkspace));
+		navigate(workspaceSwitchPath(workspace, nextWorkspace, location));
 	};
 	const handleManageTeams = () => {
 		workspaceSwitcherRestoreOpenUntil[variant] = 0;

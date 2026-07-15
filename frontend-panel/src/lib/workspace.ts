@@ -20,6 +20,10 @@ export const FILE_CATEGORY_BY_ROUTE_SEGMENT = Object.fromEntries(
 	]),
 ) as Record<string, FileCategory>;
 
+const FILE_CATEGORY_ROUTE_SEGMENTS = new Set<string>(
+	Object.values(CATEGORY_ROUTE_SEGMENTS),
+);
+
 export interface PersonalWorkspace {
 	kind: "personal";
 }
@@ -30,6 +34,12 @@ export interface TeamWorkspace {
 }
 
 export type Workspace = PersonalWorkspace | TeamWorkspace;
+
+interface WorkspaceRouteLocation {
+	pathname: string;
+	search?: string;
+	hash?: string;
+}
 
 export const PERSONAL_WORKSPACE: PersonalWorkspace = { kind: "personal" };
 
@@ -61,6 +71,48 @@ export function buildWorkspacePath(workspace: Workspace, path: string) {
 
 export function workspaceRootPath(workspace: Workspace) {
 	return isTeamWorkspace(workspace) ? `/teams/${workspace.teamId}` : "/";
+}
+
+export function workspaceSwitchPath(
+	currentWorkspace: Workspace,
+	nextWorkspace: Workspace,
+	location: WorkspaceRouteLocation,
+) {
+	const nextRootPath = workspaceRootPath(nextWorkspace);
+	if (!isTeamWorkspace(currentWorkspace) || !isTeamWorkspace(nextWorkspace)) {
+		return nextRootPath;
+	}
+
+	const currentRootPath = workspaceRootPath(currentWorkspace);
+	if (
+		location.pathname === currentRootPath ||
+		location.pathname === `${currentRootPath}/`
+	) {
+		return nextRootPath;
+	}
+
+	if (!location.pathname.startsWith(`${currentRootPath}/`)) {
+		return nextRootPath;
+	}
+
+	const relativePath = location.pathname.slice(currentRootPath.length);
+	const normalizedRelativePath =
+		relativePath.length > 1 && relativePath.endsWith("/")
+			? relativePath.slice(0, -1)
+			: relativePath;
+	// Folder ids belong to one workspace, so only retain workspace-agnostic views.
+	const categorySegment = normalizedRelativePath.startsWith("/category/")
+		? normalizedRelativePath.slice("/category/".length)
+		: null;
+	const preservesCurrentSurface =
+		(categorySegment !== null &&
+			FILE_CATEGORY_ROUTE_SEGMENTS.has(categorySegment)) ||
+		["/search", "/shares", "/tasks", "/trash"].includes(normalizedRelativePath);
+	if (!preservesCurrentSurface) {
+		return nextRootPath;
+	}
+
+	return `${nextRootPath}${normalizedRelativePath}${location.search ?? ""}${location.hash ?? ""}`;
 }
 
 export function workspaceFolderPath(
