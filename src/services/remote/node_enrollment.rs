@@ -183,6 +183,7 @@ fn should_treat_bootstrap_error_as_already_configured(error: &AsterError) -> boo
         error.message(),
         enrollment::ENROLLMENT_TOKEN_COMPLETED_MESSAGE
             | enrollment::ENROLLMENT_TOKEN_EXPIRED_MESSAGE
+            | enrollment::ENROLLMENT_TOKEN_REDEEMED_MESSAGE
             | enrollment::ENROLLMENT_TOKEN_REPLACED_MESSAGE
     )
 }
@@ -446,6 +447,24 @@ mod tests {
 
         assert!(path.is_none());
         assert!(!called.get());
+    }
+
+    #[test]
+    fn bootstrap_terminal_error_classification_covers_all_enrollment_end_states() {
+        for message in [
+            enrollment::ENROLLMENT_TOKEN_COMPLETED_MESSAGE,
+            enrollment::ENROLLMENT_TOKEN_EXPIRED_MESSAGE,
+            enrollment::ENROLLMENT_TOKEN_REDEEMED_MESSAGE,
+            enrollment::ENROLLMENT_TOKEN_REPLACED_MESSAGE,
+        ] {
+            assert!(should_treat_bootstrap_error_as_already_configured(
+                &AsterError::validation_error(message)
+            ));
+        }
+
+        assert!(!should_treat_bootstrap_error_as_already_configured(
+            &AsterError::validation_error("temporary enrollment failure")
+        ));
     }
 
     #[tokio::test]

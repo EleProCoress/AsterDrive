@@ -19,6 +19,7 @@ pub const ENROLLMENT_TOKEN_REPLACED_MESSAGE: &str =
     "enrollment token has been replaced by a newer session";
 pub const ENROLLMENT_TOKEN_COMPLETED_MESSAGE: &str = "enrollment token has already been completed";
 pub const ENROLLMENT_TOKEN_EXPIRED_MESSAGE: &str = "enrollment token has expired";
+pub const ENROLLMENT_TOKEN_REDEEMED_MESSAGE: &str = "enrollment token has already been redeemed";
 pub const REMOTE_NODE_ENROLLMENT_ALREADY_COMPLETED_MESSAGE: &str =
     "remote node enrollment has already been completed";
 
@@ -128,27 +129,17 @@ pub async fn redeem_enrollment_token<S: SharedRuntimeState>(
 
     let token_hash = aster_forge_crypto::sha256_hex(trimmed.as_bytes());
     transaction::with_transaction(state.writer_db(), async |txn| {
+        let now = Utc::now();
+        let claimed =
+            follower_enrollment_session_repo::claim_redeemable_by_token_hash(txn, &token_hash, now)
+                .await?;
         let enrollment = follower_enrollment_session_repo::find_by_token_hash(txn, &token_hash)
             .await?
             .ok_or_else(|| AsterError::validation_error("invalid enrollment token"))?;
 
-        if enrollment.invalidated_at.is_some() {
-            return Err(AsterError::validation_error(
-                ENROLLMENT_TOKEN_REPLACED_MESSAGE,
-            ));
+        if !claimed {
+            return Err(redeem_claim_error(&enrollment, now));
         }
-        if enrollment.acked_at.is_some() {
-            return Err(AsterError::validation_error(
-                ENROLLMENT_TOKEN_COMPLETED_MESSAGE,
-            ));
-        }
-        if enrollment.expires_at <= Utc::now() {
-            return Err(AsterError::validation_error(
-                ENROLLMENT_TOKEN_EXPIRED_MESSAGE,
-            ));
-        }
-
-        follower_enrollment_session_repo::mark_redeemed_if_needed(txn, enrollment.id).await?;
 
         let master_url = site_url::public_site_url(state.runtime_config()).ok_or_else(|| {
             validation_error_with_code(
@@ -235,4 +226,24 @@ fn normalize_ack_token_hash(value: &str) -> String {
     }
 
     aster_forge_crypto::sha256_hex(value.as_bytes())
+}
+
+fn redeem_claim_error(
+    enrollment: &follower_enrollment_session::Model,
+    now: chrono::DateTime<Utc>,
+) -> AsterError {
+    if enrollment.invalidated_at.is_some() {
+        return AsterError::validation_error(ENROLLMENT_TOKEN_REPLACED_MESSAGE);
+    }
+    if enrollment.acked_at.is_some() {
+        return AsterError::validation_error(ENROLLMENT_TOKEN_COMPLETED_MESSAGE);
+    }
+    if enrollment.expires_at <= now {
+        return AsterError::validation_error(ENROLLMENT_TOKEN_EXPIRED_MESSAGE);
+    }
+    if enrollment.redeemed_at.is_some() {
+        return AsterError::validation_error(ENROLLMENT_TOKEN_REDEEMED_MESSAGE);
+    }
+
+    AsterError::validation_error("enrollment token is no longer redeemable")
 }

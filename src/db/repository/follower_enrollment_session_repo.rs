@@ -103,18 +103,25 @@ pub async fn invalidate_pending_for_managed_follower<C: ConnectionTrait>(
     Ok(result.rows_affected)
 }
 
-pub async fn mark_redeemed_if_needed<C: ConnectionTrait>(db: &C, session_id: i64) -> Result<()> {
-    FollowerEnrollmentSession::update_many()
+pub async fn claim_redeemable_by_token_hash<C: ConnectionTrait>(
+    db: &C,
+    token_hash: &str,
+    now: chrono::DateTime<Utc>,
+) -> Result<bool> {
+    let result = FollowerEnrollmentSession::update_many()
         .col_expr(
             follower_enrollment_session::Column::RedeemedAt,
-            Expr::value(Some(Utc::now())),
+            Expr::value(Some(now)),
         )
-        .filter(follower_enrollment_session::Column::Id.eq(session_id))
+        .filter(follower_enrollment_session::Column::TokenHash.eq(token_hash))
         .filter(follower_enrollment_session::Column::RedeemedAt.is_null())
+        .filter(follower_enrollment_session::Column::AckedAt.is_null())
+        .filter(follower_enrollment_session::Column::InvalidatedAt.is_null())
+        .filter(follower_enrollment_session::Column::ExpiresAt.gt(now))
         .exec(db)
         .await
         .map_err(AsterError::from)?;
-    Ok(())
+    Ok(result.rows_affected == 1)
 }
 
 pub async fn mark_acked<C: ConnectionTrait>(db: &C, session_id: i64) -> Result<bool> {
