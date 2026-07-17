@@ -196,6 +196,12 @@ On first startup, AsterDrive will automatically:
 - [Architecture](developer-docs/en/architecture.md)
 - [API overview](developer-docs/en/api/index.md)
 
+## Security
+
+- Report vulnerabilities privately through [GitHub Security Advisories](https://github.com/AsterCommunity/AsterDrive/security/advisories/new) or `report@esaps.net` — see [SECURITY.md](SECURITY.md) for the full policy
+- Published advisories: [github.com/AsterCommunity/AsterDrive/security/advisories](https://github.com/AsterCommunity/AsterDrive/security/advisories)
+- `security.txt` (RFC 9116): [drive.astercosm.com/.well-known/security.txt](https://drive.astercosm.com/.well-known/security.txt)
+
 ## Development
 
 ### Requirements

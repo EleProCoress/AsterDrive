@@ -195,6 +195,12 @@ cargo run
 - [架构文档](developer-docs/zh-CN/architecture.md)
 - [API 概览](developer-docs/zh-CN/api/index.md)
 
+## 安全
+
+- 请通过 [GitHub Security Advisories](https://github.com/AsterCommunity/AsterDrive/security/advisories/new) 或 `report@esaps.net` 私下报告漏洞——完整政策见 [SECURITY.md](SECURITY.md)
+- 已发布的安全公告：[github.com/AsterCommunity/AsterDrive/security/advisories](https://github.com/AsterCommunity/AsterDrive/security/advisories)
+- `security.txt`（RFC 9116）：[drive.astercosm.com/.well-known/security.txt](https://drive.astercosm.com/.well-known/security.txt)
+
 ## 开发
 
 ### 环境要求

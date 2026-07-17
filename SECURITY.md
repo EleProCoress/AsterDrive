@@ -93,6 +93,10 @@ When testing AsterDrive:
 
 Good-faith research that follows this policy helps the project. Activity that harms users, damages systems, or exposes private data is not acceptable.
 
+## Security Advisories
+
+Published security advisories are listed at [GitHub Security Advisories](https://github.com/AsterCommunity/AsterDrive/security/advisories). This repository also publishes an RFC 9116 `security.txt` at <https://drive.astercosm.com/.well-known/security.txt>.
+
 ## Security Updates
 
 Security fixes may be released as normal patch releases, GitHub security advisories, release notes, or mitigation guidance, depending on severity and available information.
