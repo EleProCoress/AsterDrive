@@ -26,6 +26,7 @@ use crate::errors::{
     validation_error_with_code,
 };
 use crate::runtime::{PrimaryAppState, SharedRuntimeState};
+use crate::services::files::upload::kind::resolve_upload_session_kind;
 use crate::services::files::upload::responses::ChunkUploadResponse;
 use crate::services::files::upload::scope::{load_upload_session, personal_scope, team_scope};
 use crate::services::files::upload::shared::{
@@ -54,6 +55,22 @@ enum ExistingLocalChunk {
 
 struct LocalChunkWriteLock {
     file: std::fs::File,
+}
+
+fn relay_multipart_fields(session: &upload_session::Model) -> Result<(&str, &str)> {
+    let temp_key = session.object_temp_key.as_deref().ok_or_else(|| {
+        crate::errors::upload_assembly_error_with_code(
+            ApiErrorCode::UploadSessionCorrupted,
+            "relay multipart session is missing object_temp_key",
+        )
+    })?;
+    let multipart_id = session.object_multipart_id.as_deref().ok_or_else(|| {
+        crate::errors::upload_assembly_error_with_code(
+            ApiErrorCode::UploadSessionCorrupted,
+            "relay multipart session is missing object_multipart_id",
+        )
+    })?;
+    Ok((temp_key, multipart_id))
 }
 
 impl Drop for LocalChunkWriteLock {
@@ -674,6 +691,19 @@ async fn upload_chunk_impl(
     }
 
     let expected_size = expected_chunk_size_for_upload(&session, chunk_number)?;
+    let session_kind = resolve_upload_session_kind(state, &session).await?;
+    if matches!(
+        session_kind,
+        crate::types::UploadSessionKind::ProviderPresignedSingle
+            | crate::types::UploadSessionKind::ProviderPresignedMultipart
+            | crate::types::UploadSessionKind::RemotePresignedSingle
+            | crate::types::UploadSessionKind::RemotePresignedMultipart
+    ) {
+        return Err(crate::errors::upload_assembly_error_with_code(
+            ApiErrorCode::UploadSessionCorrupted,
+            "presigned upload sessions do not accept server chunk PUT",
+        ));
+    }
     let data_len = usize_to_i64(data.len(), "chunk data length")?;
     if data_len != expected_size {
         return Err(chunk_upload_error_with_code(
@@ -682,10 +712,12 @@ async fn upload_chunk_impl(
         ));
     }
 
-    if let (Some(temp_key), Some(multipart_id)) = (
-        session.object_temp_key.as_deref(),
-        session.object_multipart_id.as_deref(),
+    if matches!(
+        session_kind,
+        crate::types::UploadSessionKind::ProviderRelayMultipart
+            | crate::types::UploadSessionKind::RemoteRelayMultipart
     ) {
+        let (temp_key, multipart_id) = relay_multipart_fields(&session)?;
         let object_part_number = chunk_number + 1;
 
         // relay multipart 下，先 claim part 再上传到对象存储。
@@ -790,7 +822,11 @@ async fn upload_chunk_impl(
     );
     let chunk_dir = paths::upload_temp_dir(&state.config().server.upload_temp_dir, upload_id);
 
-    if staging::exists(state, upload_id).await? {
+    if matches!(
+        session_kind,
+        crate::types::UploadSessionKind::OffsetStaging
+            | crate::types::UploadSessionKind::StreamStaging
+    ) {
         let _chunk_write_lock =
             acquire_local_chunk_write_lock(&chunk_dir, upload_id, chunk_number).await?;
         #[cfg(debug_assertions)]
@@ -831,8 +867,9 @@ async fn upload_chunk_impl(
         });
     }
 
-    if inspect_existing_local_chunk(&chunk_path, expected_size, upload_id, chunk_number).await?
-        == ExistingLocalChunk::Complete
+    if session_kind == crate::types::UploadSessionKind::LegacyChunkFiles
+        && inspect_existing_local_chunk(&chunk_path, expected_size, upload_id, chunk_number).await?
+            == ExistingLocalChunk::Complete
     {
         let updated = upload_session_repo::find_by_id(db, upload_id).await?;
         tracing::debug!(
@@ -931,11 +968,26 @@ async fn upload_chunk_payload_impl(
     }
 
     let expected_size = expected_chunk_size_for_upload(&session, chunk_number)?;
-
-    if let (Some(temp_key), Some(multipart_id)) = (
-        session.object_temp_key.as_deref(),
-        session.object_multipart_id.as_deref(),
+    let session_kind = resolve_upload_session_kind(state, &session).await?;
+    if matches!(
+        session_kind,
+        crate::types::UploadSessionKind::ProviderPresignedSingle
+            | crate::types::UploadSessionKind::ProviderPresignedMultipart
+            | crate::types::UploadSessionKind::RemotePresignedSingle
+            | crate::types::UploadSessionKind::RemotePresignedMultipart
     ) {
+        return Err(crate::errors::upload_assembly_error_with_code(
+            ApiErrorCode::UploadSessionCorrupted,
+            "presigned upload sessions do not accept server chunk PUT",
+        ));
+    }
+
+    if matches!(
+        session_kind,
+        crate::types::UploadSessionKind::ProviderRelayMultipart
+            | crate::types::UploadSessionKind::RemoteRelayMultipart
+    ) {
+        let (temp_key, multipart_id) = relay_multipart_fields(&session)?;
         let object_part_number = chunk_number + 1;
 
         if !upload_session_part_repo::try_claim_part(db, upload_id, object_part_number).await? {
@@ -1044,7 +1096,11 @@ async fn upload_chunk_payload_impl(
     );
     let chunk_dir = paths::upload_temp_dir(&state.config().server.upload_temp_dir, upload_id);
 
-    if staging::exists(state, upload_id).await? {
+    if matches!(
+        session_kind,
+        crate::types::UploadSessionKind::OffsetStaging
+            | crate::types::UploadSessionKind::StreamStaging
+    ) {
         let _chunk_write_lock =
             acquire_local_chunk_write_lock(&chunk_dir, upload_id, chunk_number).await?;
         #[cfg(debug_assertions)]
@@ -1093,8 +1149,9 @@ async fn upload_chunk_payload_impl(
         });
     }
 
-    if inspect_existing_local_chunk(&chunk_path, expected_size, upload_id, chunk_number).await?
-        == ExistingLocalChunk::Complete
+    if session_kind == crate::types::UploadSessionKind::LegacyChunkFiles
+        && inspect_existing_local_chunk(&chunk_path, expected_size, upload_id, chunk_number).await?
+            == ExistingLocalChunk::Complete
     {
         drain_chunk_payload_exact_size(&mut payload, expected_size, chunk_number).await?;
         let updated = upload_session_repo::find_by_id(db, upload_id).await?;
@@ -1403,6 +1460,44 @@ mod tests {
     use super::*;
     use actix_web::FromRequest;
     use std::time::Duration;
+
+    fn relay_session(
+        object_temp_key: Option<&str>,
+        object_multipart_id: Option<&str>,
+    ) -> upload_session::Model {
+        let now = chrono::Utc::now();
+        upload_session::Model {
+            id: "chunk-test".to_string(),
+            user_id: 1,
+            team_id: None,
+            frontend_client_id: None,
+            filename: "chunk-test.bin".to_string(),
+            total_size: 10,
+            chunk_size: 5,
+            total_chunks: 2,
+            received_count: 0,
+            folder_id: None,
+            policy_id: 1,
+            status: UploadSessionStatus::Uploading,
+            session_kind: None,
+            object_temp_key: object_temp_key.map(str::to_string),
+            object_multipart_id: object_multipart_id.map(str::to_string),
+            file_id: None,
+            created_at: now,
+            expires_at: now + chrono::Duration::hours(1),
+            updated_at: now,
+        }
+    }
+
+    #[test]
+    fn relay_multipart_fields_requires_both_object_identifiers() {
+        assert_eq!(
+            relay_multipart_fields(&relay_session(Some("files/temp"), Some("multipart"))).unwrap(),
+            ("files/temp", "multipart")
+        );
+        assert!(relay_multipart_fields(&relay_session(None, Some("multipart"))).is_err());
+        assert!(relay_multipart_fields(&relay_session(Some("files/temp"), None)).is_err());
+    }
 
     struct PendingMultipart;
 

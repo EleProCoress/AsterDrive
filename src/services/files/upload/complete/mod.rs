@@ -21,6 +21,7 @@ use std::time::Instant;
 use crate::entities::{file, upload_session};
 use crate::errors::Result;
 use crate::runtime::{PrimaryAppState, SharedRuntimeState};
+use crate::services::files::upload::kind::resolve_upload_session_kind;
 use crate::services::files::upload::scope::{load_upload_session, personal_scope, team_scope};
 use crate::services::files::upload::shared::find_file_by_session;
 use crate::services::ops::audit::AuditContext;
@@ -65,9 +66,26 @@ async fn complete_upload_impl_with_hints(
     let upload_id = session.id.clone();
     let completed_retry = session.status == UploadSessionStatus::Completed;
     let complete_started_at = Instant::now();
-    let plan = determine_completion_plan(&session, parts)?;
+    // Check terminal states before classifying legacy provider fields. A pre-migration row can
+    // retain an old multipart id even after its policy snapshot has changed.
+    let is_terminal = matches!(
+        session.status,
+        UploadSessionStatus::Completed
+            | UploadSessionStatus::Assembling
+            | UploadSessionStatus::Failed
+    );
+    let session_kind = if is_terminal {
+        crate::types::UploadSessionKind::LegacyChunkFiles
+    } else {
+        resolve_upload_session_kind(state, &session).await?
+    };
+    let plan = determine_completion_plan(&session, session_kind, parts)?;
     let plan_label = completion_plan_label(&plan);
-    let mode = upload_mode_label_from_completion_plan(&plan);
+    let mode = if is_terminal {
+        "completed_retry"
+    } else {
+        session_kind.as_str()
+    };
     let result = match plan {
         CompletionPlan::ReturnCompleted => find_file_by_session(state.writer_db(), &session).await,
         CompletionPlan::CompletePresigned => {
@@ -80,7 +98,13 @@ async fn complete_upload_impl_with_hints(
             complete_relay_multipart(state, session, hints.actor_username).await
         }
         CompletionPlan::CompleteChunked => {
-            complete_chunked_upload_with_actor_username(state, session, hints.actor_username).await
+            complete_chunked_upload_with_actor_username(
+                state,
+                session,
+                session_kind,
+                hints.actor_username,
+            )
+            .await
         }
     };
     tracing::debug!(
@@ -105,16 +129,6 @@ fn record_upload_completion_metric(
         .metrics()
         .record_upload_session_event(mode, "complete", status);
     state.metrics().record_file_upload(mode, status);
-}
-
-fn upload_mode_label_from_completion_plan(plan: &CompletionPlan) -> &'static str {
-    match plan {
-        CompletionPlan::CompletePresigned => "presigned",
-        CompletionPlan::CompletePresignedMultipart { .. }
-        | CompletionPlan::CompleteRelayMultipart => "presigned_multipart",
-        CompletionPlan::CompleteChunked => "chunked",
-        CompletionPlan::ReturnCompleted => "completed_retry",
-    }
 }
 
 async fn load_upload_actor_username_best_effort(
