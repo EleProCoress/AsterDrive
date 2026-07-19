@@ -35,6 +35,7 @@ import type {
 	StorageConnectorDescriptor,
 } from "@/types/api";
 import {
+	descriptorHasPolicyOptionField,
 	supportsApplicationCredentials,
 	supportsContentDedupPolicyOption,
 	supportsObjectStorageConnection,
@@ -441,6 +442,10 @@ function ConnectionStep({
 	const canUseOneDrivePolicyOptions = supportsOneDrivePolicyOptions(
 		storageDriverDescriptor,
 	);
+	const canConfigureUploadStrategy = descriptorHasPolicyOptionField(
+		storageDriverDescriptor,
+		"provider_resumable_upload_strategy",
+	);
 	const canUseOneDriveConnection =
 		canUseApplicationCredentials || canUseOneDrivePolicyOptions;
 
@@ -518,6 +523,7 @@ function ConnectionStep({
 						showApplicationFields={canUseApplicationCredentials}
 						showCreateValidation
 						showPolicyOptionFields={canUseOneDrivePolicyOptions}
+						showUploadStrategy={canConfigureUploadStrategy}
 						t={t}
 						onFieldChange={onFieldChange}
 					/>
