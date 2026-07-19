@@ -12,13 +12,13 @@
 </p>
 
 <p align="center">
-  <a href="https://drive.astercosm.com/"><img alt="Documentation Site" src="https://img.shields.io/badge/docs-VitePress-7C3AED?style=for-the-badge&logo=vitepress&logoColor=white"></a>
+  <a href="https://drive.astercosm.com/"><img alt="Documentation Site" src="https://img.shields.io/badge/docs-Astro_Starlight-7C3AED?style=for-the-badge&logo=astro&logoColor=white"></a>
   <a href="README.zh.md"><img alt="中文 README" src="https://img.shields.io/badge/README-中文-E11D48?style=for-the-badge"></a>
-  <a href="docs/guide/getting-started.md"><img alt="Quick Start" src="https://img.shields.io/badge/quick%20start-guide-2563EB?style=for-the-badge"></a>
-  <a href="docs/deployment/ops-cli.md"><img alt="Ops CLI" src="https://img.shields.io/badge/ops-CLI-0EA5E9?style=for-the-badge"></a>
+  <a href="https://drive.astercosm.com/en/guide/getting-started/"><img alt="Quick Start" src="https://img.shields.io/badge/quick%20start-guide-2563EB?style=for-the-badge"></a>
+  <a href="https://drive.astercosm.com/en/deployment/ops-cli/"><img alt="Ops CLI" src="https://img.shields.io/badge/ops-CLI-0EA5E9?style=for-the-badge"></a>
   <a href="developer-docs/en/architecture.md"><img alt="Architecture" src="https://img.shields.io/badge/architecture-overview-0F172A?style=for-the-badge"></a>
   <a href="developer-docs/en/api/index.md"><img alt="API Docs" src="https://img.shields.io/badge/API-reference-059669?style=for-the-badge"></a>
-  <a href="docs/deployment/docker.md"><img alt="Docker" src="https://img.shields.io/badge/docker-deployment-2496ED?style=for-the-badge&logo=docker&logoColor=white"></a>
+  <a href="https://drive.astercosm.com/en/deployment/docker/"><img alt="Docker" src="https://img.shields.io/badge/docker-deployment-2496ED?style=for-the-badge&logo=docker&logoColor=white"></a>
 </p>
 
 <p align="center">
@@ -102,7 +102,7 @@ sudo chown -R 10001:10001 ./data
 docker compose up -d
 ```
 
-See [`docs/deployment/docker.md`](docs/deployment/docker.md) for the full Docker guide.
+See the [Docker deployment guide](https://drive.astercosm.com/en/deployment/docker/) for the full setup.
 
 ### Run from source
 
@@ -131,7 +131,7 @@ On first startup, AsterDrive will automatically:
 - Do not expose `:3000` directly to the public Internet. Put AsterDrive behind a reverse proxy that handles HTTPS, upload limits, WebDAV/WOPI passthrough, and security headers.
 - Configure public site URLs before relying on share links, WebDAV URLs, mail links, or WOPI callbacks.
 - Run `./aster_drive doctor` after deployment and upgrades. The default SQLite search acceleration expects `FTS5 + trigram tokenizer` support.
-- Plan backups for the database, uploaded blobs, config, and any external object-storage credentials. Start with [`docs/deployment/backup.md`](docs/deployment/backup.md).
+- Plan backups for the database, uploaded blobs, config, and any external object-storage credentials. Start with [Backup and restore](https://drive.astercosm.com/en/deployment/backup/).
 - If you enable WOPI, test real `docx`, `xlsx`, and `pptx` files through the final public URL and confirm that edits save back into AsterDrive.
 
 ## Core capabilities
@@ -181,17 +181,19 @@ On first startup, AsterDrive will automatically:
 
 ## Documentation
 
-- [Getting started](docs/guide/getting-started.md)
-- [User guide](docs/guide/user-guide.md)
-- [Teams and permissions](docs/guide/teams-and-permissions.md)
-- [Sharing and public access](docs/guide/sharing.md)
-- [Preview and WOPI](docs/guide/preview-and-wopi.md)
-- [Storage backends](docs/storage/index.md)
-- [Remote follower storage](docs/storage/remote-follower.md)
-- [Docker deployment](docs/deployment/docker.md)
-- [Production checklist](docs/deployment/production-checklist.md)
-- [Backup and restore](docs/deployment/backup.md)
-- [Operations CLI](docs/deployment/ops-cli.md)
+The user and deployment documentation is published with Astro Starlight at [drive.astercosm.com](https://drive.astercosm.com/en/).
+
+- [Getting started](https://drive.astercosm.com/en/guide/getting-started/)
+- [User guide](https://drive.astercosm.com/en/guide/user-guide/)
+- [Teams and permissions](https://drive.astercosm.com/en/guide/teams-and-permissions/)
+- [Sharing and public access](https://drive.astercosm.com/en/guide/sharing/)
+- [Preview and WOPI](https://drive.astercosm.com/en/guide/preview-and-wopi/)
+- [Storage backends](https://drive.astercosm.com/en/storage/)
+- [Remote follower storage](https://drive.astercosm.com/en/storage/remote-follower/)
+- [Docker deployment](https://drive.astercosm.com/en/deployment/docker/)
+- [Production checklist](https://drive.astercosm.com/en/deployment/production-checklist/)
+- [Backup and restore](https://drive.astercosm.com/en/deployment/backup/)
+- [Operations CLI](https://drive.astercosm.com/en/deployment/ops-cli/)
 - [Developer docs](developer-docs/README.md)
 - [Architecture](developer-docs/en/architecture.md)
 - [API overview](developer-docs/en/api/index.md)

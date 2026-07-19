@@ -54,7 +54,7 @@ function extractDocCodes(path) {
 }
 
 const sourceCodes = extractSourceCodes()
-const docPages = ['docs/reference/errors.md', 'docs/en/reference/errors.md']
+const docPages = ['docs/src/content/docs/reference/errors.md', 'docs/src/content/docs/en/reference/errors.md']
 const documentedCodes = new Set()
 let staleCount = 0
 

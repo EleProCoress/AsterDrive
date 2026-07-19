@@ -2,14 +2,20 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "docs:dev": "vitepress dev",
-    "docs:build": "vitepress build",
-    "docs:preview": "vitepress preview"
+    "docs:dev": "astro dev",
+    "docs:build": "astro build",
+    "docs:preview": "astro preview"
+  },
+  "dependencies": {
+    "@astrojs/sitemap": "^3.7.3",
+    "@astrojs/starlight": "^0.41.3",
+    "astro": "^7.1.1",
+    "sharp": "^0.35.3"
   },
   "devDependencies": {
-    "mermaid": "^11.15.0",
-    "vitepress": "^1.6.4",
-    "vitepress-plugin-mermaid": "^2.0.17"
+    "@beoe/rehype-mermaid": "^0.4.2",
+    "mermaid": "^11.16.0",
+    "playwright": "^1.61.1"
   },
   "license": "MIT"
 }

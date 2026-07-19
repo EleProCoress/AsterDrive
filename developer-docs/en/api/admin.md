@@ -2,7 +2,7 @@
 
 The following paths are relative to `/api/v1`. Every endpoint on this page requires administrator privileges except the storage OAuth provider callback `/admin/policies/storage-authorization/callback`.
 
-This page keeps the most important admin endpoint groups. For usage-oriented admin-console guidance, see [Admin Console](../../../docs/guide/admin-console.md).
+This page keeps the most important admin endpoint groups. For usage-oriented admin-console guidance, see [Admin Console](https://drive.astercosm.com/en/guide/admin-console/).
 
 Most admin list endpoints already use offset pagination:
 

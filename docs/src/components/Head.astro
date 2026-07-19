@@ -1,0 +1,53 @@
+---
+import Default from '@astrojs/starlight/components/Head.astro'
+---
+
+<Default {...Astro.props}><slot /></Default>
+
+<script>
+	// Mermaid 点击缩放浮层
+	function closeDiagramZoom() {
+		document.querySelector('.aster-diagram-zoom')?.remove()
+		document.body.classList.remove('aster-diagram-zoom-open')
+	}
+
+	function openDiagramZoom(event) {
+		const target = event.target instanceof Element ? event.target : null
+		const diagram = target?.closest('.sl-markdown-content .beoe.mermaid')
+		if (!(diagram instanceof HTMLElement)) return
+
+		// darkScheme: 'class' 会输出亮暗两份 SVG，取当前可见的那份
+		const svgs = diagram.querySelectorAll('svg')
+		const svg = [...svgs].find((node) => node.offsetParent !== null) ?? svgs[0]
+		if (!svg) return
+
+		const overlay = document.createElement('div')
+		overlay.className = 'aster-diagram-zoom'
+		overlay.setAttribute('role', 'dialog')
+		overlay.setAttribute('aria-modal', 'true')
+
+		const closeButton = document.createElement('button')
+		closeButton.className = 'aster-diagram-zoom-close'
+		closeButton.type = 'button'
+		closeButton.setAttribute('aria-label', 'Close diagram zoom')
+		closeButton.textContent = '×'
+		closeButton.addEventListener('click', closeDiagramZoom)
+
+		const canvas = document.createElement('div')
+		canvas.className = 'aster-diagram-zoom-canvas'
+		canvas.innerHTML = svg.outerHTML
+
+		overlay.addEventListener('click', (clickEvent) => {
+			if (clickEvent.target === overlay) closeDiagramZoom()
+		})
+
+		overlay.append(closeButton, canvas)
+		document.body.append(overlay)
+		document.body.classList.add('aster-diagram-zoom-open')
+	}
+
+	document.addEventListener('click', openDiagramZoom)
+	document.addEventListener('keydown', (event) => {
+		if (event.key === 'Escape') closeDiagramZoom()
+	})
+</script>

@@ -162,4 +162,4 @@ Implementation notes:
 
 - [Files](./files.md)
 - [Folders](./folders.md)
-- [Core workflows](../../../docs/guide/core-workflows.md)
+- [Core workflows](https://drive.astercosm.com/en/guide/core-workflows/)

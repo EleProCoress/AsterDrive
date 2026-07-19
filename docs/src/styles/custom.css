@@ -1,0 +1,151 @@
+/* AsterDrive 品牌色与 Starlight 主题变量 */
+
+:root {
+	--sl-color-accent-low: #93c5fd;
+	--sl-color-accent: #2563eb;
+	--sl-color-accent-high: #1d4ed8;
+	--sl-color-bg: #f8fafc;
+}
+
+:root[data-theme='dark'] {
+	--sl-color-accent-low: #1e40af;
+	--sl-color-accent: #60a5fa;
+	--sl-color-accent-high: #bfdbfe;
+	--sl-color-bg: #080b12;
+}
+
+html {
+	scroll-behavior: smooth;
+}
+
+body {
+	-webkit-font-smoothing: antialiased;
+	text-rendering: optimizeLegibility;
+}
+
+/* Mermaid 图（@beoe/rehype-mermaid 构建时渲染的 <figure class="beoe mermaid">） */
+
+.sl-markdown-content .beoe.mermaid {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	margin: 24px 0;
+	padding: 12px;
+	width: 100%;
+	max-width: 100%;
+	overflow: hidden;
+	border: 1px solid var(--sl-color-gray-5);
+	border-radius: 10px;
+	background: color-mix(in srgb, var(--sl-color-bg-sidebar) 94%, var(--sl-color-accent));
+	cursor: zoom-in;
+	line-height: 1.4;
+}
+
+.sl-markdown-content .beoe.mermaid svg {
+	display: block;
+	margin: 0 auto;
+	width: 100%;
+	max-width: 100%;
+	height: auto;
+	max-height: min(380px, 58vh);
+	overflow: visible;
+}
+
+.sl-markdown-content .beoe.mermaid svg foreignObject {
+	overflow: visible;
+}
+
+/* darkScheme: 'class' 输出亮暗两份 SVG，按当前主题显示对应的一份 */
+:root[data-theme='light'] .beoe.mermaid .beoe-dark,
+:root[data-theme='dark'] .beoe.mermaid .beoe-light {
+	display: none;
+}
+
+@media (max-width: 768px) {
+	.sl-markdown-content .beoe.mermaid {
+		padding: 10px;
+	}
+
+	.sl-markdown-content .beoe.mermaid svg {
+		max-height: 300px;
+	}
+}
+
+/* Mermaid 点击缩放浮层（逻辑在 src/components/Head.astro） */
+
+body.aster-diagram-zoom-open {
+	overflow: hidden;
+}
+
+.aster-diagram-zoom {
+	position: fixed;
+	inset: 0;
+	z-index: 10000;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 64px 28px 28px;
+	background: rgb(2 6 23 / 0.88);
+	backdrop-filter: blur(12px);
+}
+
+.aster-diagram-zoom-close {
+	position: fixed;
+	top: 18px;
+	right: 18px;
+	z-index: 1;
+	padding: 8px 14px;
+	border: 1px solid rgb(255 255 255 / 0.18);
+	border-radius: 8px;
+	background: rgb(15 23 42 / 0.82);
+	color: #f8fafc;
+	font-weight: 600;
+	font-size: 14px;
+	line-height: 1;
+	cursor: pointer;
+	transition:
+		background-color 160ms ease,
+		border-color 160ms ease;
+}
+
+.aster-diagram-zoom-close:hover {
+	border-color: rgb(255 255 255 / 0.34);
+	background: rgb(30 41 59 / 0.92);
+}
+
+.aster-diagram-zoom-canvas {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 100%;
+	height: 100%;
+	overflow: auto;
+}
+
+.aster-diagram-zoom-canvas svg {
+	display: block;
+	width: min(1120px, calc(100vw - 96px)) !important;
+	max-width: calc(100vw - 96px) !important;
+	height: auto !important;
+	max-height: calc(100vh - 128px) !important;
+	padding: 24px;
+	border-radius: 10px;
+	background: #ffffff;
+}
+
+@media (max-width: 768px) {
+	.aster-diagram-zoom {
+		padding: 56px 14px 18px;
+	}
+
+	.aster-diagram-zoom-canvas svg {
+		width: calc(100vw - 28px) !important;
+		max-width: calc(100vw - 28px) !important;
+		max-height: calc(100vh - 92px) !important;
+		padding: 14px;
+	}
+}
+
+:root[data-theme='dark'] .aster-diagram-zoom-canvas svg {
+	background: #111827;
+}
