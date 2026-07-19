@@ -60,7 +60,7 @@ async fn promote_local_file_if_absent_inner(
     checkpoint: impl Fn() -> Result<()>,
 ) -> Result<PromoteLocalFileOutcome> {
     checkpoint()?;
-    let local_driver = driver.as_local_path().ok_or_else(|| {
+    let local_driver = driver.extensions().local_path.ok_or_else(|| {
         AsterError::storage_driver_error("local path storage driver not supported")
     })?;
     let target = local_driver.resolve_local_path(storage_path)?;

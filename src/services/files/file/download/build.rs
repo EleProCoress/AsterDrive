@@ -171,7 +171,7 @@ async fn build_presigned_redirect_outcome(
     disposition: DownloadDisposition,
 ) -> Result<DownloadOutcome> {
     let driver = state.driver_registry().get_driver(policy)?;
-    let presigned = driver.as_presigned().ok_or_else(|| {
+    let presigned = driver.extensions().presigned.ok_or_else(|| {
         AsterError::storage_driver_error("presigned download not supported by driver")
     })?;
 

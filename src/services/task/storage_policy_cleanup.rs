@@ -164,7 +164,7 @@ pub(super) async fn process_storage_policy_temp_cleanup_task(
         .await?;
     }
 
-    if let Some(multipart) = driver.as_multipart() {
+    if let Some(multipart) = driver.extensions().multipart {
         for target in &payload.multipart_uploads {
             context.ensure_active()?;
             match multipart

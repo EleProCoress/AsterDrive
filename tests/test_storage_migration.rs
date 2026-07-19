@@ -26,7 +26,8 @@ use aster_drive::errors::{AsterError, MapAsterErr, Result};
 use aster_drive::runtime::{PrimaryAppState, SharedRuntimeState};
 use aster_drive::services::task;
 use aster_drive::storage::{
-    BlobMetadata, MultipartStorageDriver, StorageDriver, StorageErrorKind, StreamUploadDriver,
+    BlobMetadata, MultipartStorageDriver, StorageDriver, StorageDriverExtensions, StorageErrorKind,
+    StreamUploadDriver,
 };
 use aster_drive::types::{
     BackgroundTaskStatus, DriverType, StoredStoragePolicyAllowedTypes, StoredStoragePolicyOptions,
@@ -124,8 +125,11 @@ impl StorageDriver for FailingStreamUploadDriver {
         })
     }
 
-    fn as_stream_upload(&self) -> Option<&dyn StreamUploadDriver> {
-        Some(self)
+    fn extensions(&self) -> StorageDriverExtensions<'_> {
+        StorageDriverExtensions {
+            stream_upload: Some(self),
+            ..Default::default()
+        }
     }
 }
 
@@ -317,12 +321,12 @@ impl StorageDriver for MultipartMigrationTestDriver {
         })
     }
 
-    fn as_stream_upload(&self) -> Option<&dyn StreamUploadDriver> {
-        Some(self)
-    }
-
-    fn as_multipart(&self) -> Option<&dyn MultipartStorageDriver> {
-        Some(self)
+    fn extensions(&self) -> StorageDriverExtensions<'_> {
+        StorageDriverExtensions {
+            stream_upload: Some(self),
+            multipart: Some(self),
+            ..Default::default()
+        }
     }
 }
 

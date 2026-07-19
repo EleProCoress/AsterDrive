@@ -68,7 +68,7 @@ async fn cleanup_team_upload_sessions(
 
         {
             if let Some(multipart_id) = session.object_multipart_id.as_deref() {
-                if let Some(multipart) = driver.as_multipart() {
+                if let Some(multipart) = driver.extensions().multipart {
                     if let Err(err) = multipart
                         .abort_multipart_upload(temp_key, multipart_id)
                         .await

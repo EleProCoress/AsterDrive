@@ -146,16 +146,12 @@ impl StorageDriver for CountingUploadDriver {
         self.inner.metadata(path).await
     }
 
-    fn as_list(&self) -> Option<&dyn ListStorageDriver> {
-        Some(self)
-    }
-
-    fn as_stream_upload(&self) -> Option<&dyn StreamUploadDriver> {
-        Some(self)
-    }
-
-    fn as_local_path(&self) -> Option<&dyn LocalPathStorageDriver> {
-        self.inner.as_local_path()
+    fn extensions(&self) -> crate::storage::traits::StorageDriverExtensions<'_> {
+        let mut extensions = self.inner.extensions();
+        extensions.list = Some(self);
+        extensions.stream_upload = Some(self);
+        extensions.local_path = self.inner.extensions().local_path;
+        extensions
     }
 }
 
@@ -255,16 +251,12 @@ impl StorageDriver for BlockingPutFileDriver {
         self.inner.metadata(path).await
     }
 
-    fn as_list(&self) -> Option<&dyn ListStorageDriver> {
-        Some(self)
-    }
-
-    fn as_stream_upload(&self) -> Option<&dyn StreamUploadDriver> {
-        Some(self)
-    }
-
-    fn as_local_path(&self) -> Option<&dyn LocalPathStorageDriver> {
-        self.inner.as_local_path()
+    fn extensions(&self) -> crate::storage::traits::StorageDriverExtensions<'_> {
+        let mut extensions = self.inner.extensions();
+        extensions.list = Some(self);
+        extensions.stream_upload = Some(self);
+        extensions.local_path = self.inner.extensions().local_path;
+        extensions
     }
 }
 
@@ -373,16 +365,13 @@ impl StorageDriver for BlockingLocalPathDriver {
         self.inner.metadata(path).await
     }
 
-    fn as_list(&self) -> Option<&dyn ListStorageDriver> {
-        Some(self)
-    }
-
-    fn as_stream_upload(&self) -> Option<&dyn StreamUploadDriver> {
-        Some(self)
-    }
-
-    fn as_local_path(&self) -> Option<&dyn LocalPathStorageDriver> {
-        Some(self)
+    fn extensions(&self) -> crate::storage::traits::StorageDriverExtensions<'_> {
+        crate::storage::traits::StorageDriverExtensions {
+            list: Some(self),
+            stream_upload: Some(self),
+            local_path: Some(self),
+            ..Default::default()
+        }
     }
 }
 
@@ -442,7 +431,11 @@ impl LocalPathStorageDriver for BlockingLocalPathDriver {
                 "blocking local path release channel closed: {error}"
             ))
         })?;
-        self.inner.as_local_path().unwrap().resolve_local_path(path)
+        self.inner
+            .extensions()
+            .local_path
+            .unwrap()
+            .resolve_local_path(path)
     }
 }
 
@@ -537,8 +530,11 @@ impl StorageDriver for RecoverableStreamDriver {
         })
     }
 
-    fn as_stream_upload(&self) -> Option<&dyn StreamUploadDriver> {
-        Some(self)
+    fn extensions(&self) -> crate::storage::traits::StorageDriverExtensions<'_> {
+        crate::storage::traits::StorageDriverExtensions {
+            stream_upload: Some(self),
+            ..Default::default()
+        }
     }
 }
 
@@ -623,8 +619,11 @@ impl StorageDriver for CancelAfterFirstReadDriver {
         unreachable!()
     }
 
-    fn as_stream_upload(&self) -> Option<&dyn StreamUploadDriver> {
-        Some(self)
+    fn extensions(&self) -> crate::storage::traits::StorageDriverExtensions<'_> {
+        crate::storage::traits::StorageDriverExtensions {
+            stream_upload: Some(self),
+            ..Default::default()
+        }
     }
 }
 
@@ -706,8 +705,11 @@ impl StorageDriver for CancelAfterLocalPathDriver {
         self.inner.metadata(path).await
     }
 
-    fn as_local_path(&self) -> Option<&dyn LocalPathStorageDriver> {
-        Some(self)
+    fn extensions(&self) -> crate::storage::traits::StorageDriverExtensions<'_> {
+        crate::storage::traits::StorageDriverExtensions {
+            local_path: Some(self),
+            ..Default::default()
+        }
     }
 }
 
@@ -715,7 +717,8 @@ impl LocalPathStorageDriver for CancelAfterLocalPathDriver {
     fn resolve_local_path(&self, path: &str) -> crate::errors::Result<PathBuf> {
         let resolved = self
             .inner
-            .as_local_path()
+            .extensions()
+            .local_path
             .unwrap()
             .resolve_local_path(path)?;
         self.cancelled.store(true, Ordering::SeqCst);

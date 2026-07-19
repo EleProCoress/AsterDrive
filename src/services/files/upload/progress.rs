@@ -93,7 +93,7 @@ async fn get_progress_impl(
                 .policy_snapshot()
                 .get_policy_or_err(session.policy_id)?;
             let driver = state.driver_registry().get_driver(&policy)?;
-            let provider = driver.as_provider_resumable_upload().ok_or_else(|| {
+            let provider = driver.extensions().provider_resumable.ok_or_else(|| {
                 upload_assembly_error_with_code(
                     ApiErrorCode::UploadSessionCorrupted,
                     "provider resumable driver is unavailable",

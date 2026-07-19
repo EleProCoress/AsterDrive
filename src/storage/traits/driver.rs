@@ -119,61 +119,9 @@ pub trait StorageDriver: Send + Sync {
     // 所有存储后端都必须支持该能力时，才应该把方法直接加到 StorageDriver。
     // =========================================================================
 
-    /// 获取 presigned URL 支持
-    ///
-    /// S3/R2/OSS 等对象存储返回 Some，本地存储返回 None。
-    fn as_presigned(&self) -> Option<&dyn super::extensions::PresignedStorageDriver> {
-        None
-    }
-
-    /// 获取路径列举支持
-    ///
-    /// 用于后台维护任务（孤儿 blob 清理等）。
-    fn as_list(&self) -> Option<&dyn super::extensions::ListStorageDriver> {
-        None
-    }
-
-    /// 获取流式直传支持
-    ///
-    /// 调用方只关心“能否把 reader 写入目标对象”。具体 driver 内部可以选择原生
-    /// 流式 API、临时文件、或 provider-native upload session。
-    fn as_stream_upload(&self) -> Option<&dyn super::extensions::StreamUploadDriver> {
-        None
-    }
-
-    /// 获取 provider-native resumable/session upload 支持。
-    ///
-    /// 该能力描述具体云厂商自己的 resumable upload/session 协议，例如
-    /// Microsoft Graph upload session。它不等同于对象存储 multipart：
-    /// 调用方仍通过通用 `StreamUploadDriver` 写入，session 创建、分片对齐
-    /// 和重试边界由具体 driver 自己封装。
-    fn as_provider_resumable_upload(
-        &self,
-    ) -> Option<&dyn super::extensions::ProviderResumableUploadDriver> {
-        None
-    }
-
-    /// 获取本地文件路径暴露能力
-    ///
-    /// 仅本地文件系统等真正持有本机绝对路径的驱动返回 Some。
-    fn as_local_path(&self) -> Option<&dyn super::extensions::LocalPathStorageDriver> {
-        None
-    }
-
-    /// 获取存储侧原生缩略图支持
-    ///
-    /// OneDrive / 数据万象 / 对象存储图片处理等驱动返回 Some。
-    fn as_native_thumbnail(&self) -> Option<&dyn super::extensions::NativeThumbnailStorageDriver> {
-        None
-    }
-
-    /// 获取存储侧原生媒体信息解析支持
-    ///
-    /// COS CI videoinfo 等驱动返回 Some；普通 S3、本地存储等返回 None。
-    fn as_native_media_metadata(
-        &self,
-    ) -> Option<&dyn super::extensions::NativeMediaMetadataStorageDriver> {
-        None
+    /// 获取该驱动的全部可选运行期能力。
+    fn extensions(&self) -> super::extensions::StorageDriverExtensions<'_> {
+        super::extensions::StorageDriverExtensions::default()
     }
 
     /// 获取容量观测信息。
@@ -185,15 +133,6 @@ pub trait StorageDriver: Send + Sync {
             crate::storage::StorageErrorKind::Unsupported,
             "storage driver does not support capacity observability",
         ))
-    }
-
-    /// 获取 object-storage multipart upload 支持。
-    ///
-    /// 这里的 multipart 是 S3/Azure Blob/COS 这类对象存储语义：upload_id、
-    /// part_number、ETag、显式 complete/abort。不要用它表示 OneDrive /
-    /// Microsoft Graph upload session；那类能力属于 `as_provider_resumable_upload()`。
-    fn as_multipart(&self) -> Option<&dyn super::multipart::MultipartStorageDriver> {
-        None
     }
 }
 
@@ -296,13 +235,13 @@ mod tests {
     fn default_optional_capabilities_are_absent() {
         let driver = MemoryDriver::new(b"data");
 
-        assert!(driver.as_presigned().is_none());
-        assert!(driver.as_list().is_none());
-        assert!(driver.as_stream_upload().is_none());
-        assert!(driver.as_provider_resumable_upload().is_none());
-        assert!(driver.as_local_path().is_none());
-        assert!(driver.as_native_thumbnail().is_none());
-        assert!(driver.as_multipart().is_none());
+        assert!(driver.extensions().presigned.is_none());
+        assert!(driver.extensions().list.is_none());
+        assert!(driver.extensions().stream_upload.is_none());
+        assert!(driver.extensions().provider_resumable.is_none());
+        assert!(driver.extensions().local_path.is_none());
+        assert!(driver.extensions().native_thumbnail.is_none());
+        assert!(driver.extensions().multipart.is_none());
     }
 
     #[tokio::test]

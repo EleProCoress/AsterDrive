@@ -32,7 +32,7 @@ use std::sync::Arc;
 ///
 /// `storage` 是业务路径统一使用的驱动；启用 metrics 时它会在创建 entry 时包一层
 /// `MetricsStorageDriver`。`multipart` 是分片上传专用路径；启用 metrics 时同样包一层
-/// `MetricsMultipartStorageDriver`，保证 `get_driver().as_multipart()` 和
+/// `MetricsMultipartStorageDriver`，保证 `get_driver().extensions().multipart` 和
 /// `get_multipart_driver()` 两条入口都记录指标。
 #[derive(Clone)]
 struct DriverEntry {
@@ -500,8 +500,11 @@ mod tests {
             panic!("not used")
         }
 
-        fn as_multipart(&self) -> Option<&dyn MultipartStorageDriver> {
-            Some(self)
+        fn extensions(&self) -> crate::storage::traits::StorageDriverExtensions<'_> {
+            crate::storage::traits::StorageDriverExtensions {
+                multipart: Some(self),
+                ..Default::default()
+            }
         }
     }
 
@@ -786,13 +789,20 @@ mod tests {
             .get_driver(&policy)
             .expect("enabled follower should create remote driver");
 
-        assert!(driver.as_list().is_some());
-        assert!(driver.as_stream_upload().is_some());
-        assert!(driver.as_presigned().is_some());
-        assert!(driver.as_multipart().is_some());
+        assert!(driver.extensions().list.is_some());
+        assert!(driver.extensions().stream_upload.is_some());
+        assert!(driver.extensions().presigned.is_some());
+        assert!(driver.extensions().multipart.is_some());
+
+        let extensions = driver.extensions();
+        assert!(extensions.list.is_some());
+        assert!(extensions.stream_upload.is_some());
+        assert!(extensions.presigned.is_some());
+        assert!(extensions.multipart.is_some());
 
         let presigned = driver
-            .as_presigned()
+            .extensions()
+            .presigned
             .expect("remote driver should support presigned URLs")
             .presigned_put_url("files/object.bin", Duration::from_secs(60))
             .await

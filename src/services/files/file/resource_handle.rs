@@ -177,7 +177,7 @@ async fn presigned_original_url(
     }
 
     let driver = state.driver_registry().get_driver(&policy)?;
-    let Some(presigned) = driver.as_presigned() else {
+    let Some(presigned) = driver.extensions().presigned else {
         return Ok(None);
     };
 
@@ -465,8 +465,11 @@ mod tests {
             })
         }
 
-        fn as_presigned(&self) -> Option<&dyn PresignedStorageDriver> {
-            Some(self)
+        fn extensions(&self) -> crate::storage::traits::StorageDriverExtensions<'_> {
+            crate::storage::traits::StorageDriverExtensions {
+                presigned: Some(self),
+                ..Default::default()
+            }
         }
     }
 

@@ -16,8 +16,7 @@ use crate::entities::storage_policy;
 use crate::errors::Result;
 use crate::storage::traits::driver::{BlobMetadata, StorageDriver};
 use crate::storage::traits::extensions::{
-    ListStorageDriver, NativeMediaMetadataStorageDriver, NativeThumbnailStorageDriver,
-    PresignedStorageDriver, StorageCapacityInfo, StreamUploadDriver,
+    NativeMediaMetadataStorageDriver, NativeThumbnailStorageDriver, StorageCapacityInfo,
 };
 use crate::storage::traits::multipart::MultipartStorageDriver;
 
@@ -134,32 +133,24 @@ where
             .await
     }
 
-    fn as_presigned(&self) -> Option<&dyn PresignedStorageDriver> {
-        self.s3_compatible_driver().inner().as_presigned()
-    }
-
-    fn as_list(&self) -> Option<&dyn ListStorageDriver> {
-        self.s3_compatible_driver().inner().as_list()
-    }
-
-    fn as_stream_upload(&self) -> Option<&dyn StreamUploadDriver> {
-        self.s3_compatible_driver().inner().as_stream_upload()
-    }
-
-    fn as_native_thumbnail(&self) -> Option<&dyn NativeThumbnailStorageDriver> {
-        self.as_provider_native_thumbnail()
-    }
-
-    fn as_native_media_metadata(&self) -> Option<&dyn NativeMediaMetadataStorageDriver> {
-        self.as_provider_native_media_metadata()
+    fn extensions(&self) -> crate::storage::traits::StorageDriverExtensions<'_> {
+        crate::storage::traits::StorageDriverExtensions {
+            presigned: self.s3_compatible_driver().inner().extensions().presigned,
+            list: self.s3_compatible_driver().inner().extensions().list,
+            stream_upload: self
+                .s3_compatible_driver()
+                .inner()
+                .extensions()
+                .stream_upload,
+            native_thumbnail: self.as_provider_native_thumbnail(),
+            native_media_metadata: self.as_provider_native_media_metadata(),
+            multipart: Some(self),
+            ..Default::default()
+        }
     }
 
     async fn capacity_info(&self) -> Result<StorageCapacityInfo> {
         self.s3_compatible_driver().inner().capacity_info().await
-    }
-
-    fn as_multipart(&self) -> Option<&dyn MultipartStorageDriver> {
-        Some(self)
     }
 }
 
@@ -292,18 +283,19 @@ mod tests {
         let driver = S3CompatibleDriver::new(&sample_policy()).expect("driver should build");
 
         assert!(driver.supports_efficient_range());
-        assert!(driver.as_presigned().is_some());
-        assert!(driver.as_list().is_some());
-        assert!(driver.as_stream_upload().is_some());
-        assert!(driver.as_multipart().is_some());
-        assert!(driver.as_native_thumbnail().is_none());
+        assert!(driver.extensions().presigned.is_some());
+        assert!(driver.extensions().list.is_some());
+        assert!(driver.extensions().stream_upload.is_some());
+        assert!(driver.extensions().multipart.is_some());
+        assert!(driver.extensions().native_thumbnail.is_none());
     }
 
     #[tokio::test]
     async fn presigned_urls_are_forwarded_through_s3_driver() {
         let driver = S3CompatibleDriver::new(&sample_policy()).expect("driver should build");
         let presigned = driver
-            .as_presigned()
+            .extensions()
+            .presigned
             .expect("presigned capability")
             .presigned_put_url("docs/report.txt", Duration::from_secs(60))
             .await

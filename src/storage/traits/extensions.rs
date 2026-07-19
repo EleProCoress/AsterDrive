@@ -28,6 +28,22 @@ pub enum StorageCapacityStatus {
     Unavailable,
 }
 
+/// Optional runtime capabilities exposed by a configured storage driver.
+///
+/// Decorators forward this bundle as one unit, so adding a capability does not
+/// require a matching forwarding method in every decorator.
+#[derive(Clone, Copy, Default)]
+pub struct StorageDriverExtensions<'a> {
+    pub presigned: Option<&'a dyn PresignedStorageDriver>,
+    pub list: Option<&'a dyn ListStorageDriver>,
+    pub stream_upload: Option<&'a dyn StreamUploadDriver>,
+    pub provider_resumable: Option<&'a dyn ProviderResumableUploadDriver>,
+    pub local_path: Option<&'a dyn LocalPathStorageDriver>,
+    pub native_thumbnail: Option<&'a dyn NativeThumbnailStorageDriver>,
+    pub native_media_metadata: Option<&'a dyn NativeMediaMetadataStorageDriver>,
+    pub multipart: Option<&'a dyn crate::storage::traits::multipart::MultipartStorageDriver>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct StorageCapacityInfo {
@@ -321,7 +337,7 @@ pub mod fallback {
         // 使用驱动的 put_file 能力上传（如果驱动实现了 StreamUploadDriver）
         // 否则退化为 put + read file
 
-        if let Some(stream_driver) = driver.as_stream_upload() {
+        if let Some(stream_driver) = driver.extensions().stream_upload {
             let temp_path_str = temp_path.path().to_str().ok_or_else(|| {
                 AsterError::storage_driver_error("temp upload path is not valid UTF-8")
             })?;

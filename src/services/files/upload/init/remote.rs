@@ -193,7 +193,7 @@ async fn remote_presigned_put_url(
     driver: &dyn crate::storage::StorageDriver,
     temp_key: &str,
 ) -> Result<String> {
-    let presigned_driver = driver.as_presigned().ok_or_else(|| {
+    let presigned_driver = driver.extensions().presigned.ok_or_else(|| {
         AsterError::storage_driver_error("remote driver does not implement presigned PUT")
     })?;
     presigned_driver

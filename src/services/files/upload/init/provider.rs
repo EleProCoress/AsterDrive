@@ -31,7 +31,7 @@ pub(super) async fn init_provider_resumable_upload(
     }
 
     let driver = state.driver_registry().get_driver(&ctx.policy)?;
-    let provider = driver.as_provider_resumable_upload().ok_or_else(|| {
+    let provider = driver.extensions().provider_resumable.ok_or_else(|| {
         AsterError::storage_driver_error(
             "storage driver does not expose provider resumable upload support",
         )

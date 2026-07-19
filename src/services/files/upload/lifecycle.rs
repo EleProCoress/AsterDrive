@@ -186,7 +186,7 @@ async fn cleanup_remote_upload_state(
                 return UploadRemoteCleanupOutcome::DeferredIntervention;
             }
         };
-        let Some(provider) = driver.as_provider_resumable_upload() else {
+        let Some(provider) = driver.extensions().provider_resumable else {
             tracing::warn!(
                 session_id = %session.id,
                 "provider resumable driver is unavailable during upload cleanup"
@@ -210,7 +210,7 @@ async fn cleanup_remote_upload_state(
     }
 
     if let Some(multipart_id) = session.object_multipart_id.as_deref() {
-        if let Some(multipart) = driver.as_multipart()
+        if let Some(multipart) = driver.extensions().multipart
             && let Err(error) = multipart
                 .abort_multipart_upload(temp_key, multipart_id)
                 .await

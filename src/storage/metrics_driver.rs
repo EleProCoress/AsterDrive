@@ -315,40 +315,12 @@ impl StorageDriver for MetricsStorageDriver {
         result
     }
 
-    fn as_presigned(&self) -> Option<&dyn extensions::PresignedStorageDriver> {
-        self.inner.as_presigned()
-    }
-
-    fn as_list(&self) -> Option<&dyn extensions::ListStorageDriver> {
-        self.inner.as_list()
-    }
-
-    fn as_stream_upload(&self) -> Option<&dyn extensions::StreamUploadDriver> {
-        self.inner.as_stream_upload()
-    }
-
-    fn as_provider_resumable_upload(
-        &self,
-    ) -> Option<&dyn extensions::ProviderResumableUploadDriver> {
-        self.inner.as_provider_resumable_upload()
-    }
-
-    fn as_local_path(&self) -> Option<&dyn extensions::LocalPathStorageDriver> {
-        self.inner.as_local_path()
-    }
-
-    fn as_native_thumbnail(&self) -> Option<&dyn extensions::NativeThumbnailStorageDriver> {
-        self.inner.as_native_thumbnail()
-    }
-
-    fn as_native_media_metadata(
-        &self,
-    ) -> Option<&dyn extensions::NativeMediaMetadataStorageDriver> {
-        self.inner.as_native_media_metadata()
-    }
-
-    fn as_multipart(&self) -> Option<&dyn MultipartStorageDriver> {
-        self.multipart.as_deref()
+    fn extensions(&self) -> extensions::StorageDriverExtensions<'_> {
+        let mut extensions = self.inner.extensions();
+        // Multipart is the only capability with an operation-level metrics
+        // wrapper; all other capabilities can be forwarded as-is.
+        extensions.multipart = self.multipart.as_deref();
+        extensions
     }
 }
 
@@ -563,10 +535,11 @@ mod tests {
             panic!("not used")
         }
 
-        fn as_provider_resumable_upload(
-            &self,
-        ) -> Option<&dyn extensions::ProviderResumableUploadDriver> {
-            Some(self)
+        fn extensions(&self) -> extensions::StorageDriverExtensions<'_> {
+            extensions::StorageDriverExtensions {
+                provider_resumable: Some(self),
+                ..Default::default()
+            }
         }
     }
 
@@ -731,7 +704,8 @@ mod tests {
         );
 
         let provider = driver
-            .as_provider_resumable_upload()
+            .extensions()
+            .provider_resumable
             .expect("metrics wrapper should preserve provider resumable support");
         let capabilities = provider.provider_resumable_upload_capabilities();
 
@@ -739,5 +713,8 @@ mod tests {
         assert!(capabilities.frontend_direct_upload);
         assert!(capabilities.abort_supported);
         assert!(capabilities.status_query_supported);
+
+        let extensions = driver.extensions();
+        assert!(extensions.provider_resumable.is_some());
     }
 }

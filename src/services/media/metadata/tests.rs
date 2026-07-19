@@ -79,8 +79,11 @@ impl StorageDriver for NativeMetadataDriver {
         })
     }
 
-    fn as_native_media_metadata(&self) -> Option<&dyn NativeMediaMetadataStorageDriver> {
-        Some(self)
+    fn extensions(&self) -> crate::storage::traits::StorageDriverExtensions<'_> {
+        crate::storage::traits::StorageDriverExtensions {
+            native_media_metadata: Some(self),
+            ..Default::default()
+        }
     }
 }
 

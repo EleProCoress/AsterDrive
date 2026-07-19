@@ -20,7 +20,7 @@ pub(super) async fn prepare_media_metadata_source(
     let policy = state.policy_snapshot().get_policy_or_err(blob.policy_id)?;
     let driver = state.driver_registry().get_driver(&policy)?;
 
-    if let Some(local_path_driver) = driver.as_local_path() {
+    if let Some(local_path_driver) = driver.extensions().local_path {
         return Ok(PreparedMediaMetadataSource::Local(
             local_path_driver.resolve_local_path(&blob.storage_path)?,
         ));

@@ -202,7 +202,8 @@ async fn presigned_put_request(
     temp_key: &str,
 ) -> Result<(String, std::collections::BTreeMap<String, String>, bool)> {
     let presigned_driver = driver
-        .as_presigned()
+        .extensions()
+        .presigned
         .ok_or_else(|| AsterError::storage_driver_error("presigned PUT not supported by driver"))?;
     let url = presigned_driver
         .presigned_put_url(temp_key, std::time::Duration::from_secs(HOUR_SECS))

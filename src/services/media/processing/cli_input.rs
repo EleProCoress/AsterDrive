@@ -67,7 +67,7 @@ pub(crate) async fn prepare_cli_source(
     temp_dir: &Path,
     allow_presigned_url: bool,
 ) -> Result<PreparedCliSource> {
-    if let Some(local_path_driver) = driver.as_local_path() {
+    if let Some(local_path_driver) = driver.extensions().local_path {
         let path = local_path_driver.resolve_local_path(storage_path)?;
         let input_path = cli_source_temp_path(temp_dir, source_file_name, source_mime_type);
         materialize_local_cli_source(&path, &input_path).await?;
@@ -77,7 +77,7 @@ pub(crate) async fn prepare_cli_source(
         });
     }
 
-    if allow_presigned_url && let Some(presigned_driver) = driver.as_presigned() {
+    if allow_presigned_url && let Some(presigned_driver) = driver.extensions().presigned {
         let url = presigned_driver
             .presigned_url(
                 storage_path,
@@ -171,8 +171,11 @@ mod tests {
             unreachable!()
         }
 
-        fn as_local_path(&self) -> Option<&dyn LocalPathStorageDriver> {
-            Some(self)
+        fn extensions(&self) -> crate::storage::traits::StorageDriverExtensions<'_> {
+            crate::storage::traits::StorageDriverExtensions {
+                local_path: Some(self),
+                ..Default::default()
+            }
         }
     }
 
@@ -212,8 +215,11 @@ mod tests {
             unreachable!()
         }
 
-        fn as_presigned(&self) -> Option<&dyn PresignedStorageDriver> {
-            Some(self)
+        fn extensions(&self) -> crate::storage::traits::StorageDriverExtensions<'_> {
+            crate::storage::traits::StorageDriverExtensions {
+                presigned: Some(self),
+                ..Default::default()
+            }
         }
     }
 

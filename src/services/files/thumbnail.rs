@@ -250,7 +250,7 @@ pub(crate) async fn render_thumbnail_bytes(
     temp_root: &str,
     max_dim: u32,
 ) -> Result<Vec<u8>> {
-    if let Some(local_path_driver) = driver.as_local_path() {
+    if let Some(local_path_driver) = driver.extensions().local_path {
         let path = local_path_driver.resolve_local_path(&blob.storage_path)?;
         return tokio::task::spawn_blocking(move || {
             generate_thumbnail_from_local_path(path, max_dim)
@@ -275,7 +275,7 @@ pub(crate) async fn render_webp_derivative_bytes(
     temp_root: &str,
     max_dim: u32,
 ) -> Result<Vec<u8>> {
-    if let Some(local_path_driver) = driver.as_local_path() {
+    if let Some(local_path_driver) = driver.extensions().local_path {
         let path = local_path_driver.resolve_local_path(&blob.storage_path)?;
         return tokio::task::spawn_blocking(move || {
             generate_webp_derivative_from_local_path(path, max_dim)
@@ -397,8 +397,11 @@ mod tests {
             unreachable!()
         }
 
-        fn as_local_path(&self) -> Option<&dyn LocalPathStorageDriver> {
-            Some(self)
+        fn extensions(&self) -> crate::storage::traits::StorageDriverExtensions<'_> {
+            crate::storage::traits::StorageDriverExtensions {
+                local_path: Some(self),
+                ..Default::default()
+            }
         }
     }
 

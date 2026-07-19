@@ -177,7 +177,10 @@ impl AsterDavFile {
                     .driver_registry
                     .get_driver(&policy)
                     .map_err(|_| FsError::GeneralFailure)?;
-                let _stream_driver = driver.as_stream_upload().ok_or(FsError::GeneralFailure)?;
+                let _stream_driver = driver
+                    .extensions()
+                    .stream_upload
+                    .ok_or(FsError::GeneralFailure)?;
                 let prepared_upload = storage::prepare_non_dedup_blob_upload(&policy, size_hint)
                     .map_err(|error| {
                         tracing::warn!(
@@ -193,7 +196,7 @@ impl AsterDavFile {
                 let storage_path_clone = storage_path.clone();
                 let size_clone = size_hint;
                 let upload_task = tokio::spawn(async move {
-                    let Some(stream_driver) = driver_for_task.as_stream_upload() else {
+                    let Some(stream_driver) = driver_for_task.extensions().stream_upload else {
                         return Err(crate::errors::AsterError::storage_driver_error(
                             "stream upload driver is not available",
                         ));

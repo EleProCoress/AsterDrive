@@ -235,7 +235,7 @@ fn storage_native_processor_unavailable_reason(
     policy: &storage_policy::Model,
 ) -> Result<Option<String>> {
     let driver = state.driver_registry().get_driver(policy)?;
-    if driver.as_native_thumbnail().is_none() {
+    if driver.extensions().native_thumbnail.is_none() {
         return Ok(Some(format!(
             "storage policy #{} does not expose storage-native thumbnail processing",
             policy.id

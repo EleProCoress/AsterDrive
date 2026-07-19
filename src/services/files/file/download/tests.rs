@@ -189,8 +189,11 @@ impl StorageDriver for PresignedCountingStreamDriver {
         self.0.metadata(path).await
     }
 
-    fn as_presigned(&self) -> Option<&dyn PresignedStorageDriver> {
-        Some(self)
+    fn extensions(&self) -> crate::storage::traits::StorageDriverExtensions<'_> {
+        crate::storage::traits::StorageDriverExtensions {
+            presigned: Some(self),
+            ..Default::default()
+        }
     }
 }
 

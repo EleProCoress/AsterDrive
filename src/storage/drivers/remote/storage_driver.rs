@@ -4,10 +4,7 @@ use tokio::io::AsyncRead;
 use crate::errors::Result;
 use crate::storage::error::{StorageErrorKind, storage_driver_error};
 use crate::storage::traits::driver::{BlobMetadata, StorageDriver};
-use crate::storage::traits::extensions::{
-    ListStorageDriver, PresignedStorageDriver, StorageCapacityInfo, StreamUploadDriver,
-};
-use crate::storage::traits::multipart::MultipartStorageDriver;
+use crate::storage::traits::extensions::StorageCapacityInfo;
 
 use super::RemoteDriver;
 
@@ -65,19 +62,13 @@ impl StorageDriver for RemoteDriver {
         self.client.capacity_info().await
     }
 
-    fn as_list(&self) -> Option<&dyn ListStorageDriver> {
-        Some(self)
-    }
-
-    fn as_stream_upload(&self) -> Option<&dyn StreamUploadDriver> {
-        Some(self)
-    }
-
-    fn as_presigned(&self) -> Option<&dyn PresignedStorageDriver> {
-        Some(self)
-    }
-
-    fn as_multipart(&self) -> Option<&dyn MultipartStorageDriver> {
-        Some(self)
+    fn extensions(&self) -> crate::storage::traits::StorageDriverExtensions<'_> {
+        crate::storage::traits::StorageDriverExtensions {
+            list: Some(self),
+            stream_upload: Some(self),
+            presigned: Some(self),
+            multipart: Some(self),
+            ..Default::default()
+        }
     }
 }

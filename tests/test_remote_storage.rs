@@ -3118,7 +3118,8 @@ async fn test_remote_storage_end_to_end_via_internal_api() {
     );
 
     let listed_paths = remote_driver
-        .as_list()
+        .extensions()
+        .list
         .expect("remote driver should support list")
         .list_paths(None)
         .await
@@ -3324,7 +3325,8 @@ async fn test_remote_storage_end_to_end_via_reverse_tunnel() {
 
     let streamed_payload = b"reverse tunnel buffered stream upload".to_vec();
     let stream_driver = remote_driver
-        .as_stream_upload()
+        .extensions()
+        .stream_upload
         .expect("reverse remote driver should expose bounded stream upload");
     stream_driver
         .put_reader(
@@ -3343,7 +3345,8 @@ async fn test_remote_storage_end_to_end_via_reverse_tunnel() {
     );
 
     let listed_paths = remote_driver
-        .as_list()
+        .extensions()
+        .list
         .expect("reverse remote driver should support list")
         .list_paths(Some("files"))
         .await
@@ -3475,7 +3478,8 @@ async fn test_reverse_tunnel_handles_concurrent_requests_across_polls() {
     }
 
     let listed_paths = remote_driver
-        .as_list()
+        .extensions()
+        .list
         .expect("reverse remote driver should support list")
         .list_paths(Some("files"))
         .await

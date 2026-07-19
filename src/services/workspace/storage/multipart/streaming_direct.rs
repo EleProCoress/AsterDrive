@@ -63,7 +63,7 @@ pub(super) async fn upload_streaming_direct(
             let (writer, reader) = tokio::io::duplex(RELAY_DIRECT_BUFFER_SIZE);
             let upload_driver = driver.clone();
             let upload_storage_path = storage_path.clone();
-            let stream_driver = upload_driver.as_stream_upload().ok_or_else(|| {
+            let stream_driver = upload_driver.extensions().stream_upload.ok_or_else(|| {
                 crate::errors::AsterError::storage_driver_error("stream upload not supported")
             })?;
             let (upload_result, relay_result) = tokio::task::LocalSet::new()

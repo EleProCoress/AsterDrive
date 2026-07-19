@@ -369,7 +369,7 @@ async fn list_objects(
     query: web::Query<ObjectQuery>,
 ) -> Result<HttpResponse> {
     let ctx = master_binding::authorize_internal_request(state.get_ref(), &req).await?;
-    let list_driver = ctx.ingress_driver.as_list().ok_or_else(|| {
+    let list_driver = ctx.ingress_driver.extensions().list.ok_or_else(|| {
         storage_driver_error(
             StorageErrorKind::Unsupported,
             "ingress target does not support list",
@@ -463,12 +463,16 @@ async fn put_object(
         "follower object write accepted"
     );
 
-    let stream_driver = ctx.ingress_driver.as_stream_upload().ok_or_else(|| {
-        storage_driver_error(
-            StorageErrorKind::Unsupported,
-            "ingress target does not support stream upload",
-        )
-    })?;
+    let stream_driver = ctx
+        .ingress_driver
+        .extensions()
+        .stream_upload
+        .ok_or_else(|| {
+            storage_driver_error(
+                StorageErrorKind::Unsupported,
+                "ingress target does not support stream upload",
+            )
+        })?;
     let (writer, reader) = tokio::io::duplex(RELAY_UPLOAD_BUFFER_SIZE);
     let upload_storage_path = storage_path.clone();
     let (upload_result, relay_result) = tokio::task::LocalSet::new()
@@ -563,7 +567,7 @@ async fn compose_objects(
     )?;
 
     let driver = ctx.ingress_driver.clone();
-    let stream_driver = driver.as_stream_upload().ok_or_else(|| {
+    let stream_driver = driver.extensions().stream_upload.ok_or_else(|| {
         storage_driver_error(
             StorageErrorKind::Unsupported,
             "ingress target does not support stream upload",

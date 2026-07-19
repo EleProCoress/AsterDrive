@@ -10,6 +10,6 @@ pub use extensions::{
     NativeMediaMetadataResult, NativeMediaMetadataStorageDriver, NativeThumbnailRequest,
     NativeThumbnailStorageDriver, PresignedStorageDriver, ProviderResumableUploadCapabilities,
     ProviderResumableUploadDriver, ProviderResumableUploadSession, ProviderResumableUploadStatus,
-    StorageCapacityInfo, StorageCapacityStatus, StreamUploadDriver,
+    StorageCapacityInfo, StorageCapacityStatus, StorageDriverExtensions, StreamUploadDriver,
 };
 pub use multipart::{MultipartStorageDriver, UploadedMultipartPart};

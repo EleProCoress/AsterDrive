@@ -26,7 +26,7 @@ pub struct UploadedMultipartPart {
 
 /// Object-storage multipart upload 支持。
 ///
-/// 调用方通过 `driver.as_multipart()` 获取引用。
+/// 调用方通过 `driver.extensions().multipart` 获取引用。
 /// **调用方必须确保 session 携带了 multipart 关联标识**，否则不应该调用此方法。
 ///
 /// 这个 trait 的调用者会直接编排 provider multipart 生命周期：创建 upload、

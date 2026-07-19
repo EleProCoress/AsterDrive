@@ -4,8 +4,7 @@ use tokio::io::{AsyncRead, AsyncSeekExt};
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::storage::traits::driver::{BlobMetadata, StorageDriver};
 use crate::storage::traits::extensions::{
-    ListStorageDriver, LocalPathStorageDriver, StorageCapacityInfo, StorageCapacityStatus,
-    StreamUploadDriver,
+    LocalPathStorageDriver, StorageCapacityInfo, StorageCapacityStatus,
 };
 use aster_forge_utils::numbers::u64_to_i64;
 
@@ -112,16 +111,13 @@ impl StorageDriver for LocalDriver {
         Ok(dest_path.to_string())
     }
 
-    fn as_list(&self) -> Option<&dyn ListStorageDriver> {
-        Some(self)
-    }
-
-    fn as_stream_upload(&self) -> Option<&dyn StreamUploadDriver> {
-        Some(self)
-    }
-
-    fn as_local_path(&self) -> Option<&dyn LocalPathStorageDriver> {
-        Some(self)
+    fn extensions(&self) -> crate::storage::traits::StorageDriverExtensions<'_> {
+        crate::storage::traits::StorageDriverExtensions {
+            list: Some(self),
+            stream_upload: Some(self),
+            local_path: Some(self),
+            ..Default::default()
+        }
     }
 
     async fn capacity_info(&self) -> Result<StorageCapacityInfo> {

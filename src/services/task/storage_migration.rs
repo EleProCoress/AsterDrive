@@ -181,7 +181,7 @@ async fn build_storage_policy_migration_preflight(
         &target_policy,
     );
     let target_driver = state.driver_registry().get_driver(&target_policy)?;
-    let target_supports_stream_upload = target_driver.as_stream_upload().is_some();
+    let target_supports_stream_upload = target_driver.extensions().stream_upload.is_some();
     if !target_supports_stream_upload {
         return Err(AsterError::storage_driver_error(
             "target storage policy does not support stream upload",
@@ -387,7 +387,7 @@ pub(super) async fn process_storage_policy_migration_task(
     validate_migration_plan(&payload, &source_policy, &target_policy)?;
     let source_driver = state.driver_registry().get_driver(&source_policy)?;
     let target_driver = state.driver_registry().get_driver(&target_policy)?;
-    if target_driver.as_stream_upload().is_none() {
+    if target_driver.extensions().stream_upload.is_none() {
         return Err(AsterError::storage_driver_error(
             "target storage policy does not support stream upload",
         ));
@@ -784,7 +784,7 @@ async fn copy_blob_streaming(
         ..
     } = *migration;
     context.ensure_active()?;
-    if let Some(multipart) = target_driver.as_multipart()
+    if let Some(multipart) = target_driver.extensions().multipart
         && should_use_multipart_migration(blob.size, target_multipart_part_size)?
     {
         // Large single PUT streams are not safely retryable: the S3 SDK cannot
@@ -798,7 +798,7 @@ async fn copy_blob_streaming(
     context.ensure_active()?;
     let hashing_reader = HashingReader::new(source_stream, context.clone());
     let digest = hashing_reader.digest_handle();
-    let stream_upload = target_driver.as_stream_upload().ok_or_else(|| {
+    let stream_upload = target_driver.extensions().stream_upload.ok_or_else(|| {
         AsterError::storage_driver_error("target storage policy does not support stream upload")
     })?;
     let upload_result = stream_upload

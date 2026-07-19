@@ -421,8 +421,11 @@ impl StorageDriver for CountingDirectUploadDriver {
         })
     }
 
-    fn as_stream_upload(&self) -> Option<&dyn StreamUploadDriver> {
-        Some(self)
+    fn extensions(&self) -> crate::storage::traits::StorageDriverExtensions<'_> {
+        crate::storage::traits::StorageDriverExtensions {
+            stream_upload: Some(self),
+            ..Default::default()
+        }
     }
 }
 

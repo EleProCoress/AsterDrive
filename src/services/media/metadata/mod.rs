@@ -238,7 +238,8 @@ fn storage_native_media_metadata_matches_file(
     Ok(state
         .driver_registry
         .get_driver(&policy)?
-        .as_native_media_metadata()
+        .extensions()
+        .native_media_metadata
         .is_some())
 }
 
@@ -260,7 +261,7 @@ async fn try_extract_storage_native_metadata(
     }
 
     let driver = state.driver_registry().get_driver(&policy)?;
-    let Some(native) = driver.as_native_media_metadata() else {
+    let Some(native) = driver.extensions().native_media_metadata else {
         tracing::warn!(
             policy_id = policy.id,
             blob_id = blob.id,

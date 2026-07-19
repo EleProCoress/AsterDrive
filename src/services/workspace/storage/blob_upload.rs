@@ -224,7 +224,7 @@ pub(crate) async fn upload_temp_file_to_prepared_blob(
     prepared: &PreparedNonDedupBlobUpload,
     temp_path: &str,
 ) -> Result<()> {
-    let stream_driver = driver.as_stream_upload().ok_or_else(|| {
+    let stream_driver = driver.extensions().stream_upload.ok_or_else(|| {
         crate::errors::AsterError::storage_driver_error("stream upload not supported")
     })?;
 
@@ -415,7 +415,7 @@ pub(crate) async fn upload_reader_to_prepared_blob(
     reader: Box<dyn AsyncRead + Unpin + Send + Sync>,
     size: i64,
 ) -> Result<()> {
-    let stream_driver = driver.as_stream_upload().ok_or_else(|| {
+    let stream_driver = driver.extensions().stream_upload.ok_or_else(|| {
         crate::errors::AsterError::storage_driver_error("stream upload not supported")
     })?;
 
@@ -437,7 +437,7 @@ async fn upload_reader_to_prepared_blob_with_context(
     size: i64,
     operation_context: &StorageOperationContext,
 ) -> Result<()> {
-    let stream_driver = driver.as_stream_upload().ok_or_else(|| {
+    let stream_driver = driver.extensions().stream_upload.ok_or_else(|| {
         crate::errors::AsterError::storage_driver_error("stream upload not supported")
     })?;
 

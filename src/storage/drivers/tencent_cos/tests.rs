@@ -180,9 +180,9 @@ fn s3_compatible_capabilities_are_available_on_cos_driver() {
     ))
     .expect("driver should build");
 
-    assert!(driver.as_presigned().is_some());
-    assert!(driver.as_list().is_some());
-    assert!(driver.as_stream_upload().is_some());
-    assert!(driver.as_multipart().is_some());
-    assert!(driver.as_native_thumbnail().is_some());
+    assert!(driver.extensions().presigned.is_some());
+    assert!(driver.extensions().list.is_some());
+    assert!(driver.extensions().stream_upload.is_some());
+    assert!(driver.extensions().multipart.is_some());
+    assert!(driver.extensions().native_thumbnail.is_some());
 }

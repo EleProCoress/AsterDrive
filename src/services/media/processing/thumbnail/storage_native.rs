@@ -10,7 +10,7 @@ pub(super) async fn render_thumbnail_with_storage_native(
     source_mime_type: &str,
     max_dim: u32,
 ) -> Result<Vec<u8>> {
-    let native = driver.as_native_thumbnail().ok_or_else(|| {
+    let native = driver.extensions().native_thumbnail.ok_or_else(|| {
         precondition_failed_with_code(
             ApiErrorCode::ThumbnailProcessorUnavailable,
             "storage driver does not support native thumbnail processing",
@@ -45,7 +45,7 @@ pub(super) async fn render_image_preview_with_storage_native(
     source_mime_type: &str,
     max_dim: u32,
 ) -> Result<Vec<u8>> {
-    let native = driver.as_native_thumbnail().ok_or_else(|| {
+    let native = driver.extensions().native_thumbnail.ok_or_else(|| {
         precondition_failed_with_code(
             ApiErrorCode::ThumbnailProcessorUnavailable,
             "storage driver does not support native thumbnail processing",
@@ -140,8 +140,11 @@ mod tests {
             unreachable!()
         }
 
-        fn as_native_thumbnail(&self) -> Option<&dyn NativeThumbnailStorageDriver> {
-            Some(self)
+        fn extensions(&self) -> crate::storage::traits::StorageDriverExtensions<'_> {
+            crate::storage::traits::StorageDriverExtensions {
+                native_thumbnail: Some(self),
+                ..Default::default()
+            }
         }
     }
 

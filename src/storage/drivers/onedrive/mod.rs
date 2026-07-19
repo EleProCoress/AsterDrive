@@ -240,12 +240,12 @@ impl StorageDriver for OneDriveDriver {
         true
     }
 
-    fn as_stream_upload(&self) -> Option<&dyn StreamUploadDriver> {
-        Some(self)
-    }
-
-    fn as_provider_resumable_upload(&self) -> Option<&dyn ProviderResumableUploadDriver> {
-        Some(self)
+    fn extensions(&self) -> crate::storage::traits::StorageDriverExtensions<'_> {
+        crate::storage::traits::StorageDriverExtensions {
+            stream_upload: Some(self),
+            provider_resumable: Some(self),
+            ..Default::default()
+        }
     }
 
     async fn delete(&self, path: &str) -> Result<()> {
@@ -428,7 +428,8 @@ mod tests {
         let driver = OneDriveDriver::new(client, "drive-id", "root-id", "", 5 * 1024 * 1024);
 
         let provider_resumable = driver
-            .as_provider_resumable_upload()
+            .extensions()
+            .provider_resumable
             .expect("OneDrive should expose provider-native resumable upload");
         let capabilities = provider_resumable.provider_resumable_upload_capabilities();
 
